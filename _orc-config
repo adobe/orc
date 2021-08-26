@@ -1,0 +1,91 @@
+# `graceful_exit` only matters when ODR violations are found. In such cases, when `graceful_exit`
+# is `true`, ORC will exit(0), indicating success. Otherwise, the tool will return a nonzero value
+# indicating failure. `graceful_exit` can be useful for older applications that are looking to track
+# and/or reduce their ODR violations over time (versus enforcing zero violations.)
+#
+# The default value is `false`.
+
+graceful_exit = false
+
+# `max_error_count` lets you configure how many ODR violations are detected before the tool exits.
+#
+# The default value is `0`, which will output all detected violations.
+
+max_error_count = 0
+
+# Since ORC is meant to be a drop-in replacement for the ld/libtool, `forward_to_linker` can be used
+# to elide calling the linker, and only perform ORC processing.
+#
+# The default value is `true`.
+
+forward_to_linker = true
+
+# Print the symbol paths as they are processed by ORC. Setting this value to `true` will result in
+# copious output. Because this can produce such a flurry of information, it is tracked separately
+# from log_level.
+#
+# The default value is `false`.
+
+print_symbol_paths = false
+
+# `log_level` determines how loud ORC should be. The following values can be used, in increasing
+# order of verbosity. The logging level does not affect ODR violation reporting.
+#
+#     'silent': no logging output
+#     'warning': an avoidable issue, but should be addressed
+#     'info': emit brief, informative status
+#     'verbose': copious amounts of information
+#
+# The default value is `'silent'`.
+
+log_level = 'silent'
+
+# At the command line, expect a list of object/a/dylib files instead of the typical linker
+# command-line arguments. (This mode is largely helpful for debugging/testing the tool itself.)
+#
+# The default value is `false`.
+
+standalone_mode = false
+
+# `print_object_file_list`, when true, will print the list of object files ORC would otherwise
+# process, and then it exits without failure.
+#
+# The default value is `false`.
+
+print_object_file_list = false
+
+# `parallel_processing`, when true, will maximize the number of machine processors. Otherwise,
+# the application will run in a single thread. (This is mostly useful for debugging ORC.)
+#
+# The default value is `true`.
+
+parallel_processing = true
+
+# `symbol_ignore` is a list of symbol names ORC should ignore.
+
+# symbol_ignore = [
+#     'size_t' # the global size_t is defined two different ways inside the OSX toolchain
+# ]
+
+# `violation_report` and `violation_ignore` are mutually exclusive lists of violation categories.
+# A violation category is a pair of `tag:attribute` as reported when a violation is found. If you
+# use `violation_report`, all ODRVs will be ignored except for those categories explicitly listed in
+# the array. If you use `violation_ignore`, all ODRVs will be reported except for those categories
+# explicitly listed in the array. Specifying both will yield an error, then `violation_ignore` will
+# be used. If any symbols are ignored via `symbol_ignore`, those will be ignored before the
+# report/ignore arrays are used.
+#
+# The default `violation_report` is a reliable tested set that is a good baseline.
+
+violation_report = [
+    'class:byte_size',
+    'member:data_member_location',
+    'structure:byte_size',
+    'subprogram:virtuality',
+    'subprogram:vtable_elem_location',
+    'typedef:type'
+]
+
+# violation_ignore = [
+#     'typedef:type',
+# ]

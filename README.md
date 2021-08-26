@@ -1,0 +1,145 @@
+# ORC 
+
+ORC is a tool for finding violations of C++'s One Definition Rule on the OSX toolchain.
+
+ORC is a play on DWARF (the debugging file format leveraged by the tool) which is a play on ELF (an executable file format.) The _O_ in ORC stands for ODR. In a bout of self-realization, the _R_ and _C_ have multiple definitions - pick what you like.
+
+# The One Definiton Rule
+
+## What is it?
+
+There are [many](https://en.wikipedia.org/wiki/One_Definition_Rule) [writeups](https://en.cppreference.com/w/cpp/language/definition) about the One Definition Rule (ODR), including the C++ Standard itself (`[basic.def.odr]`). The gist of the rule is that if a symbol is defined in a program, it is only allowed to be defined once. Some symbols are granted an exception to this rule, and are allowed to be defined multiple times. However, those symbols must be defined by _identical_ token sequences.
+
+Note that some compiler settings can also affect token sequences - for example, RTTI being enabled or disabled may alter the definition of a symbol (in this case, a class' vtable.)
+
+## What is an ODR violation?
+
+Any symbol that breaks the above rule is an ODR violation (ODRV). In some instances, the linker may catch the duplicate symbol definition and emit a warning or error. However, the Standard states a linker is not required to do so. [Andy G](https://gieseanw.wordpress.com/) describes it well:
+
+> for performance reasons, the C++ Standard dictates that if you violate the One Definition Rule with respect to templates, the behavior is simply undefined. Since the linker doesn't care, violations of this rule are silent.[^gieseanw]
+
+[^gieseanw]: https://gieseanw.wordpress.com/2018/10/30/oops-i-violated-odr-again/
+
+Non-template ODRVs are possible, and the linker may be equally silent about them, too.
+
+## Why are ODRVs bad?
+
+An ODRV usually means you have a symbol whose binary layout differs depending on the compilation unit that built it. Because of the rule, however, when a linker encounters multiple definitions, it is free to pick _any_ of them and use it as the binary layout for a symbol. When the picked layout doesn't match the internal binary layout of the symbol in a compilation unit, the behavior is undefined.
+
+Oftentimes the debugger is useless in these scenarios. It, too, will be using a single definition of a symbol for the entire program, and when you try to debug an ODRV the debugger may give you bad data, or point to a location in a file that doesn't seem correct. In the end, the debugger will appear to be lying to you, yet silently offer no clues as to what the underlying issue is.
+
+## Why should you fix an ODR?
+
+Like all bugs, ODRVs take time to fix, so why should you fix an ODR violation in tested (and presumably working) code?
+
+* It can be difficult to know if an ODRV is causing a crash. The impact of an ODRV sometimes isn’t local to the location of the ODRV code. Stack corruption is a common symptom of ODRVs, and that can happen later and far away from the actual incorrect code.
+* The code actually generated is dependent on the inputs to the linker. Changing the linker inputs can cause different behaviors. And linker input changes can be caused by intentional reordering by a programmer, the output of a project generator changing, or as a simple by-product of adding files to your project.
+
+# How ORC works
+
+ORC is a tool that performs the following:
+
+* Reads in a set of object and archive files (including libraries and frameworks)
+* Scans the object files for DWARF debug data, registering every type used by the component being built.
+* Detects and reports inconsistencies that are classified as ODRVs
+
+Barring a bug in the tool, ORC does not generate false positives. Anything it reports is an ODRV.
+
+At this time, ORC does not detect all possible violations of the One Definition Rule. We hope to expand and improve on what it can catch over time. Until then, this means that while ORC is a valuable check, a clean scan does not guarantee a program is free of ODRVs.
+
+ORC can find:
+
+* structures / classes that aren't the same size
+* members of structures / classes that aren't at the same location
+* mis-matched vtables
+
+A note on vtables: ORC will detect virtual methods that are in different slots. (Which is a nastly sort of corrupt program.) At this point, it won't detect a class that has a virtual methods that are a "superset" of a ODR violating duplicate class. 
+
+# The ORC project
+
+In addition to the main ORC sources, we try to provide a bevy of example applications that contain ODRVs that the tool should catch.
+
+## Building ORC
+
+ORC is managed by cmake, and is built using the typical build conventions of a CMake-managed project:
+
+1. clone the repository
+2. within the repository folder:
+   1. `mkdir build`
+   2. `cd build`
+   3. `cmake -GXcode ..`
+3. Open the generated Xcode project, build, and you're all set.
+
+There are a handful of sample applications that ORC is integrated into for the purposes of testing. Those can be selected via the targets popup in Xcode.
+
+## Calling ORC
+
+### Command Line
+
+Make sure your config has `'forward_to_linker' = false` and `'standalone mode = true'` (see below)
+
+Then you need the `ld` command line arguments from XCode. Build with Xcode, (if you can't link, ORC can't help), copy the link command, and paste it after the ORC invocation. Something like:
+
+`/path/to/orc /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -target ... Debug/lem_mac`
+
+(It's a huge command line, abbreviated here.)
+
+ORC will churn away, and log ODR violations to the console.
+
+### Linker
+
+Make sure your config has `'forward_to_linker' = True` and `'standalone_mode' = false`(see below)
+
+To use ORC within your Xcode build project, override the following variables with a fully-qualified path to the ORC scripts:
+
+```
+"LIBTOOL": "/absolute/path/to/orc",
+"LDTOOL": "/absolute/path/to/orc",
+"ALTERNATE_LINKER": "/absolute/path/to/orc",
+```
+
+With those settings in place, Xcode should use ORC as the tool for both `libtool` and `ld` phases of the project build. Because of the `forward_to_linker` setting, ORC will invoke the proper link tool to produce a binary file. Once that completes, ORC will start its scan.
+
+Among other settings, ORC can be configured to exit or merely warn when an ODRV is detected.
+
+## Config file
+
+ORC will walk the current directory up, looking for a config file named either:
+
+- `.orc-config`, or
+- `_orc-config`
+
+If found, many switches can control ORC's logic. Please see the `_orc_config`
+in the repository for examples.
+
+## Output
+
+For example:
+
+```
+error: ODRV (structure:byte_size); conflict in `object`
+    compilation unit: a.o:
+        definition location: /Volumes/src/orc/extras/struct0/src/a.cpp:3
+        calling_convention: pass by value; 5 (0x5)
+        name: object
+        byte_size: 4 (0x4)
+    compilation unit: main.o:
+        definition location: /Volumes/src/orc/extras/struct0/src/main.cpp:3
+        calling_convention: pass by value; 5 (0x5)
+        name: object
+        byte_size: 1 (0x1)
+```
+
+`structure:byte_size` is known as the ODRV category, and details exactly what kind of violation this error represents. The two compilation units that are in conflict are then output, along with the DWARF information that resulted in the collision.
+
+```
+struct object { ... }
+```
+
+`In a.o:` and `In main.o` are the 2 object files or archives that are mis-matched. The ODR is likely caused by mis-matched compile or #define settings in compiling these archives. `byte_size` is the actual value causing an error.
+
+```    
+definition location: /Volumes/src/orc/extras/struct0/src/a.cpp:3
+```
+
+What line and file the object was declared in. So line 3 of `a.cpp` in this example.

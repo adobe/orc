@@ -12,6 +12,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <vector>
+#include <cassert>
 
 // application
 #include "orc/features.hpp"

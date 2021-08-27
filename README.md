@@ -2,13 +2,13 @@
 
 ORC is a tool for finding violations of C++'s One Definition Rule on the OSX toolchain.
 
-ORC is a play on DWARF (the debugging file format leveraged by the tool) which is a play on ELF (an executable file format.) The _O_ in ORC stands for ODR. In a bout of self-realization, the _R_ and _C_ have multiple definitions - pick what you like.
+ORC is a play on [DWARF](http://dwarfstd.org/) which is a play on [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format). ORC is an acronym; while the _O_ stands for ODR, in a bout of irony the _R_ and _C_ represent multiple (possibly conflicting) words.
 
 # The One Definiton Rule
 
 ## What is it?
 
-There are [many](https://en.wikipedia.org/wiki/One_Definition_Rule) [writeups](https://en.cppreference.com/w/cpp/language/definition) about the One Definition Rule (ODR), including the C++ Standard itself (`[basic.def.odr]`). The gist of the rule is that if a symbol is defined in a program, it is only allowed to be defined once. Some symbols are granted an exception to this rule, and are allowed to be defined multiple times. However, those symbols must be defined by _identical_ token sequences.
+There are [many](https://en.wikipedia.org/wiki/One_Definition_Rule) [writeups](https://en.cppreference.com/w/cpp/language/definition) about the One Definition Rule (ODR), including the [C++ Standard itself](https://eel.is/c++draft/basic.def.odr). The gist of the rule is that if a symbol is defined in a program, it is only allowed to be defined once. Some symbols are granted an exception to this rule, and are allowed to be defined multiple times. However, those symbols must be defined by _identical_ token sequences.
 
 Note that some compiler settings can also affect token sequences - for example, RTTI being enabled or disabled may alter the definition of a symbol (in this case, a class' vtable.)
 
@@ -16,9 +16,7 @@ Note that some compiler settings can also affect token sequences - for example, 
 
 Any symbol that breaks the above rule is an ODR violation (ODRV). In some instances, the linker may catch the duplicate symbol definition and emit a warning or error. However, the Standard states a linker is not required to do so. [Andy G](https://gieseanw.wordpress.com/) describes it well:
 
-> for performance reasons, the C++ Standard dictates that if you violate the One Definition Rule with respect to templates, the behavior is simply undefined. Since the linker doesn't care, violations of this rule are silent.[^gieseanw]
-
-[^gieseanw]: https://gieseanw.wordpress.com/2018/10/30/oops-i-violated-odr-again/
+> for performance reasons, the C++ Standard dictates that if you violate the One Definition Rule with respect to templates, the behavior is simply undefined. Since the linker doesn't care, violations of this rule are silent. [source](https://gieseanw.wordpress.com/2018/10/30/oops-i-violated-odr-again/)
 
 Non-template ODRVs are possible, and the linker may be equally silent about them, too.
 
@@ -58,6 +56,8 @@ A note on vtables: ORC will detect virtual methods that are in different slots. 
 # The ORC project
 
 In addition to the main ORC sources, we try to provide a bevy of example applications that contain ODRVs that the tool should catch.
+
+ORC was originally conceived on macOS. While its current implementation is focused there, it does not have to be constrained to that toolchain.
 
 ## Building ORC
 

@@ -74,21 +74,42 @@ There are a handful of sample applications that ORC is integrated into for the p
 
 ## Calling ORC
 
+ORC can be called directly from the command line, or inserted into the tool chain in the linker step. The output is unchanged; it's simply a matter
+of convenience in your workflow.
+
 ### Command Line
 
-Make sure your config has `'forward_to_linker' = false` (see below).
+#### Linker arguments
 
-Then you need the `ld` command line arguments from XCode. Build with Xcode, (if you can't link, ORC can't help), copy the link command, and paste it after the ORC invocation. Something like:
+This mode is useful if you have the linker command and its arguments, and want to search for ODRVs seperate from the actual build.
+
+Config file (see below)
+* `'forward_to_linker' = false`
+* `'standalone_mode' = false`
+
+You need the `ld` command line arguments from XCode. Build with Xcode, (if you can't link, ORC can't help), copy the link command, and paste it after the ORC invocation. Something like:
 
 `/path/to/orc /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -target ... Debug/lem_mac`
 
 (It's a huge command line, abbreviated here.)
 
-ORC will churn away, and log ODR violations to the console.
+ORC will execute, and log ODR violations to the console.
+
+#### List of Library files
+
+If you have a list of library files for ORC to process, it can do that as well.
+
+Config file (see below)
+* `'forward_to_linker' = false`
+* `'standalone_mode' = true`
+
+In this mode, simply pass a list of libary files to ORC to process. 
 
 ### Linker
 
-Make sure your config has `'forward_to_linker' = true` (see below).
+Config file (see below)
+* `'forward_to_linker' = true`
+* `'standalone_mode' = false`
 
 To use ORC within your Xcode build project, override the following variables with a fully-qualified path to the ORC scripts:
 

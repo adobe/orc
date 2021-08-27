@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <vector>
 #include <string>
+#include <cassert>
 
 // application
 #include "orc/dwarf_constants.hpp"

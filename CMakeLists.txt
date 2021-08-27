@@ -33,6 +33,16 @@ target_include_directories(orc PUBLIC
 
 target_compile_options(orc PUBLIC -Wall -Werror)
 
+# This is the end of the ORC executable definition
+
+function(link_via_orc project)
+    add_dependencies(${project} orc)
+    set_target_properties(${project}
+                          PROPERTIES
+                          XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
+                          XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>")
+endfunction()
+
 # These are example apps that uses ORC as its linker. We can add as many of these as necessary to
 # test out the tool. ORC is specified as a dependency of the example apps so it is built and ready
 # to use at link-time. Note that the configuration is linked between debug/release of ORC and the
@@ -45,12 +55,7 @@ add_executable(example_size_t
                ${PROJECT_SOURCE_DIR}/examples/size_t/one.cpp
                ${PROJECT_SOURCE_DIR}/examples/size_t/two.cpp
 )
-add_dependencies(example_size_t orc)
-set_target_properties(example_size_t
-                      PROPERTIES
-                      XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
-                      XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>"
-)
+link_via_orc(example_size_t)
 
 ##### example app: vtable
 
@@ -61,12 +66,7 @@ add_executable(example_vtable
                ${PROJECT_SOURCE_DIR}/examples/vtable/object.cpp
                ${PROJECT_SOURCE_DIR}/examples/vtable/object.hpp
 )
-add_dependencies(example_vtable orc)
-set_target_properties(example_vtable
-                      PROPERTIES
-                      XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
-                      XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>"
-)
+link_via_orc(example_vtable)
 
 ##### example app: typedef
 
@@ -74,9 +74,4 @@ add_executable(example_typedef
                ${PROJECT_SOURCE_DIR}/examples/typedef/main.cpp
                ${PROJECT_SOURCE_DIR}/examples/typedef/alt.cpp
 )
-add_dependencies(example_typedef orc)
-set_target_properties(example_typedef
-                      PROPERTIES
-                      XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
-                      XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>"
-)
+link_via_orc(example_typedef)

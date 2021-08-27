@@ -76,7 +76,7 @@ There are a handful of sample applications that ORC is integrated into for the p
 
 ### Command Line
 
-Make sure your config has `'forward_to_linker' = false` and `'standalone mode = true'` (see below)
+Make sure your config has `'forward_to_linker' = false` (see below).
 
 Then you need the `ld` command line arguments from XCode. Build with Xcode, (if you can't link, ORC can't help), copy the link command, and paste it after the ORC invocation. Something like:
 
@@ -88,7 +88,7 @@ ORC will churn away, and log ODR violations to the console.
 
 ### Linker
 
-Make sure your config has `'forward_to_linker' = True` and `'standalone_mode' = false`(see below)
+Make sure your config has `'forward_to_linker' = true` (see below).
 
 To use ORC within your Xcode build project, override the following variables with a fully-qualified path to the ORC scripts:
 
@@ -110,7 +110,8 @@ ORC will walk the current directory up, looking for a config file named either:
 - `_orc-config`
 
 If found, many switches can control ORC's logic. Please see the `_orc_config`
-in the repository for examples.
+in the repository for examples. ORC will prefer `.orc-config` so it's simple
+to copy the original `_orc_config` and change values locally in the `.orc-config`.
 
 ## Output
 

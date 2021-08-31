@@ -378,6 +378,7 @@ void update_progress() {
 
     std::cout << '\r' << done << "/" << total << "  " << percentage << "%; ";
     std::cout << globals::instance()._odrv_count << " violation(s) found";
+    std::cout << "          "; // 10 spaces of overprint to clear out any previous lingerers
 }
 
 /**************************************************************************************************/

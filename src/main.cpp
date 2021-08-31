@@ -74,6 +74,22 @@ bool sorted_has(const Container& c, const T& x) {
 
 /**************************************************************************************************/
 
+auto& odrv_sstream() {
+    assert(settings::instance()._show_progress);
+    static std::stringstream s;
+    return s;
+}
+
+std::ostream& odrv_ostream() {
+    if (settings::instance()._show_progress) {
+        return odrv_sstream();
+    } else {
+        return std::cout;
+    }
+}
+
+/**************************************************************************************************/
+
 void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw::at name) {
     std::string odrv_category("tag");
 
@@ -104,11 +120,13 @@ void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw:
     bool did_insert = unique_odrv_types.insert(symbol_hash).second;
     if (!did_insert) return; // We have already reported an instance of this.
 
-    std::cout << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
-              << demangle(symbol.data()) << "`\n";
-    std::cout << "    " << a << '\n';
-    std::cout << "    " << b << '\n';
-    std::cout << "\n";
+    auto& s = odrv_ostream();
+
+    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+      << demangle(symbol.data()) << "`\n";
+    s << "    " << a << '\n';
+    s << "    " << b << '\n';
+    s << "\n";
 
     ++globals::instance()._odrv_count;
 
@@ -351,6 +369,19 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
 
 /**************************************************************************************************/
 
+void update_progress() {
+    if (!settings::instance()._show_progress) return;
+
+    std::size_t done = globals::instance()._die_analyzed_count;
+    std::size_t total = globals::instance()._die_processed_count;
+    std::size_t percentage = static_cast<double>(done) / total * 100;
+
+    std::cout << '\r' << done << "/" << total << "  " << percentage << "%; ";
+    std::cout << globals::instance()._odrv_count << " violation(s) found";
+}
+
+/**************************************************************************************************/
+
 void register_dies_inner(dies die_vector) {
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
@@ -426,6 +457,10 @@ void register_dies_inner(dies die_vector) {
 
         enforce_odr(symbol, d, *found->second);
     }
+
+    globals::instance()._die_analyzed_count += dies.size();
+
+    update_progress();
 }
 
 /**************************************************************************************************/
@@ -490,6 +525,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._print_symbol_paths = settings["print_symbol_paths"].value_or(false);
             app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
+            app_settings._show_progress = settings["show_progress"].value_or(false);
             app_settings._print_object_file_list =
                 settings["print_object_file_list"].value_or(false);
 
@@ -686,13 +722,19 @@ auto process_command_line(int argc, char** argv) {
 auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
+    // If we were showing progress this session, take all the stored up ODRVs and output them
+    if (settings::instance()._show_progress) {
+        std::cout << '\n';
+        std::cout << odrv_sstream().str();
+    }
+
     if (log_level_at_least(settings::log_level::info)) {
         std::cout << "info: ORC complete; " << g._odrv_count << " ODRVs reported\n";
 
         if (log_level_at_least(settings::log_level::verbose)) {
             std::cout << "verbose: additional stats:\n"
                       << "  " << g._object_file_count << " compilation units processed\n"
-                      << "  " << g._die_found_count << " dies processed\n"
+                      << "  " << g._die_processed_count << " dies processed\n"
                       << "  " << g._die_registered_count << " dies registered\n";
         }
     }
@@ -825,6 +867,8 @@ auto& work() {
 /**************************************************************************************************/
 
 void register_dies(dies dies) {
+    globals::instance()._die_processed_count += dies.size();
+
     if (!settings::instance()._parallel_processing) {
         register_dies_inner(std::move(dies));
         return;

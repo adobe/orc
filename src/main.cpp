@@ -149,7 +149,14 @@ bool nonfatal_attribute(dw::at at) {
             dw::at::decl_file,
             dw::at::decl_line,
             dw::at::frame_base,
-            dw::at::high_pc,
+            // According to section 2.17 of the DWARF spec, if high_pc is a constant (e.g., form
+            // data4) then its value is the size of the function. Likewise, its existence implies
+            // the function it describes is a contiguous block of code in the object file. Since we
+            // assume this attribute is of constant form, this is the size of the function. If two
+            // or more functions with the same name have different high_pc values, their sizes are
+            // different, which means their definitions are going to be different, and that's an
+            // ODRV.
+            // dw::at::high_pc,
             dw::at::location,
             dw::at::low_pc,
             dw::at::name,

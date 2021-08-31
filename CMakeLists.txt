@@ -75,3 +75,11 @@ add_executable(example_typedef
                ${PROJECT_SOURCE_DIR}/examples/typedef/alt.cpp
 )
 link_via_orc(example_typedef)
+
+##### example app: function
+
+add_executable(example_function
+               ${PROJECT_SOURCE_DIR}/examples/function/main.cpp
+               ${PROJECT_SOURCE_DIR}/examples/function/alt.cpp
+)
+link_via_orc(example_function)

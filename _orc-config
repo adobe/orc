@@ -40,6 +40,12 @@ print_symbol_paths = false
 
 log_level = 'silent'
 
+# Output a die-count-based progress update throughout the session.
+#
+# The default value is `false`.
+
+show_progress = false
+
 # At the command line, expect a list of object/a/dylib files instead of the typical linker
 # command-line arguments. (This mode is largely helpful for debugging/testing the tool itself.)
 #

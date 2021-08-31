@@ -871,8 +871,6 @@ void dwarf::implementation::process() {
                 _decl_files.insert(_decl_files.begin(), die.attribute_string(dw::at::name));
             }
 
-            ++globals::instance()._die_found_count;
-
             if (die._has_children == dw::has_children::yes) {
                 path_identifier_push();
             }

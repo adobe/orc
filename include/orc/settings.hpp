@@ -33,6 +33,7 @@ struct settings {
     std::vector<std::string> _violation_report;
     std::vector<std::string> _violation_ignore;
     bool _parallel_processing{true};
+    bool _show_progress{false};
 };
 
 /**************************************************************************************************/
@@ -40,10 +41,11 @@ struct settings {
 struct globals {
     static globals& instance();
 
-    std::size_t _object_file_count{0};
+    std::atomic_size_t _object_file_count{0};
     std::size_t _odrv_count{0};
-    std::size_t _die_found_count{0};
     std::size_t _die_registered_count{0};
+    std::atomic_size_t _die_processed_count{0};
+    std::atomic_size_t _die_analyzed_count{0};
 };
 
 /**************************************************************************************************/

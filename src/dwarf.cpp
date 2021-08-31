@@ -738,6 +738,9 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
                 result = evaluate_exprloc(expr_size);
             });
         } break;
+        case dw::form::addr: {
+            result.uint(read64());
+        } break;
         case dw::form::ref_addr: {
             result.reference(read32());
         } break;

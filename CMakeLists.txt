@@ -18,6 +18,13 @@ FetchContent_Declare(
 )
 FetchContent_Populate(toml)
 
+FetchContent_Declare(
+    tbb
+    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
+    GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
+)
+FetchContent_MakeAvailable(tbb)
+
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,12 +33,15 @@ file(GLOB SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
 add_executable(orc ${SRC_FILES})
 
+target_link_libraries(orc TBB::tbb)
+
 target_include_directories(orc PUBLIC
                            ${PROJECT_SOURCE_DIR}/include
                            ${stlab_SOURCE_DIR}
-                           ${toml_SOURCE_DIR})
+                           ${toml_SOURCE_DIR}
+                           ${tbb_SOURCE_DIR}/include)
 
-target_compile_options(orc PUBLIC -Wall -Werror)
+target_compile_options(orc PUBLIC -Wall)
 
 # This is the end of the ORC executable definition
 

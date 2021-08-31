@@ -24,6 +24,9 @@
 // toml++
 #include <toml.hpp>
 
+// tbb
+#include <tbb/concurrent_unordered_map.h>
+
 // application
 #include "orc/features.hpp"
 #include "orc/parse_file.hpp"
@@ -383,7 +386,7 @@ void update_progress() {
 
 /**************************************************************************************************/
 
-void register_dies_inner(dies die_vector) {
+void register_dies(dies die_vector) {
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
@@ -437,26 +440,23 @@ void register_dies_inner(dies die_vector) {
         // necessary just for DIEs we're registering after this point.
         //
 
-        using map_type = std::unordered_map<std::size_t, const die*>;
+        resolve_reference_attributes(dies, d);
+
+        using map_type = tbb::concurrent_unordered_map<std::size_t, const die*>;
 #if ORC_FEATURE(LEAKY_MEMORY)
         static map_type& die_map = *(new map_type());
 #else
         static map_type die_map;
 #endif
-        resolve_reference_attributes(dies, d);
-
-        // d._attributes.shrink_to_fit(); // free up some space
-
-        auto found = die_map.find(d._hash);
-        if (found == die_map.end()) {
+        auto result = die_map.insert(std::make_pair(d._hash, &d));
+        if (result.second) {
             ++globals::instance()._die_registered_count;
-            die_map[d._hash] = &d;
             continue;
         }
 
         // possible violation - make sure everything lines up!
 
-        enforce_odr(symbol, d, *found->second);
+        enforce_odr(symbol, d, *result.first->second);
     }
 
     globals::instance()._die_analyzed_count += dies.size();
@@ -863,24 +863,6 @@ private:
 auto& work() {
     static work_counter _work;
     return _work;
-}
-
-/**************************************************************************************************/
-
-void register_dies(dies dies) {
-    globals::instance()._die_processed_count += dies.size();
-
-    if (!settings::instance()._parallel_processing) {
-        register_dies_inner(std::move(dies));
-        return;
-    }
-
-    // register_dies gets its own serial queue, because we don't want multiple calls to
-    // register_dies happening at the same time.
-    static stlab::serial_queue_t q{stlab::default_executor, stlab::schedule_mode::all};
-    q([dies = std::move(dies), _work_token = work().working()]() mutable {
-        register_dies_inner(std::move(dies));
-    }).detach();
 }
 
 /**************************************************************************************************/

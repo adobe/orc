@@ -45,8 +45,8 @@ std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
     if (x.type() == attribute_value::type::none) return s << "<none>";
     if (x.type() == attribute_value::type::passover) return s << "<unhandled>";
 
-    auto first_space = [_first = true]() mutable {
-        if (!_first) std::cout << "; ";
+    auto first_space = [_first = true, &_s = s]() mutable {
+        if (!_first) _s << "; ";
         _first = false;
     };
 

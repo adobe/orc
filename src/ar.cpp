@@ -61,7 +61,6 @@ void read_ar(const std::string&,
         } else {
             // skip to next file in the archive.
             s.seekg(file_size, std::ios::cur);
-            // std::cout << "Reading next from " << s.tellg() << '\n';
         }
     }
 }

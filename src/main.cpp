@@ -503,7 +503,7 @@ std::string exec(const char* cmd) {
 void process_orc_config_file(const char* bin_path_string) {
     // The calls to std::cout in this routine don't need to be threadsafe (too early)
 
-    std::filesystem::path pwd(exec("pwd"));
+    std::filesystem::path pwd(std::filesystem::current_path());
     std::filesystem::path bin_path(pwd / bin_path_string);
     std::filesystem::path config_path;
 

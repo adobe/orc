@@ -41,6 +41,24 @@ namespace {
 
 /**************************************************************************************************/
 
+auto& ostream_safe_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+template <class F>
+void ostream_safe(std::ostream& s, F&& f) {
+    std::lock_guard<std::mutex> lock{ostream_safe_mutex()};
+    std::forward<F>(f)(s);
+}
+
+template <class F>
+void cout_safe(F&& f) {
+    ostream_safe(std::cout, std::forward<F>(f));
+}
+
+/**************************************************************************************************/
+
 const char* problem_prefix() { return settings::instance()._graceful_exit ? "warning" : "error"; }
 
 /**************************************************************************************************/
@@ -123,13 +141,13 @@ void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw:
     bool did_insert = unique_odrv_types.insert(symbol_hash).second;
     if (!did_insert) return; // We have already reported an instance of this.
 
-    auto& s = odrv_ostream();
-
-    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
-      << demangle(symbol.data()) << "`\n";
-    s << "    " << a << '\n';
-    s << "    " << b << '\n';
-    s << "\n";
+    ostream_safe(odrv_ostream(), [&](auto& s){
+        s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+          << demangle(symbol.data()) << "`\n";
+        s << "    " << a << '\n';
+        s << "    " << b << '\n';
+        s << "\n";
+    });
 
     ++globals::instance()._odrv_count;
 
@@ -379,9 +397,11 @@ void update_progress() {
     std::size_t total = globals::instance()._die_processed_count;
     std::size_t percentage = static_cast<double>(done) / total * 100;
 
-    std::cout << '\r' << done << "/" << total << "  " << percentage << "%; ";
-    std::cout << globals::instance()._odrv_count << " violation(s) found";
-    std::cout << "          "; // 10 spaces of overprint to clear out any previous lingerers
+    cout_safe([&](auto& s){
+        s << '\r' << done << "/" << total << "  " << percentage << "%; ";
+        s << globals::instance()._odrv_count << " violation(s) found";
+        s << "          "; // 10 spaces of overprint to clear out any previous lingerers
+    });
 }
 
 /**************************************************************************************************/
@@ -408,29 +428,23 @@ void register_dies(dies die_vector) {
         }
 #endif
 
-#if 0
-        static std::size_t attribute_max_count{0};
-        if (d._attributes.size() > attribute_max_count) {
-            attribute_max_count = d._attributes.size();
-            std::cout << attribute_max_count << '\n';
-        }
-#endif
-
         auto symbol = path_to_symbol(d._path);
         auto should_skip = skip_die(dies, d, symbol);
 
         if (settings::instance()._print_symbol_paths) {
             static pool_string last_object_file_s;
 
-            if (d._object_file != last_object_file_s) {
-                last_object_file_s = d._object_file;
-                std::cout << '\n' << last_object_file_s << '\n';
-            }
+            cout_safe([&](auto& s){
+                if (d._object_file != last_object_file_s) {
+                    last_object_file_s = d._object_file;
+                    s << '\n' << last_object_file_s << '\n';
+                }
 
-            std::cout << (should_skip ? 'S' : 'R') << " - 0x";
-            std::cout.width(8);
-            std::cout.fill('0');
-            std::cout << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
+                s << (should_skip ? 'S' : 'R') << " - 0x";
+                s.width(8);
+                s.fill('0');
+                s << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
+            });
         }
 
         if (should_skip) continue;
@@ -443,6 +457,7 @@ void register_dies(dies die_vector) {
         resolve_reference_attributes(dies, d);
 
         using map_type = tbb::concurrent_unordered_map<std::size_t, const die*>;
+
 #if ORC_FEATURE(LEAKY_MEMORY)
         static map_type& die_map = *(new map_type());
 #else
@@ -486,6 +501,8 @@ std::string exec(const char* cmd) {
 /**************************************************************************************************/
 
 void process_orc_config_file(const char* bin_path_string) {
+    // The calls to std::cout in this routine don't need to be threadsafe (too early)
+
     std::filesystem::path pwd(exec("pwd"));
     std::filesystem::path bin_path(pwd / bin_path_string);
     std::filesystem::path config_path;
@@ -543,7 +560,7 @@ void process_orc_config_file(const char* bin_path_string) {
                 } else {
                     // not a known value. Switch to verbose!
                     app_settings._log_level = settings::log_level::verbose;
-                    std::cout << "warning: Unknown log level.\n";
+                    std::cout << "warning: Unknown log level (using verbose)\n";
                 }
             }
 
@@ -631,6 +648,8 @@ struct cmdline_results {
 /**************************************************************************************************/
 
 auto process_command_line(int argc, char** argv) {
+    // The calls to std::cout in this routine don't need to be threadsafe (too early)
+
     cmdline_results result;
 
     if (log_level_at_least(settings::log_level::verbose)) {
@@ -721,6 +740,8 @@ auto process_command_line(int argc, char** argv) {
 /**************************************************************************************************/
 
 auto epilogue(bool exception) {
+    // The calls to std::cout in this routine don't need to be threadsafe (too late)
+
     const auto& g = globals::instance();
 
     // If we were showing progress this session, take all the stored up ODRVs and output them
@@ -757,6 +778,8 @@ auto interrupt_callback_handler(int signum) {
 /**************************************************************************************************/
 
 void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdline) {
+    // The calls to std::cout in this routine don't need to be threadsafe (too early)
+
     if (!settings::instance()._forward_to_linker) return;
 
     std::filesystem::path executable_path = rstrip(exec("xcode-select -p")) + "/Toolchains/XcodeDefault.xctoolchain/usr/bin/";
@@ -806,7 +829,6 @@ struct work_counter {
             {
             std::lock_guard<std::mutex> lock(_m);
             ++_n;
-            // std::cout << _n << '\n';
             }
             _c.notify_all();
         }
@@ -815,7 +837,6 @@ struct work_counter {
             {
             std::lock_guard<std::mutex> lock(_m);
             --_n;
-            // std::cout << _n << '\n';
             }
             _c.notify_all();
         }
@@ -896,6 +917,7 @@ int main(int argc, char** argv) try {
 
     if (settings::instance()._print_object_file_list) {
         for (const auto& input_path : file_list) {
+            // no need to block on this cout; it's too early
             std::cout << input_path.string() << '\n';
         }
 

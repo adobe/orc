@@ -23,11 +23,13 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
     GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
 )
+set(TBB_TEST FALSE) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
 FetchContent_MakeAvailable(tbb)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_XCODE_GENERATE_SCHEME OFF)
 
 file(GLOB SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
@@ -41,7 +43,9 @@ target_include_directories(orc PUBLIC
                            ${toml_SOURCE_DIR}
                            ${tbb_SOURCE_DIR}/include)
 
-target_compile_options(orc PUBLIC -Wall)
+target_compile_options(orc PUBLIC -Wall -Werror)
+
+set_target_properties(orc PROPERTIES XCODE_GENERATE_SCHEME ON)
 
 # This is the end of the ORC executable definition
 
@@ -51,6 +55,7 @@ function(link_via_orc project)
                           PROPERTIES
                           XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
                           XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>")
+    set_target_properties(${project} PROPERTIES XCODE_GENERATE_SCHEME ON)
 endfunction()
 
 # These are example apps that uses ORC as its linker. We can add as many of these as necessary to

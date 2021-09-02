@@ -32,13 +32,13 @@ print_symbol_paths = false
 # order of verbosity. The logging level does not affect ODR violation reporting.
 #
 #     'silent': no logging output
-#     'warning': an avoidable issue, but should be addressed
+#     'warning': an avoidable issue that should be addressed
 #     'info': emit brief, informative status
 #     'verbose': copious amounts of information
 #
-# The default value is `'silent'`.
+# The default value is `'warning'`.
 
-log_level = 'silent'
+log_level = 'warning'
 
 # Output a die-count-based progress update throughout the session.
 #

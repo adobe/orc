@@ -625,16 +625,21 @@ auto derive_filelist_file_list(const std::filesystem::path& filelist) {
 
 /**************************************************************************************************/
 
-auto find_artifact(std::vector<std::filesystem::path> directories, const std::string_view needle) {
-    std::filesystem::path result;
-
+auto find_artifact(std::string_view type,
+                   const std::vector<std::filesystem::path>& directories,
+                   std::string_view artifact) {
     for (const auto& dir : directories) {
-        std::filesystem::path candidate(dir / needle);
+        std::filesystem::path candidate(dir / artifact);
         if (!exists(candidate)) continue;
-        return candidate;
+        return canonical(candidate); // canonical requires the path exists
     }
 
-    throw std::runtime_error(std::string("Could not find artifact: ") + needle.data());
+    // The call to std::cout here doesn't need to be threadsafe (too early)
+    if (log_level_at_least(settings::log_level::warning)) {
+        std::cout << "warning: Could not find " << type << " '" << artifact << "'\n";
+    }
+
+    return std::filesystem::path();
 }
 
 /**************************************************************************************************/
@@ -666,6 +671,9 @@ auto process_command_line(int argc, char** argv) {
     } else {
         std::vector<std::filesystem::path> library_search_paths;
         std::vector<std::filesystem::path> framework_search_paths;
+
+        std::vector<std::string> unresolved_libraries;
+        std::vector<std::string> unresolved_frameworks;
 
         for (std::size_t i{1}; i < argc; ++i) {
             std::string_view arg = argv[i];
@@ -716,20 +724,36 @@ auto process_command_line(int argc, char** argv) {
             } else if (arg.starts_with("-L")) {
                 library_search_paths.push_back(arg.substr(2));
             } else if (arg.starts_with("-l")) {
-                auto artifact = std::string("lib") + arg.substr(2).data() + ".a";
-                result._file_object_list.push_back(find_artifact(library_search_paths, artifact));
+                auto library = std::string("lib") + arg.substr(2).data() + ".a";
+                unresolved_libraries.push_back(std::move(library));
             } else if (arg.starts_with("-F")) {
                 framework_search_paths.push_back(arg.substr(2));
             } else if (arg.starts_with("-framework")) {
-                const std::string_view arg = argv[++i];
-                if (arg == "Foundation" || arg == "CoreFoundation") {
-                    // excluded
-                }
-                else {
-                    result._file_object_list.push_back(find_artifact(library_search_paths, arg));
-                }
+                auto framework = std::string(argv[++i]);
+                framework = framework + ".framework/" + framework;
+                unresolved_frameworks.push_back(std::move(framework));
             } else if (arg.ends_with(".o") || arg.ends_with(".a")) {
                 result._file_object_list.push_back(arg);
+            }
+        }
+
+        // Now that we have all the library/framework paths, go looking for libraries/frameworks.
+        for (const auto& library : unresolved_libraries) {
+            auto library_path = find_artifact("library", library_search_paths, library);
+            if (exists(library_path)) {
+                result._file_object_list.push_back(std::move(library_path));
+            }
+        }
+
+        for (const auto& framework : unresolved_frameworks) {
+            // REVISIT: (fosterbrereton) Should we elide all system frameworks?
+            if (framework == "Foundation" || framework == "CoreFoundation") {
+                continue; // excluded
+            } else {
+                auto artifact_path = find_artifact("framework", framework_search_paths, framework);
+                if (exists(artifact_path)) {
+                    result._file_object_list.push_back(std::move(artifact_path));
+                }
             }
         }
     }

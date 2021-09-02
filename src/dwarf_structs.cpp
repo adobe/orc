@@ -78,7 +78,7 @@ std::ostream& operator<<(std::ostream& s, const attribute& x) {
 
 std::ostream& operator<<(std::ostream& s, const die& x) {
     std::string def_loc;
-    auto attributes = x._attributes;
+    std::vector<attribute> attributes(x._attributes, x._attributes + x._attributes_size);
 
     s << "compilation unit: " << x._object_file.allocate_path().filename().string() << ":\n";
 

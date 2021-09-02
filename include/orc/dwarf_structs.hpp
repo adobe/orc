@@ -167,7 +167,7 @@ std::ostream& operator<<(std::ostream& s, const attribute& x);
 
 /**************************************************************************************************/
 
-enum class arch {
+enum class arch : std::uint8_t {
     unknown,
     x86,
     x86_64,
@@ -184,37 +184,45 @@ const char* to_string(arch arch);
 // use the same abbreviation, but because the die is listed in a different place in the debug_info
 // data block, it's values will be different than previous "stampings" of the abbreviation.
 struct die {
-    std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
-    arch _arch{arch::unknown};
-    std::uint32_t _abbrev_code{0};
-    dw::tag _tag{dw::tag::none};
-    dw::has_children _has_children{dw::has_children::no};
+    // Because the quantity of these created at runtime can beon the order of millions of instances,
+    // these are ordered for optimal alignment. If you change the ordering, or add/remove items
+    // here, please consider alignment issues.
     pool_string _object_file;
     std::string _path;
-    std::vector<attribute> _attributes;
-    bool _type_resolved{false};
+    attribute* _attributes;
+    std::size_t _attributes_size{0};
     std::size_t _hash{0};
+    std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
+    dw::tag _tag{dw::tag::none};
+    arch _arch{arch::unknown};
+    bool _has_children{false};
+    bool _type_resolved{false};
+
+    auto begin() { return _attributes; }
+    auto begin() const { return _attributes; }
+    auto end() { return _attributes + _attributes_size; }
+    auto end() const { return _attributes + _attributes_size; }
 
     bool has_attribute(dw::at at) const {
-        for (const auto& a : _attributes)
+        for (const auto& a : *this)
             if (a._name == at) return true;
         return false;
     }
 
     const auto& attribute(dw::at at) const {
-        for (const auto& a : _attributes)
+        for (const auto& a : *this)
             if (a._name == at) return a;
         throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
     }
 
     auto& attribute(dw::at at) {
-        for (auto& a : _attributes)
+        for (auto& a : *this)
             if (a._name == at) return a;
         throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
     }
 
     bool attribute_has_type(dw::at at, enum attribute_value::type type) const {
-        for (const auto& a : _attributes)
+        for (const auto& a : *this)
             if (a._name == at) return a.has(type);
         return false;
     }

@@ -15,11 +15,7 @@ namespace dw {
 
 /**************************************************************************************************/
 
-enum class has_children : std::uint8_t { no = 0, yes = 1 };
-
-/**************************************************************************************************/
-
-enum class form : std::uint32_t {
+enum class form : std::uint16_t {
     addr = 0x01,
     block2 = 0x03,
     block4 = 0x04,
@@ -71,7 +67,7 @@ enum class form : std::uint32_t {
 
 /**************************************************************************************************/
 
-enum class at : std::uint32_t {
+enum class at : std::uint16_t {
     none = 0x00,
     sibling = 0x01,
     location = 0x02,
@@ -403,7 +399,7 @@ const char* to_string(at attr);
 
 /**************************************************************************************************/
 
-enum class tag : std::uint32_t {
+enum class tag : std::uint16_t {
     none = 0x0,
     array_type = 0x01,
     class_type = 0x02,

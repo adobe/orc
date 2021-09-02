@@ -23,7 +23,7 @@ namespace {
 /**************************************************************************************************/
 
 std::uint32_t form_length(dw::form f, freader& s) {
-    static constexpr std::uint32_t length_size_k{4}; // 8 on 64bit DWARF
+    static constexpr std::uint32_t length_size_k{4}; // REVISIT: (fosterbrereton) 8 on 64bit DWARF
 
     auto leb_block = [&] {
         return temp_seek(s, [&] {
@@ -304,6 +304,7 @@ void cu_header::read(freader& s, const file_details& details) {
         // REVISIT: (fbrereto) handle extended length / DWARF64
         throw std::runtime_error("unsupported length");
     }
+
     _version = read_pod<std::uint16_t>(s);
 
     // note the read_pod types differ.
@@ -506,11 +507,6 @@ std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
 attribute dwarf::implementation::process_attribute(const attribute& attr,
                                                    std::size_t cur_die_offset) {
     attribute result = attr;
-
-    if (result._name == dw::at::declaration) {
-        int x;
-        (void)x;
-    }
 
     result._value = process_form(attr, cur_die_offset);
 
@@ -777,6 +773,9 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::flag_present: {
             result.uint(1);
         } break;
+        case dw::form::sec_offset: {
+            result.uint(read32());
+        } break;
         default: {
             result.passover();
             auto size = form_length(form, _s);
@@ -869,6 +868,16 @@ void dwarf::implementation::process() {
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
                 _decl_files.insert(_decl_files.begin(), die.attribute_string(dw::at::name));
+
+                // We've seen cases in the wild where compilation units are empty, have no children,
+                // but do not have a null abbreviation code signalling their "end". In this case,
+                // then, if we find a unit with no children, we're done. (No need to pop from the
+                // path, either, because we never pushed anything.)
+
+                // REVISIT: (fosterbrereton) This code path does not register the unit's die.
+                if (die._has_children == dw::has_children::no) {
+                    break; // end of the compilation unit
+                }
             }
 
             if (die._has_children == dw::has_children::yes) {

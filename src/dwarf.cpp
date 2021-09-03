@@ -38,10 +38,6 @@ std::uint32_t form_length(dw::form f, freader& s) {
     switch (f) {
         case dw::form::addr:
             return 8;
-        case dw::form::block2:
-            return read_pod<std::uint16_t>(s) + 2;
-        case dw::form::block4:
-            return read_pod<std::uint32_t>(s) + 4;
         case dw::form::data2:
             return 2;
         case dw::form::data4:
@@ -54,7 +50,15 @@ std::uint32_t form_length(dw::form f, freader& s) {
         case dw::form::block:
             return leb_block();
         case dw::form::block1:
-            return read_pod<std::uint8_t>(s) + 1;
+            // for block1, block2, and block4, we read the N-byte prefix, and then send back
+            // its value as the length of the form. This causes the passover to skip over the
+            // value, putting the read head at the correct place. So the returned length isn't
+            // technically correct, but the net result is what we want.
+            return read_pod<std::uint8_t>(s);
+        case dw::form::block2:
+            return read_pod<std::uint16_t>(s);
+        case dw::form::block4:
+            return read_pod<std::uint32_t>(s);
         case dw::form::data1:
             return 1;
         case dw::form::flag:
@@ -78,6 +82,8 @@ std::uint32_t form_length(dw::form f, freader& s) {
         case dw::form::ref_udata:
             return uleb128(s); // length of LEB _not_ included
         case dw::form::indirect:
+            // For attributes with this form, the attribute value itself in the .debug_info
+            // section begins with an unsigned LEB128 number that represents its form.
             assert(false);
             return 0; // TODO: (fbrereto)
         case dw::form::sec_offset:
@@ -232,7 +238,7 @@ struct line_header {
     std::uint16_t _version{0};
     std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
     std::uint32_t _min_instruction_length{0};
-    std::uint32_t _max_ops_per_instruction{0};
+    std::uint32_t _max_ops_per_instruction{0}; // DWARF4 or greater
     std::uint32_t _default_is_statement{0};
     std::int32_t _line_base{0};
     std::uint32_t _line_range{0};
@@ -256,7 +262,9 @@ void line_header::read(freader& s, const file_details& details) {
     _version = read_pod<std::uint16_t>(s);
     _header_length = read_pod<std::uint32_t>(s);
     _min_instruction_length = read_pod<std::uint8_t>(s);
-    _max_ops_per_instruction = read_pod<std::uint8_t>(s);
+    if (_version >= 4) {
+        _max_ops_per_instruction = read_pod<std::uint8_t>(s);
+    }
     _default_is_statement = read_pod<std::uint8_t>(s);
     _line_base = read_pod<std::int8_t>(s);
     _line_range = read_pod<std::uint8_t>(s);
@@ -846,6 +854,13 @@ die dwarf::implementation::abbreviation_to_die(std::size_t die_address, std::uin
 
 void dwarf::implementation::process() {
     if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return;
+
+#if 0 // save for debugging, waiting to catch a particular file.
+    if (_object_file.allocate_string() == "ImathBox.cpp.o") {
+        int x;
+        (void)x;
+    }
+#endif
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
     // together.

@@ -233,7 +233,7 @@ const die& find_base_type(const dies& dies, const die& d) {
 /**************************************************************************************************/
 
 void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
-    for (auto& attr : d._attributes) {
+    for (auto& attr : d) {
         if (attr._name == dw::at::type) continue;
         if (!attr.has(attribute_value::type::reference)) continue;
         const die& resolved = lookup_die(dies, attr.reference());
@@ -268,10 +268,10 @@ bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_die_conflict(const die& x, const die& y) {
     if (x._tag != y._tag) return dw::at::orc_tag;
 
-    const auto& yfirst = y._attributes.begin();
-    const auto& ylast = y._attributes.end();
+    const auto& yfirst = y.begin();
+    const auto& ylast = y.end();
 
-    for (const auto& xattr : x._attributes) {
+    for (const auto& xattr : x) {
         auto name = xattr._name;
         if (nonfatal_attribute(name)) continue;
 
@@ -382,7 +382,7 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
         resolve_type_attribute(dies, d);
         const auto& type = d.attribute(dw::at::type);
         // if this is a self-referential type, it's die will have no attributes.
-        if (type.die()._attributes.empty()) return true;
+        if (type.die()._attributes_size == 0) return true;
     }
 
     return false;

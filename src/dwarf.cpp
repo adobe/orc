@@ -8,6 +8,7 @@
 #include "orc/dwarf.hpp"
 
 // stdc++
+#include <list>
 #include <unordered_map>
 #include <vector>
 
@@ -151,7 +152,7 @@ struct abbrev {
     std::size_t _g{0};
     std::uint32_t _code{0};
     dw::tag _tag{0};
-    dw::has_children _has_children{dw::has_children::no};
+    bool _has_children{false};
     std::vector<attribute> _attributes;
 
     void read(freader& s);
@@ -161,7 +162,7 @@ void abbrev::read(freader& s) {
     _g = s.tellg();
     _code = uleb128(s);
     _tag = static_cast<dw::tag>(uleb128(s));
-    _has_children = read_pod<dw::has_children>(s);
+    _has_children = read_pod<bool>(s);
     while (true) {
         attribute entry;
         entry.read(s);
@@ -184,104 +185,6 @@ struct file_name {
 std::size_t die_hash(const die& d) {
     return hash_combine(0, d._arch, d._tag, d._path);
 };
-
-/**************************************************************************************************/
-
-} // namespace
-
-/**************************************************************************************************/
-
-struct dwarf::implementation {
-    implementation(const std::string& object_file,
-                   freader& s,
-                   const file_details& details,
-                   callbacks callbacks)
-        : _object_file(callbacks._empool(object_file)), _s(s), _details(details),
-          _callbacks(std::move(callbacks)) {}
-
-    void register_section(const std::string& name, std::size_t offset, std::size_t size);
-
-    void process();
-
-    template <class T>
-    T read();
-
-    std::uint64_t read64();
-    std::uint32_t read32();
-    std::uint32_t read16();
-    std::uint32_t read8();
-    std::uint32_t read_uleb();
-    std::int32_t read_sleb();
-
-    void read_abbreviations();
-    void read_lines();
-    const abbrev& find_abbreviation(std::uint32_t code) const;
-
-    pool_string read_debug_str(std::size_t offset);
-
-    void path_identifier_push();
-    void path_identifier_set(pool_string name);
-    void path_identifier_pop();
-    std::string qualified_symbol_name(const die& d) const;
-
-    attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
-    attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
-    attribute_value evaluate_exprloc(std::uint32_t expression_size);
-
-    pool_string die_identifier(const die& a) const;
-
-    die abbreviation_to_die(std::size_t die_address, std::uint32_t abbrev_code);
-
-    pool_string _object_file;
-    freader& _s;
-    const file_details _details;
-    callbacks _callbacks;
-    std::vector<abbrev> _abbreviations;
-    std::vector<pool_string> _path;
-    std::size_t _cu_address{0};
-    std::vector<pool_string> _decl_files;
-    section _debug_abbrev;
-    section _debug_info;
-    section _debug_line;
-    section _debug_str;
-};
-
-/**************************************************************************************************/
-
-template <class T>
-T dwarf::implementation::read() {
-    T result = read_pod<T>(_s);
-    if (_details._needs_byteswap) endian_swap(result);
-    return result;
-}
-
-std::uint64_t dwarf::implementation::read64() { return read<std::uint64_t>(); }
-
-std::uint32_t dwarf::implementation::read32() { return read<std::uint32_t>(); }
-
-std::uint32_t dwarf::implementation::read16() { return read<std::uint16_t>(); }
-
-std::uint32_t dwarf::implementation::read8() { return read<std::uint8_t>(); }
-
-std::uint32_t dwarf::implementation::read_uleb() { return uleb128(_s); }
-
-std::int32_t dwarf::implementation::read_sleb() { return sleb128(_s); }
-
-/**************************************************************************************************/
-
-void dwarf::implementation::register_section(const std::string& name,
-                                             std::size_t offset,
-                                             std::size_t size) {
-    if (name == "__debug_str") {
-        _debug_str = section{ offset, size };
-    } else if (name == "__debug_info") {
-        _debug_info = section{ offset, size };
-    } else if (name == "__debug_abbrev") {
-        _debug_abbrev = section{ offset, size };
-    } else if (name == "__debug_line") {
-        _debug_line = section{ offset, size };
-    }
-}
 
 /**************************************************************************************************/
 
@@ -386,6 +289,124 @@ void line_header::read(freader& s, const file_details& details) {
         cur_file_name._mod_time = uleb128(s);
         cur_file_name._file_length = uleb128(s);
         _file_names.push_back(std::move(cur_file_name));
+    }
+}
+
+/**************************************************************************************************/
+
+attribute* alloc_attributes(std::size_t n) {
+#if ORC_FEATURE(LEAKY_MEMORY)
+    thread_local auto& pool_s = *(new std::list<std::unique_ptr<attribute[]>>);
+#else
+    thread_local std::list<std::unique_ptr<attribute[]>> pool_s;
+#endif // ORC_FEATURE(LEAKY_MEMORY)
+    constexpr auto block_size_k{32 * 1024 * 1024};
+    constexpr auto max_attributes_k{block_size_k / sizeof(attribute)};
+    thread_local std::size_t n_s{max_attributes_k};
+    if ((n_s + n) >= max_attributes_k) {
+        pool_s.push_back(std::make_unique<attribute[]>(max_attributes_k));
+        n_s = 0;
+    }
+    attribute* result = &pool_s.back().get()[n_s];
+    n_s += n;
+    return result;
+}
+
+/**************************************************************************************************/
+
+} // namespace
+
+/**************************************************************************************************/
+
+struct dwarf::implementation {
+    implementation(const std::string& object_file,
+                   freader& s,
+                   const file_details& details,
+                   callbacks callbacks)
+        : _object_file(callbacks._empool(object_file)), _s(s), _details(details),
+          _callbacks(std::move(callbacks)) {}
+
+    void register_section(const std::string& name, std::size_t offset, std::size_t size);
+
+    void process();
+
+    template <class T>
+    T read();
+
+    std::uint64_t read64();
+    std::uint32_t read32();
+    std::uint32_t read16();
+    std::uint32_t read8();
+    std::uint32_t read_uleb();
+    std::int32_t read_sleb();
+
+    void read_abbreviations();
+    void read_lines();
+    const abbrev& find_abbreviation(std::uint32_t code) const;
+
+    pool_string read_debug_str(std::size_t offset);
+
+    void path_identifier_push();
+    void path_identifier_set(pool_string name);
+    void path_identifier_pop();
+    std::string qualified_symbol_name(const die& d) const;
+
+    attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
+    attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
+    attribute_value evaluate_exprloc(std::uint32_t expression_size);
+
+    pool_string die_identifier(const die& a) const;
+
+    die abbreviation_to_die(std::size_t die_address, std::uint32_t abbrev_code);
+
+    pool_string _object_file;
+    freader& _s;
+    const file_details _details;
+    callbacks _callbacks;
+    std::vector<abbrev> _abbreviations;
+    std::vector<pool_string> _path;
+    std::size_t _cu_address{0};
+    std::vector<pool_string> _decl_files;
+    section _debug_abbrev;
+    section _debug_info;
+    section _debug_line;
+    section _debug_str;
+};
+
+/**************************************************************************************************/
+
+template <class T>
+T dwarf::implementation::read() {
+    T result = read_pod<T>(_s);
+    if (_details._needs_byteswap) endian_swap(result);
+    return result;
+}
+
+std::uint64_t dwarf::implementation::read64() { return read<std::uint64_t>(); }
+
+std::uint32_t dwarf::implementation::read32() { return read<std::uint32_t>(); }
+
+std::uint32_t dwarf::implementation::read16() { return read<std::uint16_t>(); }
+
+std::uint32_t dwarf::implementation::read8() { return read<std::uint8_t>(); }
+
+std::uint32_t dwarf::implementation::read_uleb() { return uleb128(_s); }
+
+std::int32_t dwarf::implementation::read_sleb() { return sleb128(_s); }
+
+/**************************************************************************************************/
+
+void dwarf::implementation::register_section(const std::string& name,
+                                             std::size_t offset,
+                                             std::size_t size) {
+    if (name == "__debug_str") {
+        _debug_str = section{ offset, size };
+    } else if (name == "__debug_info") {
+        _debug_info = section{ offset, size };
+    } else if (name == "__debug_abbrev") {
+        _debug_abbrev = section{ offset, size };
+    } else if (name == "__debug_line") {
+        _debug_line = section{ offset, size };
     }
 }
 
@@ -598,7 +619,7 @@ pool_string dwarf::implementation::die_identifier(const die& d) const {
             break;
     }
 
-    if (d._attributes.empty()) {
+    if (d._attributes_size == 0) {
         return pool_string();
     }
 
@@ -803,15 +824,15 @@ die dwarf::implementation::abbreviation_to_die(std::size_t die_address, std::uin
 
     if (abbrev_code == 0) return result;
 
-    result._abbrev_code = abbrev_code;
-
     auto& a = find_abbreviation(abbrev_code);
 
     result._tag = a._tag;
     result._has_children = a._has_children;
+    result._attributes_size = a._attributes.size();
+    result._attributes = alloc_attributes(result._attributes_size);
 
     std::transform(a._attributes.begin(), a._attributes.end(),
-                   std::back_inserter(result._attributes),
+                   result.begin(),
                    [&](const auto& x) { return process_attribute(x, result._debug_info_offset); });
 
     path_identifier_set(die_identifier(result));
@@ -875,12 +896,12 @@ void dwarf::implementation::process() {
                 // path, either, because we never pushed anything.)
 
                 // REVISIT: (fosterbrereton) This code path does not register the unit's die.
-                if (die._has_children == dw::has_children::no) {
+                if (!die._has_children) {
                     break; // end of the compilation unit
                 }
             }
 
-            if (die._has_children == dw::has_children::yes) {
+            if (die._has_children) {
                 path_identifier_push();
             }
 
@@ -893,6 +914,8 @@ void dwarf::implementation::process() {
 
     // Now that we have all the dies for this translation unit, do some post-processing to get more
     // details out and reported to the surface.
+
+    dies.shrink_to_fit();
 
     _callbacks._register_die(std::move(dies));
 }

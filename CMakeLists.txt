@@ -4,6 +4,21 @@ include(FetchContent)
 
 project(orc)
 
+# Detects whether this is a top-level/root/standalone project
+# This variable is already set by project() in cmake 3.21+
+if (NOT DEFINED PROJECT_IS_TOP_LEVEL)
+    get_directory_property(_has_parent PARENT_DIRECTORY)
+    if (_has_parent)
+        set(PROJECT_IS_TOP_LEVEL OFF)
+    else()
+        set(PROJECT_IS_TOP_LEVEL ON)
+    endif()
+    unset(_has_parent)
+endif()
+
+
+option(ORC_BUILD_EXAMPLES "Build ORC example programs" ${PROJECT_IS_TOP_LEVEL})
+
 if (NOT TARGET stlab::stlab)
     message(STATUS "ORC third-party: creating target 'stlab::stlab'...")
     FetchContent_Declare(
@@ -79,38 +94,42 @@ endfunction()
 # to use at link-time. Note that the configuration is linked between debug/release of ORC and the
 # example app (e.g., the Debug ORC will test Debug example_size_t, and so for Release.)
 
-##### example app: size_t
+if (ORC_BUILD_EXAMPLES)
 
-add_executable(example_size_t
-               ${PROJECT_SOURCE_DIR}/examples/size_t/main.cpp
-               ${PROJECT_SOURCE_DIR}/examples/size_t/one.cpp
-               ${PROJECT_SOURCE_DIR}/examples/size_t/two.cpp
-)
-link_via_orc(example_size_t)
 
-##### example app: vtable
+    ##### example app: size_t
 
-add_executable(example_vtable
-               ${PROJECT_SOURCE_DIR}/examples/vtable/main.cpp
-               ${PROJECT_SOURCE_DIR}/examples/vtable/one.cpp
-               ${PROJECT_SOURCE_DIR}/examples/vtable/two.cpp
-               ${PROJECT_SOURCE_DIR}/examples/vtable/object.cpp
-               ${PROJECT_SOURCE_DIR}/examples/vtable/object.hpp
-)
-link_via_orc(example_vtable)
+    add_executable(example_size_t
+                   ${PROJECT_SOURCE_DIR}/examples/size_t/main.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/size_t/one.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/size_t/two.cpp
+    )
+    link_via_orc(example_size_t)
 
-##### example app: typedef
+    ##### example app: vtable
 
-add_executable(example_typedef
-               ${PROJECT_SOURCE_DIR}/examples/typedef/main.cpp
-               ${PROJECT_SOURCE_DIR}/examples/typedef/alt.cpp
-)
-link_via_orc(example_typedef)
+    add_executable(example_vtable
+                   ${PROJECT_SOURCE_DIR}/examples/vtable/main.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/vtable/one.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/vtable/two.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/vtable/object.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/vtable/object.hpp
+    )
+    link_via_orc(example_vtable)
 
-##### example app: function
+    ##### example app: typedef
 
-add_executable(example_function
-               ${PROJECT_SOURCE_DIR}/examples/function/main.cpp
-               ${PROJECT_SOURCE_DIR}/examples/function/alt.cpp
-)
-link_via_orc(example_function)
+    add_executable(example_typedef
+                   ${PROJECT_SOURCE_DIR}/examples/typedef/main.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/typedef/alt.cpp
+    )
+    link_via_orc(example_typedef)
+
+    ##### example app: function
+
+    add_executable(example_function
+                   ${PROJECT_SOURCE_DIR}/examples/function/main.cpp
+                   ${PROJECT_SOURCE_DIR}/examples/function/alt.cpp
+    )
+    link_via_orc(example_function)
+endif()

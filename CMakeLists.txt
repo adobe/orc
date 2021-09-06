@@ -4,27 +4,36 @@ include(FetchContent)
 
 project(orc)
 
-FetchContent_Declare(
-    stlab
-    GIT_REPOSITORY https://github.com/stlab/libraries.git
-    GIT_TAG        0a7232a4120c2daf8ddb6621ec13f313a029e495 # v1.6.2
-)
-FetchContent_Populate(stlab)
+if (NOT TARGET stlab::stlab)
+    message(STATUS "ORC third-party: creating target 'stlab::stlab'...")
+    FetchContent_Declare(
+        stlab
+        GIT_REPOSITORY https://github.com/stlab/libraries.git
+        GIT_TAG        0a7232a4120c2daf8ddb6621ec13f313a029e495 # v1.6.2
+    )
+    FetchContent_MakeAvailable(stlab)
+endif()
 
-FetchContent_Declare(
-    toml
-    GIT_REPOSITORY https://github.com/marzer/tomlplusplus
-    GIT_TAG        037bfdd21f794d7212616d5e6f4f8baab543c472 # v2.5.0
-)
-FetchContent_Populate(toml)
+if (NOT TARGET tomlplusplus::tomlplusplus)
+    message(STATUS "ORC third-party: creating target 'tomlplusplus::tomlplusplus'...")
+    FetchContent_Declare(
+        toml
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus
+        GIT_TAG        037bfdd21f794d7212616d5e6f4f8baab543c472 # v2.5.0
+    )
+    FetchContent_MakeAvailable(toml)
+endif()
 
-FetchContent_Declare(
-    tbb
-    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-    GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
-)
-set(TBB_TEST FALSE) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
-FetchContent_MakeAvailable(tbb)
+if (NOT TARGET TBB::tbb)
+    message(STATUS "ORC third-party: creating target 'TBB::tbb'...")
+    FetchContent_Declare(
+        tbb
+        GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
+        GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
+    )
+    set(TBB_TEST FALSE) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
+    FetchContent_MakeAvailable(tbb)
+endif()
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
@@ -35,13 +44,18 @@ file(GLOB SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
 add_executable(orc ${SRC_FILES})
 
-target_link_libraries(orc TBB::tbb)
 
-target_include_directories(orc PUBLIC
-                           ${PROJECT_SOURCE_DIR}/include
-                           ${stlab_SOURCE_DIR}
-                           ${toml_SOURCE_DIR}
-                           ${tbb_SOURCE_DIR}/include)
+target_link_libraries(orc
+    PRIVATE
+        stlab::stlab
+        TBB::tbb
+        tomlplusplus::tomlplusplus
+)
+
+target_include_directories(orc
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
 
 target_compile_options(orc PUBLIC -Wall -Werror)
 

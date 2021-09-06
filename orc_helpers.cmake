@@ -11,4 +11,7 @@ function(link_via_orc target)
                           XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc_orc>"
                           XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc_orc>")
     set_target_properties(${target} PROPERTIES XCODE_GENERATE_SCHEME ON)
+    if (NOT CMAKE_GENERATOR STREQUAL Xcode)
+        target_link_options(${target} PRIVATE "-fuse-ld=$<TARGET_FILE:orc_orc>")
+    endif()
 endfunction()

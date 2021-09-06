@@ -81,22 +81,19 @@ endif()
 
 # This is the end of the ORC executable definition
 
-function(link_via_orc project)
-    add_dependencies(${project} orc_orc)
-    set_target_properties(${project}
-                          PROPERTIES
-                          XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc_orc>"
-                          XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc_orc>")
-    set_target_properties(${project} PROPERTIES XCODE_GENERATE_SCHEME ON)
-endfunction()
+# This variable can be used by parent projects to import the link_via_orc helper function with
+# include(${ORC_HELPERS})
+set(ORC_HELPERS ${PROJECT_SOURCE_DIR}/orc_helpers.cmake)
+if (NOT PROJECT_IS_TOP_LEVEL)
+    set(ORC_HELPERS ${ORC_HELPERS} PARENT_SCOPE)
+endif()
 
 # These are example apps that uses ORC as its linker. We can add as many of these as necessary to
-# test out the tool. ORC is specified as a dependency of the example apps so it is built and ready
-# to use at link-time. Note that the configuration is linked between debug/release of ORC and the
-# example app (e.g., the Debug ORC will test Debug example_size_t, and so for Release.)
+# test out the tool.
 
 if (ORC_BUILD_EXAMPLES)
 
+    include(${ORC_HELPERS})
 
     ##### example app: size_t
 

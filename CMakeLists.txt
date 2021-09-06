@@ -42,33 +42,35 @@ set(CMAKE_XCODE_GENERATE_SCHEME OFF)
 
 file(GLOB SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
-add_executable(orc ${SRC_FILES})
+add_executable(orc_orc ${SRC_FILES})
+add_executable(orc::orc ALIAS orc_orc)
 
+set_target_properties(orc_orc PROPERTIES OUTPUT_NAME "orc")
 
-target_link_libraries(orc
+target_link_libraries(orc_orc
     PRIVATE
         stlab::stlab
         TBB::tbb
         tomlplusplus::tomlplusplus
 )
 
-target_include_directories(orc
+target_include_directories(orc_orc
     PRIVATE
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_options(orc PUBLIC -Wall -Werror)
+target_compile_options(orc_orc PUBLIC -Wall -Werror)
 
-set_target_properties(orc PROPERTIES XCODE_GENERATE_SCHEME ON)
+set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
 
 # This is the end of the ORC executable definition
 
 function(link_via_orc project)
-    add_dependencies(${project} orc)
+    add_dependencies(${project} orc_orc)
     set_target_properties(${project}
                           PROPERTIES
-                          XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc>"
-                          XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc>")
+                          XCODE_ATTRIBUTE_ALTERNATE_LINKER "$<TARGET_FILE:orc_orc>"
+                          XCODE_ATTRIBUTE_LIBTOOL "$<TARGET_FILE:orc_orc>")
     set_target_properties(${project} PROPERTIES XCODE_GENERATE_SCHEME ON)
 endfunction()
 

@@ -74,9 +74,10 @@ target_include_directories(orc_orc
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_options(orc_orc PUBLIC -Wall -Werror)
-
-set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
+if (PROJECT_IS_TOP_LEVEL)
+    target_compile_options(orc_orc PRIVATE -Wall -Werror)
+    set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
+endif()
 
 # This is the end of the ORC executable definition
 

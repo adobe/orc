@@ -22,7 +22,7 @@
 #include <stlab/concurrency/serial_queue.hpp>
 
 // toml++
-#include <toml.hpp>
+#include <toml++/toml.h>
 
 // tbb
 #include <tbb/concurrent_unordered_map.h>

@@ -13,6 +13,13 @@ graceful_exit = false
 
 max_error_count = 0
 
+# When an ODRV is found for a type, ORC will only report the first one if `filter_redundant`  is
+# true. This is generally what you want. Set to false if you wish to see all the conflicts for 
+# a given type, which can be useful when trying to identify a particular violation in code.
+# If `parallel_processing` is true as well, the number of ODRVs reported can vary widely.
+
+filter_redundant = true
+
 # Since ORC is meant to be a drop-in replacement for the ld/libtool, `forward_to_linker` can be used
 # to elide calling the linker, and only perform ORC processing.
 #

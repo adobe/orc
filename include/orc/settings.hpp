@@ -34,6 +34,7 @@ struct settings {
     std::vector<std::string> _violation_ignore;
     bool _parallel_processing{true};
     bool _show_progress{false};
+    bool _filter_redundant{true};
 };
 
 /**************************************************************************************************/

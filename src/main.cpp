@@ -137,9 +137,11 @@ void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw:
     // this is that (as this comment is written) we don't detect supersets.
     // So if C has more methods than A and B it may not be detected.
     static std::set<std::size_t> unique_odrv_types;
-    std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
-    bool did_insert = unique_odrv_types.insert(symbol_hash).second;
-    if (!did_insert) return; // We have already reported an instance of this.
+    if (settings._filter_redundant) {
+        std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
+        bool did_insert = unique_odrv_types.insert(symbol_hash).second;
+        if (!did_insert) return; // We have already reported an instance of this.
+    }
 
     ostream_safe(odrv_ostream(), [&](auto& s){
         s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
@@ -544,6 +546,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
             app_settings._show_progress = settings["show_progress"].value_or(false);
+            app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list =
                 settings["print_object_file_list"].value_or(false);
 

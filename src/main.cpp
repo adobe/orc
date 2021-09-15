@@ -681,19 +681,22 @@ auto process_command_line(int argc, char** argv) {
         for (std::size_t i{1}; i < argc; ++i) {
             std::string_view arg = argv[i];
             if (arg == "-o") {
+                std::string filename(argv[++i]);
+
                 // next argument is the output file. Use its name to decide
-                // whether we should run in ld or libtool mode.
-                if (std::string(argv[++i]).ends_with(".a")) {
-                    result._libtool_mode = true;
-                    assert(!result._ld_mode);
-                    if (log_level_at_least(settings::log_level::verbose)) {
-                        std::cout << "verbose: mode: libtool\n";
-                    }
-                } else {
-                    result._ld_mode = true;
-                    assert(!result._libtool_mode);
-                    if (log_level_at_least(settings::log_level::verbose)) {
-                        std::cout << "verbose: mode: ld\n";
+                // whether we should run in ld or libtool mode. If the mode
+                // has already been detected, we can skip this step.
+                if (!result._libtool_mode && !result._ld_mode) {
+                    if (filename.ends_with(".a")) {
+                        result._libtool_mode = true;
+                        if (log_level_at_least(settings::log_level::verbose)) {
+                            std::cout << "verbose: mode: libtool\n";
+                        }
+                    } else {
+                        result._ld_mode = true;
+                        if (log_level_at_least(settings::log_level::verbose)) {
+                            std::cout << "verbose: mode: ld\n";
+                        }
                     }
                 }
             } else if (arg == "-Xlinker") {
@@ -710,10 +713,10 @@ auto process_command_line(int argc, char** argv) {
                 }
             } else if (arg == "-target") {
                 result._ld_mode = true;
+                assert(!result._libtool_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
                     std::cout << "verbose: mode: ld\n";
                 }
-                assert(!result._libtool_mode);
             } else if (arg == "-lc++") {
                 // ignore the C++ standard library
             } else if (arg == "-lSystem") {

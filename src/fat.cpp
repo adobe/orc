@@ -7,8 +7,12 @@
 // identity
 #include "orc/fat.hpp"
 
+#include "orc/features.hpp"
+
 // system
+#if ORC_FEATURE(MACH_O)
 #include <mach-o/fat.h>
+#endif // ORC_FEATURE(MACH_O)
 
 /**************************************************************************************************/
 
@@ -17,6 +21,7 @@ void read_fat(const std::string& object_name,
               std::istream::pos_type end_pos,
               file_details details,
               callbacks callbacks) {
+#if ORC_FEATURE(MACH_O)
     auto header = read_pod<fat_header>(s);
     if (details._needs_byteswap) {
         endian_swap(header.magic);
@@ -59,6 +64,7 @@ void read_fat(const std::string& object_name,
             parse_file(object_name, s, s.tellg() + static_cast<std::streamoff>(size), callbacks);
         });
     }
+#endif // ORC_FEATURE(MACH_O)
 }
 
 /**************************************************************************************************/

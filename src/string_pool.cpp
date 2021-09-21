@@ -8,6 +8,7 @@
 #include "orc/string_pool.hpp"
 
 // stdc++
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <unordered_set>

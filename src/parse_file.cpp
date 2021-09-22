@@ -17,20 +17,20 @@
 // system
 #include <fcntl.h> // open
 #include <sys/mman.h>
-#include <unistd.h> // close#if ORC_FEATURE(MACH_O)
+#include <unistd.h> // close
 
 #if ORC_FEATURE(MACH_O)
 #include <mach-o/fat.h>
 #include <mach-o/loader.h>
 #else
-#define	MH_MAGIC 0xfeedface
-#define MH_CIGAM 0xcefaedfe
-#define MH_MAGIC_64 0xfeedfacf
-#define MH_CIGAM_64 0xcffaedfe
-#define FAT_MAGIC 0xcafebabe
-#define FAT_CIGAM 0xbebafeca
-#define FAT_MAGIC_64 0xcafebabf
-#define FAT_CIGAM_64 0xbfbafeca
+constexpr std::uint32_t MH_MAGIC = 0xfeedface;
+constexpr std::uint32_t MH_CIGAM = 0xcefaedfe;
+constexpr std::uint32_t MH_MAGIC_64 = 0xfeedfacf;
+constexpr std::uint32_t MH_CIGAM_64 = 0xcffaedfe;
+constexpr std::uint32_t FAT_MAGIC = 0xcafebabe;
+constexpr std::uint32_t FAT_CIGAM = 0xbebafeca;
+constexpr std::uint32_t FAT_MAGIC_64 = 0xcafebabf;
+constexpr std::uint32_t FAT_CIGAM_64 = 0xbfbafeca;
 #endif // ORC_FEATURE(MACH_O)
 
 // application

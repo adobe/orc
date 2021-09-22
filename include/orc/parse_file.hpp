@@ -7,7 +7,9 @@
 #pragma once
 
 // stdc++
+#include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <type_traits>
 
@@ -84,6 +86,12 @@ struct freader {
             } break;
             case std::ios::end: {
                 _p = _f + (size() - offset);
+            } break;
+            default: {
+                // GNU's libstdc++ has an end-of-options marker that the compiler
+                // will complain about as being unhandled here. It should *never*
+                // be used as a valid value for this enumeration.
+                assert(false);
             } break;
         }
     }

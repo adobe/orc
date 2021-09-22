@@ -7,16 +7,31 @@
 // identity
 #include "orc/parse_file.hpp"
 
+// application config
+#include "orc/features.hpp"
+
 // stdc++
 #include <bit>
 #include <cstdio>
 
 // system
 #include <fcntl.h> // open
-#include <mach-o/fat.h>
-#include <mach-o/loader.h>
 #include <sys/mman.h>
 #include <unistd.h> // close
+
+#if ORC_FEATURE(MACH_O)
+#include <mach-o/fat.h>
+#include <mach-o/loader.h>
+#else
+constexpr std::uint32_t MH_MAGIC = 0xfeedface;
+constexpr std::uint32_t MH_CIGAM = 0xcefaedfe;
+constexpr std::uint32_t MH_MAGIC_64 = 0xfeedfacf;
+constexpr std::uint32_t MH_CIGAM_64 = 0xcffaedfe;
+constexpr std::uint32_t FAT_MAGIC = 0xcafebabe;
+constexpr std::uint32_t FAT_CIGAM = 0xbebafeca;
+constexpr std::uint32_t FAT_MAGIC_64 = 0xcafebabf;
+constexpr std::uint32_t FAT_CIGAM_64 = 0xbfbafeca;
+#endif // ORC_FEATURE(MACH_O)
 
 // application
 #include "orc/ar.hpp"
@@ -67,6 +82,7 @@ file_details detect_file(freader& s) {
             if (result._needs_byteswap) {
                 endian_swap(cputype);
             }
+#if ORC_FEATURE(MACH_O)
             assert(((cputype & CPU_ARCH_ABI64) != 0) == result._is_64_bit);
             if (cputype == CPU_TYPE_X86) {
                 result._arch = arch::x86;
@@ -81,6 +97,7 @@ file_details detect_file(freader& s) {
             } else {
                 std::cerr << "WARN: Unknown Mach-O cputype\n";
             }
+#endif // ORC_FEATURE(MACH_O)
         }
 
         return result;

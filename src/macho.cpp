@@ -7,22 +7,10 @@
 // identity
 #include "orc/macho.hpp"
 
-// application config
-#include "orc/features.hpp"
-
-// system
-#if ORC_FEATURE(MACH_O)
-#include <mach-o/loader.h>
-#endif // ORC_FEATURE(MACH_O)
-
 // application
 #include "orc/dwarf.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
-
-/**************************************************************************************************/
-
-#if ORC_FEATURE(MACH_O)
 
 /**************************************************************************************************/
 
@@ -104,16 +92,11 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
 
 /**************************************************************************************************/
 
-#endif // ORC_FEATURE(MACH_O)
-
-/**************************************************************************************************/
-
 void read_macho(std::string object_name,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
                 callbacks callbacks) {
-#if ORC_FEATURE(MACH_O)
     callbacks._do_work([_object_name = std::move(object_name),
                         _s = std::move(s),
                         _details = std::move(details),
@@ -160,7 +143,6 @@ void read_macho(std::string object_name,
 
         dwarf.process();
     });
-#endif // ORC_FEATURE(MACH_O)
 }
 
 /**************************************************************************************************/

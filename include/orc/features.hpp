@@ -20,6 +20,5 @@
 // them leak on purpose, cutting our total execution time in half (or better.)
 
 #define ORC_PRIVATE_FEATURE_LEAKY_MEMORY() (1)
-#define ORC_PRIVATE_FEATURE_MACH_O() (defined(__MACH__))
 
 /**************************************************************************************************/

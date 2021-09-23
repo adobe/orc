@@ -7,26 +7,32 @@
 // identity
 #include "orc/macho.hpp"
 
-// application config
-#include "orc/features.hpp"
-
-// system
-#if ORC_FEATURE(MACH_O)
-#include <mach-o/loader.h>
-#endif // ORC_FEATURE(MACH_O)
-
 // application
 #include "orc/dwarf.hpp"
+#include "orc/mach_types.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
 
 /**************************************************************************************************/
 
-#if ORC_FEATURE(MACH_O)
+namespace {
 
 /**************************************************************************************************/
 
-namespace {
+struct section_64 {
+    char sectname[16]{0};
+    char segname[16]{0};
+    std::uint64_t addr{0};
+    std::uint64_t size{0};
+    std::uint32_t offset{0};
+    std::uint32_t align{0};
+    std::uint32_t reloff{0};
+    std::uint32_t nreloc{0};
+    std::uint32_t flags{0};
+    std::uint32_t reserved1{0};
+    std::uint32_t reserved2{0};
+    std::uint32_t reserved3{0};
+};
 
 /**************************************************************************************************/
 
@@ -55,6 +61,24 @@ void read_lc_segment_64_section(freader& s, const file_details& details, dwarf& 
 
 /**************************************************************************************************/
 
+using vm_prot_t = int;
+
+struct segment_command_64 {
+    std::uint32_t cmd{0};
+    std::uint32_t cmdsize{0};
+    char segname[16]{0};
+    std::uint64_t vmaddr{0};
+    std::uint64_t vmsize{0};
+    std::uint64_t fileoff{0};
+    std::uint64_t filesize{0};
+    vm_prot_t maxprot{0};
+    vm_prot_t initprot{0};
+    std::uint32_t nsects{0};
+    std::uint32_t flags{0};
+};
+
+/**************************************************************************************************/
+
 void read_lc_segment_64(freader& s, const file_details& details, dwarf& dwarf) {
     auto lc = read_pod<segment_command_64>(s);
     if (details._needs_byteswap) {
@@ -78,6 +102,13 @@ void read_lc_segment_64(freader& s, const file_details& details, dwarf& dwarf) {
 
 /**************************************************************************************************/
 
+struct load_command {
+    std::uint32_t cmd{0};
+    std::uint32_t cmdsize{0};
+};
+
+/**************************************************************************************************/
+
 void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
     auto command = temp_seek(s, [&] {
         auto command = read_pod<load_command>(s);
@@ -87,6 +118,8 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
         }
         return command;
     });
+
+    static constexpr std::uint32_t LC_SEGMENT_64 = 0x19;
 
     switch (command.cmd) {
         case LC_SEGMENT_64:
@@ -100,11 +133,30 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
 
 /**************************************************************************************************/
 
-} // namespace
+struct mach_header_64 {
+    std::uint32_t magic{0};
+    cpu_type_t cputype{0};
+    cpu_subtype_t cpusubtype{0};
+    std::uint32_t filetype{0};
+    std::uint32_t ncmds{0};
+    std::uint32_t sizeofcmds{0};
+    std::uint32_t flags{0};
+    std::uint32_t reserved{0};
+};
+
+struct mach_header {
+    std::uint32_t magic;
+    cpu_type_t cputype;
+    cpu_subtype_t cpusubtype;
+    std::uint32_t filetype;
+    std::uint32_t ncmds;
+    std::uint32_t sizeofcmds;
+    std::uint32_t flags;
+};
 
 /**************************************************************************************************/
 
-#endif // ORC_FEATURE(MACH_O)
+} // namespace
 
 /**************************************************************************************************/
 
@@ -113,7 +165,6 @@ void read_macho(std::string object_name,
                 std::istream::pos_type end_pos,
                 file_details details,
                 callbacks callbacks) {
-#if ORC_FEATURE(MACH_O)
     callbacks._do_work([_object_name = std::move(object_name),
                         _s = std::move(s),
                         _details = std::move(details),
@@ -160,7 +211,6 @@ void read_macho(std::string object_name,
 
         dwarf.process();
     });
-#endif // ORC_FEATURE(MACH_O)
 }
 
 /**************************************************************************************************/

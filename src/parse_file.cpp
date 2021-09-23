@@ -22,6 +22,7 @@
 // application
 #include "orc/ar.hpp"
 #include "orc/fat.hpp"
+#include "orc/mach_types.hpp"
 #include "orc/macho.hpp"
 
 /**************************************************************************************************/

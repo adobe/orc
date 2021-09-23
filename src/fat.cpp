@@ -6,7 +6,7 @@
 
 // identity
 #include "orc/fat.hpp"// application
-#include "orc/features.hpp"
+#include "orc/mach_types.hpp"
 
 /**************************************************************************************************/
 
@@ -15,25 +15,25 @@ namespace {
 /**************************************************************************************************/
 
 struct fat_header {
-    uint32_t    magic;        /* FAT_MAGIC or FAT_MAGIC_64 */
-    uint32_t    nfat_arch;    /* number of structs that follow */
+    std::uint32_t magic{0};
+    std::uint32_t nfat_arch{0};
 };
 
 struct fat_arch {
-    cpu_type_t    cputype;    /* cpu specifier (int) */
-    cpu_subtype_t    cpusubtype;    /* machine specifier (int) */
-    uint32_t    offset;        /* file offset to this object file */
-    uint32_t    size;        /* size of this object file */
-    uint32_t    align;        /* alignment as a power of 2 */
+    cpu_type_t cputype{0};
+    cpu_subtype_t cpusubtype{0};
+    std::uint32_t offset{0};
+    std::uint32_t size{0};
+    std::uint32_t align{0};
 };
 
 struct fat_arch_64 {
-    cpu_type_t    cputype;    /* cpu specifier (int) */
-    cpu_subtype_t    cpusubtype;    /* machine specifier (int) */
-    uint64_t    offset;        /* file offset to this object file */
-    uint64_t    size;        /* size of this object file */
-    uint32_t    align;        /* alignment as a power of 2 */
-    uint32_t    reserved;    /* reserved */
+    cpu_type_t cputype{0};
+    cpu_subtype_t cpusubtype{0};
+    std::uint64_t offset{0};
+    std::uint64_t size{0};
+    std::uint32_t align{0};
+    std::uint32_t reserved{0};
 };
 
 /**************************************************************************************************/

@@ -16,8 +16,11 @@ if (NOT DEFINED PROJECT_IS_TOP_LEVEL)
     unset(_has_parent)
 endif()
 
-
 option(ORC_BUILD_EXAMPLES "Build ORC example programs" ${PROJECT_IS_TOP_LEVEL})
+
+if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(ORC_BUILD_EXAMPLES FALSE)
+endif()
 
 if (NOT TARGET stlab::stlab)
     message(STATUS "ORC third-party: creating target 'stlab::stlab'...")

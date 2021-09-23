@@ -17,7 +17,7 @@
 // experimental switch that, when enabled, will allocate these large containers via `new`, and let
 // them leak intentionally. Since the destruction of these types is otherwise just to clean up
 // memory that we're about to let go of anyways with the termination of the application, we let
-// them leak on purpose, cutting our toMACH_Otal execution time in half (or better.)
+// them leak on purpose, cutting our total execution time in half (or better.)
 
 #define ORC_PRIVATE_FEATURE_LEAKY_MEMORY() (1)
 

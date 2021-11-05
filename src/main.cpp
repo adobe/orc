@@ -690,12 +690,12 @@ auto process_command_line(int argc, char** argv) {
                     if (filename.ends_with(".a")) {
                         result._libtool_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            std::cout << "verbose: mode: libtool\n";
+                            std::cout << "verbose: mode: libtool (by filename)\n";
                         }
                     } else {
                         result._ld_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            std::cout << "verbose: mode: ld\n";
+                            std::cout << "verbose: mode: ld (by filename)\n";
                         }
                     }
                 }
@@ -709,13 +709,13 @@ auto process_command_line(int argc, char** argv) {
                 result._libtool_mode = true;
                 assert(!result._ld_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    std::cout << "verbose: mode: libtool\n";
+                    std::cout << "verbose: mode: libtool (static)\n";
                 }
             } else if (arg == "-target") {
                 result._ld_mode = true;
                 assert(!result._libtool_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    std::cout << "verbose: mode: ld\n";
+                    std::cout << "verbose: mode: ld (target)\n";
                 }
             } else if (arg == "-lc++") {
                 // ignore the C++ standard library
@@ -838,11 +838,14 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 
     if (!exists(executable_path)) {
         throw std::runtime_error("Could not forward to linker: " + executable_path.string());
+    } else if (log_level_at_least(settings::log_level::verbose)) {
+        std::cout << "verbose: forwarding to " + executable_path.string() + "\n";
     }
 
     std::string arguments = executable_path.string();
     for (std::size_t i{1}; i < argc; ++i) {
-        arguments += std::string(" ") + argv[i];
+        // Gotta re-add the escape characters into our params that have spaces in them.
+        arguments += std::string(" ") + join(split(argv[i], " "), "\\ ");
     }
 
     // REVISIT: (fbrereto) We may need to capture/forward stderr here as well.

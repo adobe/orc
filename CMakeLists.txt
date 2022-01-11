@@ -50,6 +50,7 @@ if (NOT TARGET TBB::tbb)
         GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
     )
     set(TBB_TEST FALSE) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
+    set(BUILD_SHARED_LIBS OFF) # See https://github.com/oneapi-src/oneTBB/issues/297#issuecomment-772759422
     FetchContent_MakeAvailable(tbb)
 endif()
 

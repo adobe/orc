@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <fstream>
 
 /**************************************************************************************************/
 
@@ -48,6 +49,7 @@ struct globals {
     std::size_t _die_registered_count{0};
     std::atomic_size_t _die_processed_count{0};
     std::atomic_size_t _die_analyzed_count{0};
+    std::ofstream _fp;
 };
 
 /**************************************************************************************************/

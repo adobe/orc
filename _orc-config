@@ -3,6 +3,9 @@
 # indicating failure. `graceful_exit` can be useful for older applications that are looking to track
 # and/or reduce their ODR violations over time (versus enforcing zero violations.)
 #
+# Note that in the ORC output, the string "error" will be used if `graceful_exit` is `false`,
+# or "warning" if `grace_exit` is `true`. 
+#
 # The default value is `false`.
 
 graceful_exit = false
@@ -59,6 +62,13 @@ show_progress = false
 # The default value is `false`.
 
 standalone_mode = false
+
+# If defined, ORC will log output to the specified file. (Normal stream output 
+# is unaffected by the `output_file`.) 
+# 
+# The default value is undefined, and no file will be written.
+
+# output_file = "out.txt"
 
 # `print_object_file_list`, when true, will print the list of object files ORC would otherwise
 # process, and then it exits without failure.

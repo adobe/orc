@@ -50,6 +50,9 @@ template <class F>
 void ostream_safe(std::ostream& s, F&& f) {
     std::lock_guard<std::mutex> lock{ostream_safe_mutex()};
     std::forward<F>(f)(s);
+    if (globals::instance()._fp.is_open()) {
+        std::forward<F>(f)(globals::instance()._fp);
+    }
 }
 
 template <class F>
@@ -550,6 +553,16 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._print_object_file_list =
                 settings["print_object_file_list"].value_or(false);
 
+            if (settings["output_file"]) {
+                try {
+                    std::string fn = *settings["output_file"].value<std::string>();
+                    globals::instance()._fp.open(fn);
+                }
+                catch (const std::exception& e) {
+                    std::cout << "warning: Could not open output file: " << settings["output_file"] << "\n";
+                }
+            }
+
             if (auto log_level = settings["log_level"].value<std::string>()) {
                 const auto& level = *log_level;
                 if (level == "silent") {
@@ -637,9 +650,10 @@ auto find_artifact(std::string_view type,
         return canonical(candidate); // canonical requires the path exists
     }
 
-    // The call to std::cout here doesn't need to be threadsafe (too early)
     if (log_level_at_least(settings::log_level::warning)) {
-        std::cout << "warning: Could not find " << type << " '" << artifact << "'\n";
+        cout_safe([&](auto& s){
+            s << "warning: Could not find " << type << " '" << artifact << "'\n";
+        });
     }
 
     return std::filesystem::path();
@@ -776,23 +790,33 @@ auto epilogue(bool exception) {
 
     // If we were showing progress this session, take all the stored up ODRVs and output them
     if (settings::instance()._show_progress) {
-        std::cout << '\n';
-        std::cout << odrv_sstream().str();
+        cout_safe([&](auto& s){
+            s << '\n';
+            s << odrv_sstream().str();
+        });
     }
 
     if (log_level_at_least(settings::log_level::info)) {
-        std::cout << "info: ORC complete; " << g._odrv_count << " ODRVs reported\n";
+        cout_safe([&](auto& s){
+            s << "info: ORC complete " << g._odrv_count << " ODRVs reported\n";
+        });
 
         if (log_level_at_least(settings::log_level::verbose)) {
-            std::cout << "verbose: additional stats:\n"
-                      << "  " << g._object_file_count << " compilation units processed\n"
-                      << "  " << g._die_processed_count << " dies processed\n"
-                      << "  " << g._die_registered_count << " dies registered\n";
+            cout_safe([&](auto& s){
+            s   << "verbose: additional stats:\n"
+                << "  " << g._object_file_count << " compilation units processed\n"
+                << "  " << g._die_processed_count << " dies processed\n"
+                << "  " << g._die_registered_count << " dies registered\n";
+            });
         }
     }
 
     if (exception || g._odrv_count != 0) {
         return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (g._fp.is_open()) {
+        globals::instance()._fp.close();
     }
 
     return EXIT_SUCCESS;

@@ -208,6 +208,12 @@ T read_pod(freader& s) {
     return x;
 }
 
+template <>
+inline bool read_pod(freader& s) {
+    char x;
+    s.read(reinterpret_cast<char*>(&x), 1);
+    return x ? true : false;
+}
 /**************************************************************************************************/
 
 std::uint32_t uleb128(freader& s);

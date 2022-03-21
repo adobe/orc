@@ -115,7 +115,8 @@ std::uint32_t uleb128(freader& s) {
 
     while (true) {
         auto c = s.get();
-        result |= (c & 0x7f) << shift;
+        if (shift < 32) // shifts above 32 on uint32_t are undefined, but the s.get() needs to continue.
+            result |= (c & 0x7f) << shift;
         if (!(c & 0x80)) return result;
         shift += 7;
     }

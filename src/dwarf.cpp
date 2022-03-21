@@ -460,7 +460,9 @@ void dwarf::implementation::read_lines() {
 
 const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const {
     auto found = std::lower_bound(_abbreviations.begin(), _abbreviations.end(), code,
-                                  [](const auto& x, const auto& code) { return x._code < code; });
+                                  [](const auto& x, const auto& value) {
+                                        return x._code < value;
+                                  });
     if (found == _abbreviations.end() || found->_code != code) {
         throw std::runtime_error("abbrev not found: " + std::to_string(code));
     }

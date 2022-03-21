@@ -141,6 +141,9 @@ void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw:
     // So if C has more methods than A and B it may not be detected.
     if (settings._filter_redundant) {
         static std::set<std::size_t> unique_odrv_types;
+        static std::mutex unique_odrv_mutex;
+        
+        std::lock_guard guard(unique_odrv_mutex);        
         std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
         bool did_insert = unique_odrv_types.insert(symbol_hash).second;
         if (!did_insert) return; // We have already reported an instance of this.

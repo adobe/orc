@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
 
 include(FetchContent)
 
@@ -84,6 +84,33 @@ if (PROJECT_IS_TOP_LEVEL)
 endif()
 
 # This is the end of the ORC executable definition
+
+file(GLOB TEST_SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/test/src/*.cpp)
+list(REMOVE_ITEM SRC_FILES ${PROJECT_SOURCE_DIR}/src/main.cpp)
+add_executable(orc_test
+    ${SRC_FILES}
+    ${TEST_SRC_FILES}
+)
+add_executable(orc::test ALIAS orc_test)
+target_include_directories(orc_test
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(orc_test
+    PRIVATE
+        stlab::stlab
+        TBB::tbb
+        tomlplusplus::tomlplusplus
+)
+if (PROJECT_IS_TOP_LEVEL)
+    target_compile_options(orc_test PRIVATE -Wall -Werror)
+    set_target_properties(orc_test PROPERTIES XCODE_GENERATE_SCHEME ON)
+    if (CMAKE_GENERATOR MATCHES "Xcode")
+        set_property(TARGET orc_test PROPERTY XCODE_SCHEME_ARGUMENTS ${PROJECT_SOURCE_DIR}/test/battery/)
+    endif()
+endif()
+
+# This is the end of the ORC test suite app
 
 # This variable can be used by parent projects to import the link_via_orc helper function with
 # include(${ORC_HELPERS})

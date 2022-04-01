@@ -20,4 +20,5 @@ jobs:
           ls -alF
       - name: Build
         run: |
+          cd build
           make

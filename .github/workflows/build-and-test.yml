@@ -13,3 +13,11 @@ jobs:
         run: |
           ls ${{ github.workspace }}
       - run: echo "🍏 -- ${{ job.status }}"
+      - name: Build Project Files
+        run: |
+          mkdir build
+          cd build
+          cmake ..
+      - name: Build
+        run: |
+          make

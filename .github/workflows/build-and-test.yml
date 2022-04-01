@@ -35,10 +35,3 @@ jobs:
       - name: 🏃 Test App (Address Sanitizer)
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ Test App (Thread Sanitizer)
-        run: |
-          cd build
-          xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
-      - name: 🏃 Test App (Thread Sanitizer)
-        run: |
-          /usr/bin/time -l ./build/Release/orc_test ./test/battery

@@ -349,7 +349,7 @@ void update_progress() {
 
 /**************************************************************************************************/
 
-auto& global_die_collection() {
+auto& unsafe_global_die_collection() {
 #if ORC_FEATURE(LEAKY_MEMORY)
     static std::list<dies>* collection_s = new std::list<dies>;
     return *collection_s;
@@ -357,6 +357,13 @@ auto& global_die_collection() {
     static std::list<dies> collection_s;
     return collection_s;
 #endif
+}
+
+template <class F>
+auto with_global_die_collection(F&& f) {
+    static std::mutex m;
+    std::lock_guard<std::mutex> lock(m);
+    return f(unsafe_global_die_collection());
 }
 
 /**************************************************************************************************/
@@ -380,8 +387,10 @@ void register_dies(dies die_vector) {
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
     // pointers we use will stay valid for the lifetime of the application.
-    global_die_collection().push_back(std::move(die_vector));
-    auto& dies = global_die_collection().back();
+    dies& dies = *with_global_die_collection([&](auto& collection){
+        collection.push_back(std::move(die_vector));
+        return --collection.end();
+    });
 
     for (auto& d : dies) {
         // save for debugging. Useful to watch for a specific symbol.
@@ -635,7 +644,9 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
 void orc_reset() {
     global_die_map().clear();
-    global_die_collection().clear();
+    with_global_die_collection([](auto& collection){
+        collection.clear();
+    });
 }
 
 /**************************************************************************************************/

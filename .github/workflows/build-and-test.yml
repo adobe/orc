@@ -1,11 +1,14 @@
 name: ORC Build and Test
-on: [push]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
 jobs:
   build-and-test:
     runs-on: macos-latest
     steps:
-      - run: |
-          echo "🚧: ${{ github.event_name }}; 🔎: ${{ github.repository }}/${{ github.ref }}; 🖥️: ${{ runner.os }}"
       - name: ⬇️ sources
         uses: actions/checkout@v3
       - name: 🏗️ project files
@@ -13,32 +16,32 @@ jobs:
           mkdir build
           cd build
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: 🛠️ Debug
+      - name: 🛠️ debug
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Debug
-      - name: 🛠️ Release
+      - name: 🛠️ release
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Release
-      - name: 🛠️ Test App
+      - name: 🛠️ test app
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release
-      - name: 🏃 Test App
+      - name: 🏃 test app
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ Test App (Address Sanitizer)
+      - name: 🛠️ test app (address sanitizer)
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableAddressSanitizer YES
-      - name: 🏃 Test App (Address Sanitizer)
+      - name: 🏃 test app (address sanitizer)
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ Test App (Thread Sanitizer)
+      - name: 🛠️ test app (thread sanitizer)
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
-      - name: 🏃 Test App (Thread Sanitizer)
+      - name: 🏃 test app (thread sanitizer)
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery

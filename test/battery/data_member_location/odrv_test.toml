@@ -13,21 +13,3 @@
 
 [[odrv]]
     category = "member:data_member_location"
-
-[compile_flags]
-
-# compiler flags for all source files
-
-[orc_test_flags]
-
-# Preserve the object files made by the test app.
-# Default: false
-preserve_object_files = false
-
-# Skip over this test
-# Default: false
-disable = false
-
-[orc_flags]
-
-# Flags specific for ORC

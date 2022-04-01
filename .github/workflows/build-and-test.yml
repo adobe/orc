@@ -1,9 +1,5 @@
 name: GitHub Actions Demo
-on:
-  push:
-    branches: [ $default-branch ]
-  pull_request:
-    branches: [ $default-branch ]
+on: [push]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest

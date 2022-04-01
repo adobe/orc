@@ -126,15 +126,6 @@ if (ORC_BUILD_EXAMPLES)
 
     include(${ORC_HELPERS})
 
-    ##### example app: size_t
-
-    add_executable(example_size_t
-                   ${PROJECT_SOURCE_DIR}/examples/size_t/main.cpp
-                   ${PROJECT_SOURCE_DIR}/examples/size_t/one.cpp
-                   ${PROJECT_SOURCE_DIR}/examples/size_t/two.cpp
-    )
-    link_via_orc(example_size_t)
-
     ##### example app: vtable
 
     add_executable(example_vtable
@@ -146,19 +137,4 @@ if (ORC_BUILD_EXAMPLES)
     )
     link_via_orc(example_vtable)
 
-    ##### example app: typedef
-
-    add_executable(example_typedef
-                   ${PROJECT_SOURCE_DIR}/examples/typedef/main.cpp
-                   ${PROJECT_SOURCE_DIR}/examples/typedef/alt.cpp
-    )
-    link_via_orc(example_typedef)
-
-    ##### example app: function
-
-    add_executable(example_function
-                   ${PROJECT_SOURCE_DIR}/examples/function/main.cpp
-                   ${PROJECT_SOURCE_DIR}/examples/function/alt.cpp
-    )
-    link_via_orc(example_function)
 endif()

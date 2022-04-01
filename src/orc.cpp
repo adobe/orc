@@ -4,6 +4,9 @@
 // NOTICE: Adobe permits you to use, modify, and distribute this file in accordance with the terms
 // of the Adobe license agreement accompanying it.
 
+// identity
+#include "orc/orc.hpp"
+
 // stdc++
 #include <array>
 #include <cxxabi.h>
@@ -62,23 +65,6 @@ void cout_safe(F&& f) {
 
 /**************************************************************************************************/
 
-const char* problem_prefix() { return settings::instance()._graceful_exit ? "warning" : "error"; }
-
-/**************************************************************************************************/
-
-const char* demangle(const char* x) {
-    // The returned char* is good until the next call to demangle() on the same thread.
-    // See: https://gcc.gnu.org/onlinedocs/libstdc++/libstdc++-html-USERS-4.3/a01696.html
-    thread_local std::unique_ptr<char, void (*)(void*)> hold{nullptr, &free};
-    int status = 0;
-    char* p = abi::__cxa_demangle(x, nullptr, nullptr, &status);
-    if (!p || status != 0) return x;
-    hold.reset(p);
-    return p;
-}
-
-/**************************************************************************************************/
-
 std::string_view path_to_symbol(std::string_view path) {
     // lop off the prefix. In most cases it'll be "::[u]::" - in some it'll be just "::[u]" (in
     // which case there is no symbol path - it's a top-level compilation unit.) We assume the path
@@ -98,71 +84,22 @@ bool sorted_has(const Container& c, const T& x) {
 
 /**************************************************************************************************/
 
-auto& odrv_sstream() {
-    assert(settings::instance()._show_progress);
-    static std::stringstream s;
-    return s;
-}
-
-std::ostream& odrv_ostream() {
-    if (settings::instance()._show_progress) {
-        return odrv_sstream();
-    } else {
-        return std::cout;
-    }
+auto& unsafe_odrv_records() {
+    static std::vector<odrv_report> records;
+    return records;
 }
 
 /**************************************************************************************************/
 
-void report_odrv(const std::string_view& symbol, const die& a, const die& b, dw::at name) {
-    std::string odrv_category("tag");
-
-    if (name != dw::at::orc_tag) {
-        odrv_category = to_string(a._tag) + std::string(":") + to_string(name);
-    }
-
-    auto& settings = settings::instance();
-    bool do_report{true};
-
-    if (!settings._violation_ignore.empty()) {
-        // Report everything except the stuff on the ignore list
-        do_report = !sorted_has(settings._violation_ignore, odrv_category);
-    } else if (!settings._violation_report.empty()) {
-        // Report nothing except the the stuff on the report list
-        do_report = sorted_has(settings._violation_report, odrv_category);
-    }
-
-    if (!do_report) return;
-
-    // The number of unique ODRVs is tricky.
-    // If A, B, and C are types, and C is different, then if we scan:
-    // A, B, then C -> 1 ODRV, but C, then A, B -> 2 ODRVs. Complicating
-    // this is that (as this comment is written) we don't detect supersets.
-    // So if C has more methods than A and B it may not be detected.
-    if (settings._filter_redundant) {
-        static std::set<std::size_t> unique_odrv_types;
-        static std::mutex unique_odrv_mutex;
-        
-        std::lock_guard guard(unique_odrv_mutex);        
-        std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
-        bool did_insert = unique_odrv_types.insert(symbol_hash).second;
-        if (!did_insert) return; // We have already reported an instance of this.
-    }
-
-    ostream_safe(odrv_ostream(), [&](auto& s){
-        s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
-          << demangle(symbol.data()) << "`\n";
-        s << "    " << a << '\n';
-        s << "    " << b << '\n';
-        s << "\n";
+void record_odrv(const std::string_view& symbol, const die& a, const die& b, dw::at name) {
+    static std::mutex record_mutex;
+    std::lock_guard<std::mutex> lock(record_mutex);
+    unsafe_odrv_records().push_back(odrv_report{
+        symbol,
+        a,
+        b,
+        name
     });
-
-    ++globals::instance()._odrv_count;
-
-    if (settings::instance()._max_violation_count > 0 &&
-        globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-        throw std::runtime_error("ODRV limit reached");
-    }
 }
 
 /**************************************************************************************************/
@@ -274,8 +211,6 @@ void resolve_type_attribute(const dies& dies, die& d) { // REVISIT (fbrereto): d
 /**************************************************************************************************/
 bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_die_conflict(const die& x, const die& y) {
-    if (x._tag != y._tag) return dw::at::orc_tag;
-
     const auto& yfirst = y.begin();
     const auto& ylast = y.end();
 
@@ -355,7 +290,7 @@ void enforce_odr(const std::string_view& symbol, const die& x, const die& y) {
     auto conflict_name = find_die_conflict(x, y);
 
     if (conflict_name != dw::at::none) {
-        report_odrv(symbol, x, y, conflict_name);
+        record_odrv(symbol, x, y, conflict_name);
     }
 }
 
@@ -414,18 +349,39 @@ void update_progress() {
 
 /**************************************************************************************************/
 
+auto& global_die_collection() {
+#if ORC_FEATURE(LEAKY_MEMORY)
+    static std::list<dies>* collection_s = new std::list<dies>;
+    return *collection_s;
+#else
+    static std::list<dies> collection_s;
+    return collection_s;
+#endif
+}
+
+/**************************************************************************************************/
+
+auto& global_die_map() {
+    using map_type = tbb::concurrent_unordered_map<std::size_t, const die*>;
+
+#if ORC_FEATURE(LEAKY_MEMORY)
+    static map_type* map_s = new map_type;
+    return *map_s;
+#else
+    static map_type map_s;
+    return map_s;
+#endif
+}
+
+/**************************************************************************************************/
+
 void register_dies(dies die_vector) {
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
     // pointers we use will stay valid for the lifetime of the application.
-#if ORC_FEATURE(LEAKY_MEMORY)
-    auto& dies = *(new decltype(die_vector)(std::move(die_vector)));
-#else
-    static std::list<dies> dies_collection;
-    dies_collection.push_back(std::move(die_vector));
-    auto& dies = dies_collection.back();
-#endif
+    global_die_collection().push_back(std::move(die_vector));
+    auto& dies = global_die_collection().back();
 
     for (auto& d : dies) {
         // save for debugging. Useful to watch for a specific symbol.
@@ -440,6 +396,7 @@ void register_dies(dies die_vector) {
         auto should_skip = skip_die(dies, d, symbol);
 
         if (settings::instance()._print_symbol_paths) {
+            // This is all horribly broken, especially now that we're calling this from multiple threads.
             static pool_string last_object_file_s;
 
             cout_safe([&](auto& s){
@@ -464,14 +421,7 @@ void register_dies(dies die_vector) {
 
         resolve_reference_attributes(dies, d);
 
-        using map_type = tbb::concurrent_unordered_map<std::size_t, const die*>;
-
-#if ORC_FEATURE(LEAKY_MEMORY)
-        static map_type& die_map = *(new map_type());
-#else
-        static map_type die_map;
-#endif
-        auto result = die_map.insert(std::make_pair(d._hash, &d));
+        auto result = global_die_map().insert(std::make_pair(d._hash, &d));
         if (result.second) {
             ++globals::instance()._die_registered_count;
             continue;
@@ -494,47 +444,6 @@ struct cmdline_results {
     bool _ld_mode{false};
     bool _libtool_mode{false};
 };
-
-/**************************************************************************************************/
-
-auto epilogue(bool exception) {
-    // The calls to std::cout in this routine don't need to be threadsafe (too late)
-
-    const auto& g = globals::instance();
-
-    // If we were showing progress this session, take all the stored up ODRVs and output them
-    if (settings::instance()._show_progress) {
-        cout_safe([&](auto& s){
-            s << '\n';
-            s << odrv_sstream().str();
-        });
-    }
-
-    if (log_level_at_least(settings::log_level::info)) {
-        cout_safe([&](auto& s){
-            s << "info: ORC complete " << g._odrv_count << " ODRVs reported\n";
-        });
-
-        if (log_level_at_least(settings::log_level::verbose)) {
-            cout_safe([&](auto& s){
-            s   << "verbose: additional stats:\n"
-                << "  " << g._object_file_count << " compilation units processed\n"
-                << "  " << g._die_processed_count << " dies processed\n"
-                << "  " << g._die_registered_count << " dies registered\n";
-            });
-        }
-    }
-
-    if (exception || g._odrv_count != 0) {
-        return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
-    }
-
-    if (g._fp.is_open()) {
-        globals::instance()._fp.close();
-    }
-
-    return EXIT_SUCCESS;
-}
 
 /**************************************************************************************************/
 
@@ -618,12 +527,85 @@ void do_work(std::function<void()> f){
 
 /**************************************************************************************************/
 
+const char* problem_prefix() { return settings::instance()._graceful_exit ? "warning" : "error"; }
+
+/**************************************************************************************************/
+
+const char* demangle(const char* x) {
+    // The returned char* is good until the next call to demangle() on the same thread.
+    // See: https://gcc.gnu.org/onlinedocs/libstdc++/libstdc++-html-USERS-4.3/a01696.html
+    thread_local std::unique_ptr<char, void (*)(void*)> hold{nullptr, &free};
+    int status = 0;
+    char* p = abi::__cxa_demangle(x, nullptr, nullptr, &status);
+    if (!p || status != 0) return x;
+    hold.reset(p);
+    return p;
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
 
-int orc_process(const std::vector<std::filesystem::path>& file_list)
-try {
+std::string odrv_report::category() const {
+    return to_string(_a._tag) + std::string(":") + to_string(_name);
+}
+
+/**************************************************************************************************/
+
+std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
+    const std::string_view& symbol = report._symbol;
+    const die& a = report._a;
+    const die& b = report._b;
+    auto& settings = settings::instance();
+    std::string odrv_category(report.category());
+    bool do_report{true};
+
+    if (!settings._violation_ignore.empty()) {
+        // Report everything except the stuff on the ignore list
+        do_report = !sorted_has(settings._violation_ignore, odrv_category);
+    } else if (!settings._violation_report.empty()) {
+        // Report nothing except the the stuff on the report list
+        do_report = sorted_has(settings._violation_report, odrv_category);
+    }
+
+    if (!do_report) return s;
+
+    // The number of unique ODRVs is tricky.
+    // If A, B, and C are types, and C is different, then if we scan:
+    // A, B, then C -> 1 ODRV, but C, then A, B -> 2 ODRVs. Complicating
+    // this is that (as this comment is written) we don't detect supersets.
+    // So if C has more methods than A and B it may not be detected.
+    if (settings._filter_redundant) {
+        static std::set<std::size_t> unique_odrv_types;
+        static std::mutex unique_odrv_mutex;
+        
+        std::lock_guard guard(unique_odrv_mutex);
+        std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
+        bool did_insert = unique_odrv_types.insert(symbol_hash).second;
+        if (!did_insert) return s; // We have already reported an instance of this.
+    }
+
+    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+      << demangle(symbol.data()) << "`\n";
+    s << "    " << a << '\n';
+    s << "    " << b << '\n';
+    s << "\n";
+
+    ++globals::instance()._odrv_count;
+
+    if (settings::instance()._max_violation_count > 0 &&
+        globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
+        throw std::runtime_error("ODRV limit reached");
+    }
+
+    return s;
+}
+
+/**************************************************************************************************/
+
+std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -642,13 +624,18 @@ try {
 
     work().wait();
 
-    return epilogue(false);
-} catch (const std::exception& error) {
-    std::cerr << problem_prefix() << ": " << error.what() << '\n';
-    return epilogue(true);
-} catch (...) {
-    std::cerr << problem_prefix() << ": unknown\n";
-    return epilogue(true);
+    // Instead of moving the records, we swap with an empty vector to keep the records well-formed
+    // in case another orc processing pass is desired.
+    std::vector<odrv_report> result;
+    std::swap(result, unsafe_odrv_records());
+    return result;
+}
+
+/**************************************************************************************************/
+
+void orc_reset() {
+    global_die_map().clear();
+    global_die_collection().clear();
 }
 
 /**************************************************************************************************/

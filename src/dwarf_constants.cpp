@@ -339,8 +339,6 @@ const char* to_string(at attr) {
         case at::apple_objc_direct: return "apple_objc_direct";
         case at::apple_sdk: return "apple_sdk";
         case at::hi_user: return "hi_user";
-
-        case at::orc_tag: return "tag";
     }
 }
 

@@ -493,13 +493,17 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("ORC could not find files to process");
     }
 
-    return orc_process(file_list);
+    for (const auto& report : orc_process(file_list)) {
+        std::cout << report << '\n';
+    }
+
+    return epilogue(false);
 } catch (const std::exception& error) {
     std::cerr << "Fatal error: " << error.what() << '\n';
-    return EXIT_FAILURE;
+    return epilogue(true);
 } catch (...) {
     std::cerr << "Fatal error: unknown\n";
-    return EXIT_FAILURE;
+    return epilogue(false);
 }
 
 /**************************************************************************************************/

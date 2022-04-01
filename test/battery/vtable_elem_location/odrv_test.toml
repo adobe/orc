@@ -1,0 +1,24 @@
+[[source]]
+    name = "one.cpp"
+    obj = "one"
+[[source]]
+    name = "two.cpp"
+    flags = [ ]
+
+[[odrv]]
+    category = "subprogram:vtable_elem_location"
+    linkage_name = "_ZNK6object3apiEv"
+
+[compile_flags]
+
+# compiler flags for all source files
+
+[orc_test_flags]
+
+# Preserve the object files made by the test app.
+# Default: false
+preserve_object_files = true
+
+[orc_flags]
+
+# Flags specific for ORC

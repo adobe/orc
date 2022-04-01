@@ -68,7 +68,7 @@ struct attribute_value {
 
     void string(pool_string x) {
         _type |= type::string;
-        _string = std::move(x);
+        _string = x;
     }
 
     const auto& string() const {
@@ -188,7 +188,7 @@ struct die {
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
     pool_string _object_file;
-    std::string _path;
+    pool_string _path;
     attribute* _attributes;
     std::size_t _attributes_size{0};
     std::size_t _hash{0};

@@ -189,7 +189,7 @@ struct file_name {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d) {
-    return hash_combine(0, d._arch, d._tag, d._path);
+    return hash_combine(0, d._arch, d._tag, d._path.hash());
 };
 
 /**************************************************************************************************/
@@ -845,7 +845,7 @@ die dwarf::implementation::abbreviation_to_die(std::size_t die_address, std::uin
 
     path_identifier_set(die_identifier(result));
 
-    result._path = qualified_symbol_name(result);
+    result._path = empool(std::string_view(qualified_symbol_name(result)));
 
     return result;
 }

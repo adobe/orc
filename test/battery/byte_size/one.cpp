@@ -3,6 +3,4 @@ struct object {
     bool _y;
 };
 
-int one(const object& o) {
-    return o._x;
-}
+int one(const object& o) { return o._x; }

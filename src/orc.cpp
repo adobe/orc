@@ -522,15 +522,25 @@ auto& work() {
 /**************************************************************************************************/
 
 void do_work(std::function<void()> f){
+    auto doit = [](auto&& f){
+        try {
+            f();
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+        } catch (...) {
+            std::cerr << "unknown exception caught" << '\n';
+        }
+    };
+
     if (!settings::instance()._parallel_processing) {
-        f();
+        doit(f);
         return;
     }
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _f = std::move(f)] {
-        _f();
+    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
+        _doit(_f);
     });
 }
 

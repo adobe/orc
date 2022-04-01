@@ -40,3 +40,9 @@ jobs:
       - name: 🏃 orc_test w/ TSan
         run: |
           ./build/Release/orc_test ./test/battery
+      - name: 🛠️ orc_test w/ UBSan
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
+      - name: 🏃 orc_test w/ UBSan
+        run: |
+          ./build/Release/orc_test ./test/battery

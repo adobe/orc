@@ -1,9 +1,15 @@
 [[source]]
-    path = "one.cpp"
-    obj = "one"
+    path = "src.cpp"
+    object_file_name = "with"
+    flags = [
+        "-D'OPTIONAL_API()=1'"
+    ]
 [[source]]
-    path = "two.cpp"
-    flags = [ ]
+    path = "src.cpp"
+    object_file_name = "without"
+    flags = [
+        "-D'OPTIONAL_API()=0'"
+    ]
 
 [[odrv]]
     category = "subprogram:vtable_elem_location"
@@ -17,7 +23,7 @@
 
 # Preserve the object files made by the test app.
 # Default: false
-preserve_object_files = true
+preserve_object_files = false
 
 [orc_flags]
 

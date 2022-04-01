@@ -17,7 +17,6 @@ jobs:
           mkdir build
           cd build
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
-          ls -alF
       - name: Build ORC Debug
         run: |
           cd build
@@ -32,5 +31,18 @@ jobs:
           xcodebuild -scheme orc_test -configuration Release
       - name: Run ORC Test App
         run: |
-          cd build/Release
-          /usr/bin/time -l ./orc_test ../../test/battery
+          /usr/bin/time -lh ./build/Release/orc_test ./test/battery
+      - name: Build ORC Test App (Address Sanitizer)
+        run: |
+          cd build
+          xcodebuild -scheme orc_test -configuration Release -enableAddressSanitizer YES
+      - name: Run ORC Test App (Address Sanitizer)
+        run: |
+          /usr/bin/time -lh ./build/Release/orc_test ./test/battery
+      - name: Build ORC Test App (Thread Sanitizer)
+        run: |
+          cd build
+          xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
+      - name: Run ORC Test App (Thread Sanitizer)
+        run: |
+          /usr/bin/time -lh ./build/Release/orc_test ./test/battery

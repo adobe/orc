@@ -1,4 +1,4 @@
-name: ORC Build and Test
+name: Build and Test
 on:
   push:
     branches:
@@ -6,7 +6,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
-  build-and-test:
+  "Build and Test":
     runs-on: macos-latest
     steps:
       - name: ⬇️ sources
@@ -18,30 +18,25 @@ jobs:
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ orc debug
         run: |
-          cd build
-          xcodebuild -quiet -scheme orc_orc -configuration Debug
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
       - name: 🛠️ orc release
         run: |
-          cd build
-          xcodebuild -quiet -scheme orc_orc -configuration Release
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
       - name: 🛠️ orc_test
         run: |
-          cd build
-          xcodebuild -quiet -scheme orc_test -configuration Release
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
       - name: 🏃 orc_test
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ ASan
         run: |
-          cd build
-          xcodebuild -quiet -scheme orc_test -configuration Release -enableAddressSanitizer YES
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ ASan
         run: |
           ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ TSan
         run: |
-          cd build
-          xcodebuild -quiet -scheme orc_test -configuration Release -enableThreadSanitizer YES
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ TSan
         run: |
           ./build/Release/orc_test ./test/battery

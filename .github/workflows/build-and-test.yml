@@ -1,23 +1,23 @@
-name: GitHub Actions Demo
+name: ORC Build and Test
 on: [push]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "🎉 -- ${{ github.event_name }}"
-      - run: echo "🖥️ -- ${{ runner.os }}"
-      - run: echo "🔎 -- repository is $ {{ github.repository }}; branch is ${{ github.ref }}"
+      - run: |
+          echo "🚧: ${{ github.event_name }}"
+      - run: |
+          echo "🖥️: ${{ runner.os }}"
+      - run: |
+          echo "🔎: repository: ${{ github.repository }}; branch: ${{ github.ref }}"
       - name: Checkout
         uses: actions/checkout@v3
-      - name: List files in the repository
-        run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 -- ${{ job.status }}"
-      - name: Build Project Files
+      - name: Project file setup
         run: |
           mkdir build
           cd build
           cmake ..
+          ls -alF
       - name: Build
         run: |
           make

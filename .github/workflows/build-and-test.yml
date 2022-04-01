@@ -16,32 +16,32 @@ jobs:
           mkdir build
           cd build
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: 🛠️ debug
+      - name: 🛠️ orc debug
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Debug
-      - name: 🛠️ release
+      - name: 🛠️ orc release
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Release
-      - name: 🛠️ test app
+      - name: 🛠️ orc_test
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release
-      - name: 🏃 test app
+      - name: 🏃 orc_test
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ test app (address sanitizer)
+      - name: 🛠️ orc_test w/ ASan
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableAddressSanitizer YES
-      - name: 🏃 test app (address sanitizer)
+      - name: 🏃 orc_test w/ ASan
         run: |
-          /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ test app (thread sanitizer)
+          ./build/Release/orc_test ./test/battery
+      - name: 🛠️ orc_test w/ TSan
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
-      - name: 🏃 test app (thread sanitizer)
+      - name: 🏃 orc_test w/ TSan
         run: |
-          /usr/bin/time -l ./build/Release/orc_test ./test/battery
+          ./build/Release/orc_test ./test/battery

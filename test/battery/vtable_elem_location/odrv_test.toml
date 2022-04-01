@@ -4,6 +4,7 @@
     flags = [
         "-D'OPTIONAL_API()=1'"
     ]
+
 [[source]]
     path = "src.cpp"
     object_file_name = "without"

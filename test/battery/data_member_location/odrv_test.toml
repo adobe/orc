@@ -4,6 +4,7 @@
     flags = [
         "-D'OPTIONAL_STUFF()=1'"
     ]
+
 [[source]]
     path = "src.cpp"
     object_file_name = "without"
@@ -13,3 +14,4 @@
 
 [[odrv]]
     category = "member:data_member_location"
+    symbol = "object::_y"

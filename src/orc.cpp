@@ -573,6 +573,27 @@ std::string odrv_report::category() const {
 
 /**************************************************************************************************/
 
+pool_string odrv_report::attribute_string(dw::at name) const {
+    if (!_a.has_attribute(name) || !_b.has_attribute(name)) {
+        throw std::runtime_error(std::string("Missing attribute: ") + to_string(name));
+    }
+
+    if (!_a.attribute_has_string(name) || !_b.attribute_has_string(name)) {
+        throw std::runtime_error(std::string("Attribute type mismatch: ") + to_string(name));
+    }
+
+    auto a_value = _a.attribute_string(name);
+    auto b_value = _b.attribute_string(name);
+
+    if (a_value != b_value) {
+        throw std::runtime_error(std::string("Attribute value mismatch: ") + to_string(name));
+    }
+
+    return a_value;
+}
+
+/**************************************************************************************************/
+
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     const die& a = report._a;

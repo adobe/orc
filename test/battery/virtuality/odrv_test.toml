@@ -1,0 +1,30 @@
+[[source]]
+    path = "src.cpp"
+    object_file_name = "public"
+    flags = [
+        "-D'ORC_TEST_ACCESS=public'",
+        "--std=c++17"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "private"
+    flags = [
+        "-D'ORC_TEST_ACCESS=private'",
+        "--std=c++17"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "protected"
+    flags = [
+        "-D'ORC_TEST_ACCESS=protected'",
+        "--std=c++17"
+    ]
+
+[[odrv]]
+    category = "subprogram:virtuality"
+
+[orc_test_flags]
+
+disable = true

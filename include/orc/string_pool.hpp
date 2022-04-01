@@ -27,6 +27,7 @@ struct pool_string {
     std::filesystem::path allocate_path() const { return std::filesystem::path(_s); }
 
     auto hash() const { return _h; }
+    auto string() const { return _s; }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {
         return x._h == y._h;

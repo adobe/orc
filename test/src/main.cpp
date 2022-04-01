@@ -3,6 +3,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <unordered_map>
 
 // posix
 #include <fcntl.h>
@@ -93,9 +94,34 @@ auto path_to_clang() {
 /**************************************************************************************************/
 
 struct expected_odrv {
-    std::string _category;
-    std::string _linkage_name;
+    std::unordered_map<std::string, std::string> _map;
+
+    const std::string& operator[](const std::string& key) const {
+        auto found = _map.find(key);
+        if (found == _map.end()) {
+            static const std::string no_entry;
+            return no_entry;
+        }
+        return found->second;
+    }
+
+    const std::string& category() const { return (*this)["category"]; }
+    const std::string& symbol() const { return (*this)["symbol"]; }
+    const std::string& linkage_name() const { return (*this)["linkage_name"]; }
 };
+
+std::ostream& operator<<(std::ostream& s, const expected_odrv& x) {
+    // map is unordered, so we have to sort the keys...
+    std::vector<std::string> keys;
+    for (const auto& entry : x._map) {
+        keys.push_back(entry.first);
+    }
+    std::sort(keys.begin(), keys.end());
+    for (const auto& key : keys) {
+        s << "    " << key << ": " << x._map.find(key)->second << '\n';
+    }
+    return s;
+}
 
 /**************************************************************************************************/
 
@@ -201,7 +227,7 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
             throw std::runtime_error("unexpected compilation failure");
         }
         object_files.emplace_back(std::move(temp_path));
-        std::cout << "    " << object_files.back().filename() << '\n';
+        std::cout << "    " << unit._src.filename() << " -> " << object_files.back().filename() << '\n';
     }
     return object_files;
 }
@@ -222,20 +248,39 @@ std::vector<expected_odrv> derive_expected_odrvs(const std::filesystem::path& ho
         const toml::table& src = *odrv_ptr;
         expected_odrv odrv;
 
-        std::optional<std::string_view> category = src["category"].value<std::string_view>();
-        if (!category) {
-            throw std::runtime_error("Missing required odrv key \"category\"");
+        for (const auto& pair : src) {
+            if (!pair.second.is_string()) continue;
+            odrv._map[pair.first] = *pair.second.value<std::string>();
         }
-        odrv._category = *category;
 
-        if (std::optional<std::string_view> linkage_name =
-                src["linkage_name"].value<std::string_view>()) {
-            odrv._linkage_name = *linkage_name;
+        if (odrv._map.count("category") == 0) {
+            throw std::runtime_error("Missing required odrv key \"category\"");
         }
 
         result.push_back(odrv);
     }
     return result;
+}
+
+/**************************************************************************************************/
+
+bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
+    if (odrv.category() != report.category()) {
+        return false;
+    }
+
+    const auto& symbol = odrv.symbol();
+    if (!symbol.empty() && symbol != report._symbol) {
+        return false;
+    }
+
+    const auto linkage_name = odrv.linkage_name();
+    if (!linkage_name.empty()) {
+        auto report_linkage_name = report.attribute_string(dw::at::linkage_name);
+        if (linkage_name != report_linkage_name.string())
+            return false;
+    }
+    return true;
 }
 
 /**************************************************************************************************/
@@ -281,7 +326,7 @@ void run_battery_test(const std::filesystem::path& home) {
     orc_reset();
     auto reports = orc_process(object_files);
 
-    std::cout << reports.size() << " ODRV(s) reported\n";
+    std::cout << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
 
     // At this point, the reports.size() should match the expected_odrvs.size()
     bool unexpected_result = false;
@@ -291,21 +336,31 @@ void run_battery_test(const std::filesystem::path& home) {
         for (const auto& report : reports) {
             auto found =
                 std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
-                             [&](const auto& odrv) { return odrv._category == report.category(); });
+                             [&](const auto& odrv) {
+                        return odrv_report_match(odrv, report);
+                });
 
             if (found == expected_odrvs.end()) {
                 unexpected_result = true;
                 break;
             }
 
-            std::cout << "Found expected ODRV: " << report.category() << "\n";
+            std::cout << "    Found expected ODRV: " << report.category() << "\n";
         }
     }
 
     if (unexpected_result) {
+        std::cerr << "Reported ODRV(s):\n";
+
         // If there's an error in the test, dump what we've found to assist debugging.
         for (const auto& report : reports) {
             std::cout << report << '\n';
+        }
+
+        std::cerr << "Expected ODRV(s):\n";
+        std::size_t count{0};
+        for (const auto& expected : expected_odrvs) {
+            std::cout << ++count << ":\n" << expected << '\n';
         }
 
         throw std::runtime_error("ODRV count mismatch");

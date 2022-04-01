@@ -16,9 +16,18 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake ..
+          cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
           ls -alF
-      - name: Build
+      - name: Build ORC Debug
         run: |
           cd build
-          make
+          xcodebuild -scheme orc_orc -configuration Debug
+      - name: Build ORC Release
+        run: |
+          cd build
+          xcodebuild -scheme orc_orc -configuration Release
+      - name: Build ORC Test
+        run: |
+          cd build
+          xcodebuild -scheme orc_test -configuration Debug
+          ./Debug/orc_test ../test/battery

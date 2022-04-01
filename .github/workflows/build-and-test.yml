@@ -4,7 +4,7 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, synchronize, reopened]
 jobs:
   build-and-test:
     runs-on: macos-latest
@@ -19,29 +19,29 @@ jobs:
       - name: 🛠️ orc debug
         run: |
           cd build
-          xcodebuild -scheme orc_orc -configuration Debug
+          xcodebuild -quiet -scheme orc_orc -configuration Debug
       - name: 🛠️ orc release
         run: |
           cd build
-          xcodebuild -scheme orc_orc -configuration Release
+          xcodebuild -quiet -scheme orc_orc -configuration Release
       - name: 🛠️ orc_test
         run: |
           cd build
-          xcodebuild -scheme orc_test -configuration Release
+          xcodebuild -quiet -scheme orc_test -configuration Release
       - name: 🏃 orc_test
         run: |
           /usr/bin/time -l ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ ASan
         run: |
           cd build
-          xcodebuild -scheme orc_test -configuration Release -enableAddressSanitizer YES
+          xcodebuild -quiet -scheme orc_test -configuration Release -enableAddressSanitizer YES
       - name: 🏃 orc_test w/ ASan
         run: |
           ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ TSan
         run: |
           cd build
-          xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
+          xcodebuild -quiet -scheme orc_test -configuration Release -enableThreadSanitizer YES
       - name: 🏃 orc_test w/ TSan
         run: |
           ./build/Release/orc_test ./test/battery

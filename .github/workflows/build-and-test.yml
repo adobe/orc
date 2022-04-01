@@ -26,8 +26,11 @@ jobs:
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Release
-      - name: Build ORC Test
+      - name: Build ORC Test App
         run: |
           cd build
-          xcodebuild -scheme orc_test -configuration Debug
-          ./Debug/orc_test ../test/battery
+          xcodebuild -scheme orc_test -configuration Release
+      - name: Run ORC Test App
+        run: |
+          cd build/Release
+          ./orc_test ../test/battery

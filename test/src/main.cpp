@@ -211,7 +211,9 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
     std::cout << "Compiling " << units.size() << " source file(s):\n";
     for (auto& unit : units) {
         auto temp_path = object_file_path(home, unit);
-        if (!preserve_object_files) {
+        if (preserve_object_files) {
+            std::cout << temp_path << '\n';
+        } else {
             unit._path = temp_path;
         }
         std::string command(path_to_clang());

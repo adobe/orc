@@ -107,7 +107,6 @@ void record_odrv(const std::string_view& symbol, const die& a, const die& b, dw:
 bool nonfatal_attribute(dw::at at) {
     static const auto attributes = []{
         std::vector<dw::at> nonfatal_attributes = {
-            dw::at::accessibility,
             dw::at::apple_block,
             dw::at::apple_flags,
             dw::at::apple_isa,

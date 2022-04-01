@@ -33,4 +33,4 @@ jobs:
       - name: Run ORC Test App
         run: |
           cd build/Release
-          ./orc_test ../test/battery
+          /usr/bin/time -l ./orc_test ../../test/battery

@@ -5,44 +5,40 @@ jobs:
     runs-on: macos-latest
     steps:
       - run: |
-          echo "🚧: ${{ github.event_name }}"
-      - run: |
-          echo "🖥️: ${{ runner.os }}"
-      - run: |
-          echo "🔎: repository: ${{ github.repository }}; branch: ${{ github.ref }}"
-      - name: Checkout
+          echo "🚧: ${{ github.event_name }}; 🔎: ${{ github.repository }}/${{ github.ref }}; 🖥️: ${{ runner.os }}"
+      - name: ⬇️ sources
         uses: actions/checkout@v3
-      - name: Project file setup
+      - name: 🏗️ project files
         run: |
           mkdir build
           cd build
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: Build ORC Debug
+      - name: 🛠️ Debug
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Debug
-      - name: Build ORC Release
+      - name: 🛠️ Release
         run: |
           cd build
           xcodebuild -scheme orc_orc -configuration Release
-      - name: Build ORC Test App
+      - name: 🛠️ Test App
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release
-      - name: Run ORC Test App
+      - name: 🏃 Test App
         run: |
-          /usr/bin/time -lh ./build/Release/orc_test ./test/battery
-      - name: Build ORC Test App (Address Sanitizer)
+          /usr/bin/time -l ./build/Release/orc_test ./test/battery
+      - name: 🛠️ Test App (Address Sanitizer)
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableAddressSanitizer YES
-      - name: Run ORC Test App (Address Sanitizer)
+      - name: 🏃 Test App (Address Sanitizer)
         run: |
-          /usr/bin/time -lh ./build/Release/orc_test ./test/battery
-      - name: Build ORC Test App (Thread Sanitizer)
+          /usr/bin/time -l ./build/Release/orc_test ./test/battery
+      - name: 🛠️ Test App (Thread Sanitizer)
         run: |
           cd build
           xcodebuild -scheme orc_test -configuration Release -enableThreadSanitizer YES
-      - name: Run ORC Test App (Thread Sanitizer)
+      - name: 🏃 Test App (Thread Sanitizer)
         run: |
-          /usr/bin/time -lh ./build/Release/orc_test ./test/battery
+          /usr/bin/time -l ./build/Release/orc_test ./test/battery

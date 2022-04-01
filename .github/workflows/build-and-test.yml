@@ -2,7 +2,7 @@ name: ORC Build and Test
 on: [push]
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - run: |
           echo "🚧: ${{ github.event_name }}"

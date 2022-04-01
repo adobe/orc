@@ -1,5 +1,7 @@
 # ORC 
 
+[![ORC Build and Test](https://github.com/adobe/orc/actions/workflows/build-and-test.yml/badge.svg?event=push)](https://github.com/adobe/orc/actions/workflows/build-and-test.yml)
+
 ORC is a tool for finding violations of C++'s One Definition Rule on the OSX toolchain.
 
 ORC is a play on [DWARF](http://dwarfstd.org/) which is a play on [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format). ORC is an acronym; while the _O_ stands for ODR, in a bout of irony the _R_ and _C_ represent multiple (possibly conflicting) words.

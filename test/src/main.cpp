@@ -132,11 +132,11 @@ std::vector<compilation_unit> derive_compilation_units(const std::filesystem::pa
         }
         const toml::table& src = *src_ptr;
         compilation_unit unit;
-        std::optional<std::string_view> name = src["name"].value<std::string_view>();
-        if (!name) {
-            throw std::runtime_error("Missing required source key \"name\"");
+        std::optional<std::string_view> path = src["path"].value<std::string_view>();
+        if (!path) {
+            throw std::runtime_error("Missing required source key \"path\"");
         }
-        unit._src = home / *name;
+        unit._src = home / *path;
 
         // REVISIT (fosterbrereton): Do things here as necessary for compiler flags
 
@@ -167,11 +167,9 @@ std::vector<expected_odrv> derive_expected_odrvs(const std::filesystem::path& ho
         }
         odrv._category = *category;
 
-        std::optional<std::string_view> linkage_name = src["linkage_name"].value<std::string_view>();
-        if (!linkage_name) {
-            throw std::runtime_error("Missing required odrv key \"linkage_name\"");
+        if (std::optional<std::string_view> linkage_name = src["linkage_name"].value<std::string_view>()) {
+            odrv._linkage_name = *linkage_name;
         }
-        odrv._linkage_name = *linkage_name;
 
         result.push_back(odrv);
     }
@@ -238,8 +236,7 @@ void run_battery_test(const std::filesystem::path& home) {
     } else {
         for (const auto& report : reports) {
             auto found = std::find_if(expected_odrvs.begin(), expected_odrvs.end(), [&](const auto& odrv){
-                return odrv._category == report.category();// &&
-                       //odrv._linkage_name == report.linkage_name;
+                return odrv._category == report.category();
             });
 
             if (found == expected_odrvs.end()) {

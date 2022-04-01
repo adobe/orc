@@ -1,8 +1,8 @@
 [[source]]
-    name = "one.cpp"
+    path = "one.cpp"
     obj = "one"
 [[source]]
-    name = "two.cpp"
+    path = "two.cpp"
     flags = [ ]
 
 [[odrv]]

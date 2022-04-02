@@ -1,9 +1,9 @@
-[[source]]
-    path = "src.cpp"
-    object_file_name = "public"
-    flags = [
-        "-D'ORC_TEST_ACCESS=public'"
-    ]
+# [[source]]
+#     path = "src.cpp"
+#     object_file_name = "public"
+#     flags = [
+#         "-D'ORC_TEST_ACCESS=public'"
+#     ]
 
 [[source]]
     path = "src.cpp"
@@ -21,8 +21,4 @@
 
 [[odrv]]
     category = "subprogram:accessibility"
-    # symbol = "object::api() const"
-
-[orc_test_flags]
-
-disable = false
+    symbol = "object::api() const"

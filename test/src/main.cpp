@@ -272,7 +272,7 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
     }
 
     const auto& symbol = odrv.symbol();
-    if (!symbol.empty() && symbol != report._symbol) {
+    if (!symbol.empty() && symbol != demangle(report._symbol.data())) {
         return false;
     }
 
@@ -287,10 +287,21 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
 
 /**************************************************************************************************/
 
+constexpr const char* tomlname_k = "odrv_test.toml";
+
+/**************************************************************************************************/
+
 void run_battery_test(const std::filesystem::path& home) {
+    static bool first_s = false;
+
+    if (!first_s) {
+        std::cout << '\n';
+    } else {
+        first_s = false;
+    }
+
     assume(is_directory(home), "\"" + home.string() + "\" is not a directory");
-    std::string tomlname = "odrv_test.toml";
-    std::filesystem::path tomlpath = home / tomlname;
+    std::filesystem::path tomlpath = home / tomlname_k;
     assume(is_regular_file(tomlpath), "\"" + tomlpath.string() + "\" is not a regular file");
     toml::table settings;
 
@@ -371,6 +382,29 @@ void run_battery_test(const std::filesystem::path& home) {
 
 /**************************************************************************************************/
 
+void traverse_directory_tree(std::filesystem::path& directory) {
+    assert(is_directory(directory));
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        try {
+            if (is_directory(entry)) {
+                std::filesystem::path path = entry.path();
+
+                if (exists(path / tomlname_k)) {
+                    run_battery_test(path);
+                }
+
+                traverse_directory_tree(path);
+            }
+        } catch (...) {
+            std::cerr << "\nIn battery " << entry.path() << ":";
+            throw;
+        }
+    }
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
@@ -387,22 +421,7 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("test battery path is missing or not a directory");
     }
 
-    bool first = true;
-
-    for (const auto& path : std::filesystem::directory_iterator(battery_path)) {
-        try {
-            if (!first) {
-                std::cout << '\n';
-            } else {
-                first = false;
-            }
-
-            run_battery_test(path);
-        } catch (...) {
-            std::cerr << "\nIn battery " << path.path() << ":";
-            throw;
-        }
-    }
+    traverse_directory_tree(battery_path);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

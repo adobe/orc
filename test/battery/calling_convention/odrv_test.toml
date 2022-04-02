@@ -1,0 +1,21 @@
+[[source]]
+    path = "src.cpp"
+    object_file_name = "with"
+    flags = [
+        "-DORC_TEST_VIRTUAL=virtual"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "without"
+    flags = [
+        "-DORC_TEST_VIRTUAL="
+    ]
+
+[[odrv]]
+    category = "structure:calling_convention"
+    symbol = "object"
+
+[orc_test_flags]
+
+disable = false

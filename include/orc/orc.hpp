@@ -34,4 +34,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>&);
 
 void orc_reset();
 
+// The returned char* is good until the next call to demangle() on the same thread.
+const char* demangle(const char* x);
+
 /**************************************************************************************************/

@@ -549,19 +549,6 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 
 /**************************************************************************************************/
 
-const char* demangle(const char* x) {
-    // The returned char* is good until the next call to demangle() on the same thread.
-    // See: https://gcc.gnu.org/onlinedocs/libstdc++/libstdc++-html-USERS-4.3/a01696.html
-    thread_local std::unique_ptr<char, void (*)(void*)> hold{nullptr, &free};
-    int status = 0;
-    char* p = abi::__cxa_demangle(x, nullptr, nullptr, &status);
-    if (!p || status != 0) return x;
-    hold.reset(p);
-    return p;
-}
-
-/**************************************************************************************************/
-
 } // namespace
 
 /**************************************************************************************************/
@@ -677,6 +664,19 @@ void orc_reset() {
     with_global_die_collection([](auto& collection){
         collection.clear();
     });
+}
+
+/**************************************************************************************************/
+
+const char* demangle(const char* x) {
+    // The returned char* is good until the next call to demangle() on the same thread.
+    // See: https://gcc.gnu.org/onlinedocs/libstdc++/libstdc++-html-USERS-4.3/a01696.html
+    thread_local std::unique_ptr<char, void (*)(void*)> hold{nullptr, &free};
+    int status = 0;
+    char* p = abi::__cxa_demangle(x, nullptr, nullptr, &status);
+    if (!p || status != 0) return x;
+    hold.reset(p);
+    return p;
 }
 
 /**************************************************************************************************/

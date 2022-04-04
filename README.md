@@ -223,7 +223,7 @@ The `category ` field describes the specific type of ODR violation the test app 
 
 The `linkage_name` field describes the specific symbol that caused the ODRV. It is currently unused, but will be enforced as the test app matures.
 
-#### Other fields
+#### Fields In Development
 
 The following flags are not currently in use or will undergo heavy changes as the unit test app continues to mature.
 

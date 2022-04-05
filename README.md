@@ -170,7 +170,7 @@ What line and file the object was declared in. So line 3 of `a.cpp` in this exam
 
 # The ORC Test App (`orc_test`)
 
-To ensure that ORC is catching what is purports to catch, a unit test application has been added to the system. `orc_test` introduces a miniature "build system" to generate object files from known sources to produce known ODR violations. It then processes the object files using the same engine as the ORC command line tool, and compares the results against an expected ODRV report list.
+A unit test application is provided to ensure that ORC is catching what is purports to catch. `orc_test` introduces a miniature "build system" to generate object files from known sources to produce known ODR violations. It then processes the object files using the same engine as the ORC command line tool, and compares the results against an expected ODRV report list.
 
 ## The Test Battery Structure
 

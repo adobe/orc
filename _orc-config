@@ -105,10 +105,10 @@ violation_report = [
     'member:data_member_location',
     'structure:byte_size',
     'subprogram:virtuality',
-    'subprogram:vtable_elem_location',
-    'typedef:type'
+    'subprogram:vtable_elem_location'
 ]
 
-# violation_ignore = [
-#     'typedef:type',
-# ]
+violation_ignore = [
+    'subprogram:accessibility',
+    'typedef:type',
+]

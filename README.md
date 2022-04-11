@@ -1,5 +1,7 @@
 # ORC 
 
+[![ORC Build and Test](https://github.com/adobe/orc/actions/workflows/build-and-test.yml/badge.svg?event=push)](https://github.com/adobe/orc/actions/workflows/build-and-test.yml)
+
 ORC is a tool for finding violations of C++'s One Definition Rule on the OSX toolchain.
 
 ORC is a play on [DWARF](http://dwarfstd.org/) which is a play on [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format). ORC is an acronym; while the _O_ stands for ODR, in a bout of irony the _R_ and _C_ represent multiple (possibly conflicting) words.
@@ -165,3 +167,68 @@ definition location: /Volumes/src/orc/extras/struct0/src/a.cpp:3
 ```
 
 What line and file the object was declared in. So line 3 of `a.cpp` in this example.
+
+# The ORC Test App (`orc_test`)
+
+A unit test application is provided to ensure that ORC is catching what is purports to catch. `orc_test` introduces a miniature "build system" to generate object files from known sources to produce known ODR violations. It then processes the object files using the same engine as the ORC command line tool, and compares the results against an expected ODRV report list.
+
+## The Test Battery Structure
+
+Every unit test in the battery is discrete, and contains:
+
+1. A set of source files
+2. `odrv_test.toml`, a high level TOML file describing the parameters of the test
+
+In general, a single test should elicit a single ODR violation, but this may not be possible in all cases. 
+
+### The Source File(s)
+
+These files are standard C++ source files. Their quantity and size should be very small - only big enough as needed to cause the intended ODRV.
+
+### The `odrv_test.toml` File
+
+The settings file describes to the test application what source(s) need to be compiled, what compilation flags should be used for the test, and what ODRVs the system needs to be on the lookout as a result of linking the generated object file(s) together.
+
+#### Specifying Sources
+
+Test sources are specified with a `[[source]]` directive:
+
+```toml
+[[source]]
+    path = "one.cpp"
+    obj = "one"
+    flags = [
+        "-Dfoo=1"
+    ]
+```
+
+The `path` field describes a path to the file relative to `odrv_test.toml`. It is the only required field.
+
+The `obj` field specifies the name of the (temporary) object file to be created. If this name is omitted, a pseudo-random name will be used.
+
+The `flags` field specifies compilation flags that will be used specifically for this compilation unit. Using this field, it is possible to reuse the same source file with different compilation flags to elicit an ODRV.
+
+#### Specifying ODRVs
+
+ODRVs are specified with the `[[odrv]]` directive:
+
+
+```toml
+[[odrv]]
+    category = "subprogram:vtable_elem_location"
+    linkage_name = "_ZNK6object3apiEv"
+```
+
+The `category ` field describes the specific type of ODR violation the test app should expect to find.
+
+The `linkage_name` field describes the specific symbol that caused the ODRV. It is currently unused, but will be enforced as the test app matures.
+
+#### Fields In Development
+
+The following flags are not currently in use or will undergo heavy changes as the unit test app continues to mature.
+
+- `[compile_flags]`: A series of compilation flags that should be applied to every source file in the unit test.
+
+- `[orc_test_flags]`: A series of runtime settings to pass to the test app for this test.
+
+- `[orc_flags]`: A series of runtime settings to pass to the ORC engine for this test.

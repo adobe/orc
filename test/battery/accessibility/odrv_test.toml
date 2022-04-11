@@ -1,0 +1,24 @@
+# [[source]]
+#     path = "src.cpp"
+#     object_file_name = "public"
+#     flags = [
+#         "-D'ORC_TEST_ACCESS=public'"
+#     ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "private"
+    flags = [
+        "-D'ORC_TEST_ACCESS=private'"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "protected"
+    flags = [
+        "-D'ORC_TEST_ACCESS=protected'"
+    ]
+
+[[odrv]]
+    category = "subprogram:accessibility"
+    symbol = "object::api() const"

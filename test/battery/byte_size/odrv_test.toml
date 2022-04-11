@@ -1,0 +1,8 @@
+[[source]]
+    path = "one.cpp"
+
+[[source]]
+    path = "two.cpp"
+
+[[odrv]]
+    category = "structure:byte_size"

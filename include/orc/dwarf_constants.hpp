@@ -389,8 +389,6 @@ enum class at : std::uint16_t {
     apple_objc_direct = 0x3fee,
     apple_sdk = 0x3fef,
     hi_user = 0x3fff,
-
-    orc_tag = 0x4000,
 };
 
 /**************************************************************************************************/

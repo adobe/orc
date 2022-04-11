@@ -1,0 +1,17 @@
+[[source]]
+    path = "src.cpp"
+    object_file_name = "with"
+    flags = [
+        "-D'OPTIONAL_API()=1'"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "without"
+    flags = [
+        "-D'OPTIONAL_API()=0'"
+    ]
+
+[[odrv]]
+    category = "subprogram:vtable_elem_location"
+    linkage_name = "_ZNK6object3apiEv"

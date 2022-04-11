@@ -1,0 +1,48 @@
+name: Build and Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - name: ⬇️ sources
+        uses: actions/checkout@v3
+      - name: 🏗️ project files
+        run: |
+          mkdir build
+          cd build
+          cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
+      - name: 🛠️ orc debug
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
+      - name: 🛠️ orc release
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
+      - name: 🛠️ orc_test
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
+      - name: 🏃 orc_test
+        run: |
+          /usr/bin/time -l ./build/Release/orc_test ./test/battery
+      - name: 🛠️ orc_test w/ ASan
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
+      - name: 🏃 orc_test w/ ASan
+        run: |
+          ./build/Release/orc_test ./test/battery
+      - name: 🛠️ orc_test w/ TSan
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
+      - name: 🏃 orc_test w/ TSan
+        run: |
+          ./build/Release/orc_test ./test/battery
+      - name: 🛠️ orc_test w/ UBSan
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
+      - name: 🏃 orc_test w/ UBSan
+        run: |
+          ./build/Release/orc_test ./test/battery

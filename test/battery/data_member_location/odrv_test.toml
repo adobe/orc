@@ -1,0 +1,17 @@
+[[source]]
+    path = "src.cpp"
+    object_file_name = "with"
+    flags = [
+        "-D'OPTIONAL_STUFF()=1'"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "without"
+    flags = [
+        "-D'OPTIONAL_STUFF()=0'"
+    ]
+
+[[odrv]]
+    category = "member:data_member_location"
+    symbol = "object::_y"

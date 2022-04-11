@@ -61,7 +61,7 @@ struct pool_string {
     }
     
     std::string allocate_string() const { 
-        assert(_data); 
+        assert(_data);
         return std::string(view()); 
     }
     std::filesystem::path allocate_path() const { 

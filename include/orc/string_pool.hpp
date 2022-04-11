@@ -17,7 +17,7 @@
 struct pool_string;
 
 /*
-    Add a string to the pool. This is not thread safe.
+    Stores interned strings. Not thread safe. ORC uses one per thread. 
 
     A previous implementatino of empool() used a mutex (as a test) which reduced ORC's memoory
     consumption from 83GB to 47GB. That's pretty good, but there is work (and complexity) to
@@ -64,6 +64,7 @@ struct pool_string {
         assert(_data);
         return std::string(view()); 
     }
+    
     std::filesystem::path allocate_path() const { 
         assert(_data); 
         return std::filesystem::path(view()); 
@@ -89,33 +90,14 @@ struct pool_string {
     }
 
 private:
-    static std::size_t get_size(const char* d) {
-        const void* bytes = d - sizeof(std::uint32_t) - sizeof(std::size_t);
-        std::uint32_t s;
-        std::memcpy(&s, bytes, sizeof(s));
-        assert(s > 0);         // required, else should have been _data == nullptr
-        assert(s < 100000);    // sanity check
-        return s;
-    }
-
-    static std::size_t get_hash(const char* d) {
-        const void* bytes = d - sizeof(std::size_t);
-        std::size_t h;
-        std::memcpy(&h, bytes, sizeof(h));
-        return h;
-    }
+    static std::size_t get_size(const char* d);
+    static std::size_t get_hash(const char* d);
 
     friend pool_string empool(std::string_view src);
-    static std::string_view default_view; // an empty string
+    static std::string_view default_view; // an empty string return if the _data pointer is null
 
-    explicit pool_string(const char* data) : _data(data) {
-    }
+    explicit pool_string(const char* data) : _data(data) {}
     
-    // NOT ALIGNED
-    // Before the _data pointer:
-    //      'uint32_t' length of string
-    //      'size_t' hash
-    // _data[] null terminated to ease debugging
     const char* _data{nullptr};
 };
 

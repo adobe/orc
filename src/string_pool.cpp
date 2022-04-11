@@ -26,9 +26,13 @@
 
 namespace {
 
-/**************************************************************************************************/
-
-
+// Data is backed and not aligned.
+// Before the _data pointer:
+//      'uint32_t' length of string
+//      'size_t' hash
+// The _data pointer is returned to a null terminated string, to make debugging easier
+// get_size() and get_hash() unpack this data as needed.
+// 
 struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
@@ -47,10 +51,11 @@ struct pool {
             _p = _ponds.back().get();
         }
         size_t h = std::hash<std::string_view>{}(incoming);
+        // Memory isn't aligned - need to memcpy to pack the data
         std::memcpy(_p, &sz, sizeof(uint32_t));
         std::memcpy(_p + sizeof(uint32_t), &h, sizeof(size_t));
         std::memcpy(_p + sizeof(uint32_t) + sizeof(size_t), incoming.data(), sz);
-        *(_p + tsz - 1) = 0;
+        *(_p + tsz - 1) = 0; // null terminate for debugging
         
         const char* result = _p + sizeof(uint32_t) + sizeof(size_t);
         _n -= tsz;
@@ -58,25 +63,36 @@ struct pool {
         return result;
     }
 };
- 
-
-/**************************************************************************************************/
-
-// The key is the hash; map one to the other.
-struct pool_key_to_hash {
-    auto operator()(size_t key) const { return key;}
-};
-
-/**************************************************************************************************/
-
 } // namespace
 
 /**************************************************************************************************/
+
+std::size_t pool_string::get_size(const char* d) {
+    assert(d);
+    const void* bytes = d - sizeof(std::uint32_t) - sizeof(std::size_t);
+    std::uint32_t s;
+    std::memcpy(&s, bytes, sizeof(s));  // not aligned - need to use memcpy
+    assert(s > 0);         // required, else should have been _data == nullptr
+    assert(s < 100000);    // sanity check
+    return s;
+}
+
+std::size_t pool_string::get_hash(const char* d) {
+    assert(d);
+    const void* bytes = d - sizeof(std::size_t);
+    std::size_t h;
+    std::memcpy(&h, bytes, sizeof(h)); // not aligned -- need to use memcpy
+    return h;
+}
 
 pool_string empool(std::string_view src) {
     if (src.empty())
         return pool_string(nullptr);
     
+    struct pool_key_to_hash {
+        auto operator()(size_t key) const { return key;}
+    };
+
     thread_local std::unordered_multimap<size_t, const char*, pool_key_to_hash> keys;
     thread_local pool the_pool;
     

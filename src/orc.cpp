@@ -182,7 +182,7 @@ void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrere
         if (!attr.has(attribute_value::type::reference)) continue;
         const die& resolved = lookup_die(dies, attr.reference());
         attr._value.die(resolved);
-        attr._value.string(empool(resolved._path));
+        attr._value.string(resolved._path);
     }
 }
 
@@ -307,10 +307,10 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
 
     // Symbols with __ in them are reserved, so are not user-defined. No need to register
     // them.
-    if (d._path.find("::__") != std::string::npos) return true;
+    if (d._path.view().find("::__") != std::string::npos) return true;
 
     // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.find("lambda") != std::string::npos) return true;
+    if (d._path.view().find("lambda") != std::string::npos) return true;
 
     // we don't handle any die that's ObjC-based.
     if (d.has_attribute(dw::at::apple_runtime_class)) return true;
@@ -400,7 +400,7 @@ void register_dies(dies die_vector) {
         }
 #endif
 
-        auto symbol = path_to_symbol(d._path);
+        auto symbol = path_to_symbol(d._path.view());
         auto should_skip = skip_die(dies, d, symbol);
 
         if (settings::instance()._print_symbol_paths) {

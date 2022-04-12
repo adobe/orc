@@ -1,6 +1,6 @@
-# ORC 
+[![Build and Test](https://github.com/adobe/orc/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/adobe/orc/actions/workflows/build-and-test.yml)
 
-[![ORC Build and Test](https://github.com/adobe/orc/actions/workflows/build-and-test.yml/badge.svg?event=push)](https://github.com/adobe/orc/actions/workflows/build-and-test.yml)
+# ORC 
 
 ORC is a tool for finding violations of C++'s One Definition Rule on the OSX toolchain.
 

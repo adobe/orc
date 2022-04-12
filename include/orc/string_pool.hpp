@@ -19,8 +19,9 @@ struct pool_string;
 /*
     Stores interned strings. Thread safe in that the pool resources are per thread. 
 
-    A string pool per thread reduces the memory usage from 83GB to 53GB, and significantly 
-    improves performance. (That memory pool is per thread is perhaps counter intuitive.)
+    A string pool per thread reduces the total memory usage from 83GB to 53GB. It also
+    significantly improves performance. (This is the result for the application as a whole. That
+    a per-thread memory pool works so well is perhaps counter-intuitive.)
 */
 pool_string empool(std::string_view src);
 

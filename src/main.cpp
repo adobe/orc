@@ -471,7 +471,6 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    printf("sizeof DIE=%d\n", (int)sizeof(die));
     signal(SIGINT, interrupt_callback_handler);
 
     process_orc_config_file(argv[0]);

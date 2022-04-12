@@ -85,7 +85,7 @@ std::size_t pool_string::get_hash(const char* d) {
 
 pool_string empool(std::string_view src) {
     if (src.empty())
-        return pool_string::default_view;
+        return pool_string(nullptr);
     
     struct pool_key_to_hash {
         auto operator()(size_t key) const { return key;}

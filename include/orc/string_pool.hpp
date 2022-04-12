@@ -17,19 +17,10 @@
 struct pool_string;
 
 /*
-    Stores interned strings. Not thread safe. ORC uses one per thread. 
+    Stores interned strings. Thread safe in that the pool resources are per thread. 
 
-    A previous implementatino of empool() used a mutex (as a test) which reduced ORC's memoory
-    consumption from 83GB to 47GB. That's pretty good, but there is work (and complexity) to
-    making the string pool thread safe.
-
-    Surprisingly, using a string pool *per thread* reduces the memory usage from 83GB to 53GB,
-    for no noticeable performance impact. A result I find somewhat counter-intuitive. Theory 
-    as to why the simple per thread solution works as well as it does:
-
-    * the highly used `struct die` is much smaller. (`pool_string` is now one pointer instead of 3, and a `std::string` became a `pool_string`)
-    * the threads have good coherency; a given thread is generally processing a compilation unit, and the same strings repeat
-    * and (in both solutions) the memory to store strings is greatly reduced, since they are stored in un-aligned blocks of packed memory
+    A string pool per thread reduces the memory usage from 83GB to 53GB, and significantly 
+    improves performance. (That memory pool is per thread is perhaps counter intuitive.)
 */
 pool_string empool(std::string_view src);
 

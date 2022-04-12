@@ -276,10 +276,10 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
         return false;
     }
 
-    const auto linkage_name = odrv.linkage_name();
+    const std::string& linkage_name = odrv.linkage_name();
     if (!linkage_name.empty()) {
-        auto report_linkage_name = report.attribute_string(dw::at::linkage_name);
-        if (linkage_name != report_linkage_name.string())
+        const pool_string report_linkage_name = report.attribute_string(dw::at::linkage_name);
+        if (linkage_name != report_linkage_name.view())
             return false;
     }
     return true;

@@ -37,7 +37,6 @@ struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
     std::vector<std::unique_ptr<char[]>> _ponds;
-    std::size_t _total_alloc = 0;
 
     const char* empool(std::string_view incoming) {
         constexpr auto default_min_k = 16 * 1024 * 1024; // 16MB
@@ -46,7 +45,6 @@ struct pool {
         
         if (_n < tsz) {
             _n = std::max<std::size_t>(default_min_k, tsz);
-            _total_alloc += _n;
             _ponds.push_back(std::make_unique<char[]>(_n));
             _p = _ponds.back().get();
         }
@@ -87,7 +85,7 @@ std::size_t pool_string::get_hash(const char* d) {
 
 pool_string empool(std::string_view src) {
     if (src.empty())
-        return pool_string(nullptr);
+        return pool_string::default_view;
     
     struct pool_key_to_hash {
         auto operator()(size_t key) const { return key;}

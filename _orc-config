@@ -108,7 +108,7 @@ violation_report = [
     'subprogram:vtable_elem_location'
 ]
 
-violation_ignore = [
-    'subprogram:accessibility',
-    'typedef:type',
-]
+# violation_ignore = [
+#     'subprogram:accessibility',
+#     'typedef:type',
+# ]

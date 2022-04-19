@@ -90,8 +90,10 @@ private:
     const char* _data{nullptr};
 };
 
-// pool_string is always copied: it doesn't have a copy constructor or move semantics. Which works as long
-// as it really is a pointer, so check that it is:
+// pool_string is just a pointer with methods. It needs to be small as strings are a large part
+// of ORC's considerable memory usage. pool_string doesn't have a copy constructor or move semantics. 
+// Copying and low memory usage depend on pool_string being really a pointer, so double check that here,
+// and don't remove this unless you are careful about performance of large projects.
 static_assert(sizeof(pool_string) <= sizeof(intptr_t), "pool_string is design to be as small and fast to copy as a pointer.");
 
 /**************************************************************************************************/

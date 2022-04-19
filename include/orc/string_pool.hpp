@@ -67,9 +67,7 @@ struct pool_string {
     }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {
-        if (x._data == y._data)
-            return true;
-        return x.view() == y.view();
+        return x._data == y._data || x.view() == y.view();
     }
 
     friend inline bool operator!=(const pool_string& x, const pool_string& y) {

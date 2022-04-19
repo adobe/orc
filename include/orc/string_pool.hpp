@@ -16,21 +16,58 @@
 
 struct pool_string;
 
+/*
+    Stores interned strings. Thread safe in that the pool resources are per thread. 
+
+    A string pool per thread reduces the total memory usage from 83GB to 53GB. It also
+    significantly improves performance. (This is the result for the application as a whole. That
+    a per-thread memory pool works so well is perhaps counter-intuitive.)
+*/
 pool_string empool(std::string_view src);
 
+/*
+    A pool_string is an interned string. Once created, the pointer `_data` is immutable for the
+    life of the application. This has some useful properties.
+
+    * A `pool_string` is one pointer in size
+    * A `pool_string` is thread safe
+    * Two `pool_strings` pointing to the same `_data` are always equal.
+    * Becaues `pool_strings` can be in different pools, if the `_data` members are different, they may still be equal
+    * `_data` is a char* to null terminated data, which is just a c string. Useful for debugging. 
+    * if `_data` is null, it is intepreted as an empty string (""). If `_data` is not-null, it always is size() > 0
+    
+    When empooled, the hash (64 bits) and size/length (32 bits) are stored before the char* to the data.
+    Note there is no memory alignment in the pool - it is fully packed - so data needs to be memcpy'd in
+    and out, just in case the processor doesn't like un-aligned reads.
+*/
 struct pool_string {
-    pool_string() = default;
+    pool_string() {}
+    ~pool_string() {}
 
-    auto empty() const { return _s.empty(); }
+    bool empty() const { return _data == nullptr; }
 
-    std::string allocate_string() const { return std::string(_s); }
-    std::filesystem::path allocate_path() const { return std::filesystem::path(_s); }
+    std::string_view view() const {
+        // a string_view is empty iff _data is a nullptr
+        if (!_data) return default_view;
+        std::uint32_t size = get_size(_data);
+        return std::string_view(_data, size);
+    }
+    
+    std::string allocate_string() const { 
+        return std::string(view()); 
+    }
+    
+    std::filesystem::path allocate_path() const { 
+        return std::filesystem::path(view()); 
+    }
 
-    auto hash() const { return _h; }
-    auto string() const { return _s; }
+    size_t hash() const {
+        if (!_data) return 0;
+        return get_hash(_data);
+    }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {
-        return x._h == y._h;
+        return x._data == y._data || x.view() == y.view();
     }
 
     friend inline bool operator!=(const pool_string& x, const pool_string& y) {
@@ -38,18 +75,25 @@ struct pool_string {
     }
 
     friend inline auto& operator<<(std::ostream& x, const pool_string& y) {
-        return x << y._s;
+        return x << y.view();
     }
 
 private:
+    static std::size_t get_size(const char* d);
+    static std::size_t get_hash(const char* d);
+
     friend pool_string empool(std::string_view src);
+    static std::string_view default_view; // an empty string return if the _data pointer is null
 
-    explicit pool_string(std::string_view s, std::size_t h) : _s{std::move(s)}, _h{h} {}
-    explicit pool_string(std::string_view s) : _s{std::move(s)},
-        _h{std::hash<std::string_view>{}(_s)} {}
-
-    std::string_view _s;
-    std::size_t _h{0};
+    explicit pool_string(const char* data) : _data(data) {}
+    
+    const char* _data{nullptr};
 };
+
+// pool_string is just a pointer with methods. It needs to be small as strings are a large part
+// of ORC's considerable memory usage. pool_string doesn't have a copy constructor or move semantics. 
+// Copying and low memory usage depend on pool_string being really a pointer, so double check that here,
+// and don't remove this unless you are careful about performance of large projects.
+static_assert(sizeof(pool_string) <= sizeof(intptr_t), "pool_string is design to be as small and fast to copy as a pointer.");
 
 /**************************************************************************************************/

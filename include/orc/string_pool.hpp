@@ -47,18 +47,17 @@ struct pool_string {
     bool empty() const { return _data == nullptr; }
 
     std::string_view view() const {
+        // a string_view is empty iff _data is a nullptr
         if (!_data) return default_view;
         std::uint32_t size = get_size(_data);
         return std::string_view(_data, size);
     }
     
     std::string allocate_string() const { 
-        assert(_data);
         return std::string(view()); 
     }
     
     std::filesystem::path allocate_path() const { 
-        assert(_data); 
         return std::filesystem::path(view()); 
     }
 
@@ -92,5 +91,9 @@ private:
     
     const char* _data{nullptr};
 };
+
+// pool_string is always copied: it doesn't have a copy constructor or move semantics. Which works as long
+// as it really is a pointer, so check that it is:
+static_assert(sizeof(pool_string) <= sizeof(intptr_t), "pool_string is design to be as small and fast to copy as a pointer.");
 
 /**************************************************************************************************/

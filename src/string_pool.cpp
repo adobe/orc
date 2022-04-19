@@ -84,6 +84,9 @@ std::size_t pool_string::get_hash(const char* d) {
 }
 
 pool_string empool(std::string_view src) {
+    // A pool_string is empty iff _data = nullptr
+    // So this creates an empty pool_string (as opposed to an empty string_view, where
+    // default_view would be returned.)
     if (src.empty())
         return pool_string(nullptr);
     

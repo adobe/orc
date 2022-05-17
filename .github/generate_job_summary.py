@@ -6,13 +6,19 @@ if __name__ == "__main__":
     for i, arg in enumerate(sys.argv):
         print(f"Argument {i:>6}: {arg}")
 
-    original_stdout = sys.stdout
+    sys.stdout = open(sys.argv[1], "w")
 
-    f = open(sys.argv[1], "w")
-
-    sys.stdout = f
+    github = json.load(sys.argv[2])
+    job = json.load(sys.argv[3])
+    steps = json.load(sys.argv[4])
+    runner = json.load(sys.argv[5])
+    strategy = json.load(sys.argv[6])
+    matrix = json.load(sys.argv[7])
 
     print("# Job Summary")
     print("| Run | Result | Notes |")
     print("|---|---|---|")
-    print("| Hello | world! | :rocket: |")
+
+    for key in steps:
+        value = steps[key];
+        print(f"| {key} | {value.outcome} | :rocket: |")

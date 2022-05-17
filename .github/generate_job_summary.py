@@ -5,11 +5,13 @@ if __name__ == "__main__":
     for i, arg in enumerate(sys.argv):
         print(f"Argument {i:>6}: {arg}")
 
+    original_stdout = sys.stdout
+
     f = open(sys.argv[1], "w")
 
-    f.write("# Job Summary")
-    f.write("| Run | Result | Notes |")
-    f.write("|---|---|---|")
-    f.write("| Hello | world! | :rocket: |")
+    sys.stdout = f
 
-    f.write(sys.argv[2])
+    print("# Job Summary")
+    print("| Run | Result | Notes |")
+    print("|---|---|---|")
+    print("| Hello | world! | :rocket: |")

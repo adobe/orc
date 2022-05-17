@@ -13,16 +13,9 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-      - name: ✍️ job summary
-        run: |
-          echo '# Job Summary' >> $GITHUB_STEP_SUMMARY
-          echo '| Run | Result | Notes |' >> $GITHUB_STEP_SUMMARY
-          echo '|---|---|---|' >> $GITHUB_STEP_SUMMARY
       - name: ⬇️ sources
         id: checkout
         uses: actions/checkout@v3
-      - name: ✍️ job summary
-        run: echo '| Checkout | ${{ steps.checkout.outcome }} | |' >> $GITHUB_STEP_SUMMARY
       - name: 🏗️ project files
         run: |
           mkdir build
@@ -60,4 +53,4 @@ jobs:
           # ./build/Release/orc_test ./test/battery
       - name: ✍️ job summary
         run: |
-          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY ${{ toJSON(steps) }}
+          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY ${{ steps }}

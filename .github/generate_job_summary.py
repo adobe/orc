@@ -15,6 +15,24 @@ if __name__ == "__main__":
     strategy = json.load(open(sys.argv[6], "r"))
     matrix = json.load(open(sys.argv[7], "r"))
 
+    print("# github dump")
+    print(f"{github}")
+
+    print("# job dump")
+    print(f"{job}")
+
+    print("# steps dump")
+    print(f"{steps}")
+
+    print("# runner dump")
+    print(f"{runner}")
+
+    print("# strategy dump")
+    print(f"{strategy}")
+
+    print("# matrix dump")
+    print(f"{matrix}")
+
     print("# Job Summary")
     print("| Run | Result | Notes |")
     print("|---|---|---|")
@@ -22,5 +40,5 @@ if __name__ == "__main__":
     for key in steps:
         value = steps[key];
         outcome = value['outcome']
-        outcome_emoji = outcome == 'success' ? ":green_circle:" : ":red_circle:"
+        outcome_emoji = ":green_circle:" if outcome == 'success' else ":red_circle:"
         print(f"| {key} | {outcome_emoji} {outcome} | :rocket: |")

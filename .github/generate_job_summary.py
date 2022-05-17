@@ -2,12 +2,7 @@ import sys
 import json
 
 if __name__ == "__main__":
-    print(f"Arguments count: {len(sys.argv)}")
-    for i, arg in enumerate(sys.argv):
-        print(f"Argument {i:>6}: {arg}")
-
     sys.stdout = open(sys.argv[1], "w")
-
     github = json.load(open(sys.argv[2], "r"))
     job = json.load(open(sys.argv[3], "r"))
     steps = json.load(open(sys.argv[4], "r"))
@@ -15,25 +10,16 @@ if __name__ == "__main__":
     strategy = json.load(open(sys.argv[6], "r"))
     matrix = json.load(open(sys.argv[7], "r"))
 
-    print("# github dump")
-    print(f"{github}")
+    print(f"# {github['workflow']} Summary")
+    print("")
 
-    print("# job dump")
-    print(f"{job}")
+    print("## Details")
+    print(f"- started by: `{github['actor']}`")
+    print(f"- branch: `{github['ref']}`")
 
-    print("# steps dump")
-    print(f"{steps}")
+    print("")
 
-    print("# runner dump")
-    print(f"{runner}")
-
-    print("# strategy dump")
-    print(f"{strategy}")
-
-    print("# matrix dump")
-    print(f"{matrix}")
-
-    print("# Job Summary")
+    print("## Summary of Steps")
     print("| Run | Result | Notes |")
     print("|---|---|---|")
 

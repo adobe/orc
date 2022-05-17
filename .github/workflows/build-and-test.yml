@@ -14,23 +14,28 @@ jobs:
         with:
           python-version: 3.8
       - name: ⬇️ sources
-        id: checkout
+        id: download-sources
         uses: actions/checkout@v3
       - name: 🏗️ project files
+        id: setup-project-files
         run: |
           mkdir build
           cd build
           # cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ orc debug
+        id: build-orc-debug
         run: |
           # xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
       - name: 🛠️ orc release
+        id: build-orc-release
         run: |
           # xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
       - name: 🛠️ orc_test
+        id: build-orc_test
         run: |
           # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
       - name: 🏃 orc_test
+        id: run-orc_test
         run: |
           # /usr/bin/time -l ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ ASan

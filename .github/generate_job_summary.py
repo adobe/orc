@@ -11,3 +11,5 @@ if __name__ == "__main__":
     f.write("| Run | Result | Notes |")
     f.write("|---|---|---|")
     f.write("| Hello | world! | :rocket: |")
+
+    f.write(sys.argv[2])

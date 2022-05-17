@@ -51,13 +51,13 @@ jobs:
       - name: 🏃 orc_test w/ UBSan
         run: |
           # ./build/Release/orc_test ./test/battery
+      - name: ✏️ github json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: "github.json"
+          json: ${{ toJSON(github) }}
       - name: ✍️ job summary
         run: |
-          GITHUB_JSON=${{ toJSON(github) }}
-          GITHUB_JSON="${GITHUB_JSON//'%'/'%25'}"
-          GITHUB_JSON="${GITHUB_JSON//$'\n'/'%0A'}"
-          GITHUB_JSON="${GITHUB_JSON//$'\r'/'%0D'}"
-          echo '$GITHUB_JSON' > github.json
           echo '${{ toJSON(job) }}' > job.json
           echo '${{ toJSON(steps) }}' > steps.json
           echo '${{ toJSON(runner) }}' > runner.json

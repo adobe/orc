@@ -9,7 +9,7 @@ jobs:
   build-and-test:
     runs-on: macos-latest
     steps:
-      - name: Updating Action Summary
+      - name: ✍️ job summary
         run: |
           echo '# Job Summary' >> $GITHUB_STEP_SUMMARY
           echo '| Run | Result | Notes |' >> $GITHUB_STEP_SUMMARY
@@ -17,7 +17,7 @@ jobs:
       - name: ⬇️ sources
         id: checkout
         uses: actions/checkout@v3
-      - name: Updating Action Summary
+      - name: ✍️ job summary
         run: echo '| Checkout | ${{ steps.checkout.outcome }} | |' >> $GITHUB_STEP_SUMMARY
       - name: 🏗️ project files
         run: |
@@ -26,31 +26,31 @@ jobs:
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ orc debug
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
       - name: 🛠️ orc release
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
       - name: 🛠️ orc_test
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
       - name: 🏃 orc_test
         run: |
-          /usr/bin/time -l ./build/Release/orc_test ./test/battery
+          # /usr/bin/time -l ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ ASan
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ ASan
         run: |
-          ./build/Release/orc_test ./test/battery
+          # ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ TSan
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ TSan
         run: |
-          ./build/Release/orc_test ./test/battery
+          # ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ UBSan
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
+          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ UBSan
         run: |
-          ./build/Release/orc_test ./test/battery
+          # ./build/Release/orc_test ./test/battery

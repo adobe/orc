@@ -9,6 +9,10 @@ jobs:
   build-and-test:
     runs-on: macos-latest
     steps:
+      - name: 🐍 setup
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
       - name: ✍️ job summary
         run: |
           echo '# Job Summary' >> $GITHUB_STEP_SUMMARY
@@ -56,38 +60,17 @@ jobs:
           # ./build/Release/orc_test ./test/battery
       - name: Dump GitHub context
         id: github_context_step
-        run: |
-          echo '# GitHub context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(github) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ toJSON(github) }}'
       - name: Dump job context
-        run: |
-          echo '# job context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(job) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ toJSON(job) }}'
       - name: Dump steps context
-        run: |
-          echo '# steps context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(steps) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ toJSON(steps) }}'
       - name: Dump runner context
-        run: |
-          echo '# runner context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(runner) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ toJSON(runner) }}'
       - name: Dump strategy context
-        run: |
-          echo '# strategy context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(strategy) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ toJSON(strategy) }}'
       - name: Dump matrix context
+        run: echo '${{ toJSON(matrix) }}'
+      - name: ✍️ job summary
         run: |
-          echo '# matrix context' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(matrix) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          python generate_job_summary.py $GITHUB_STEP_SUMMARY ${{ toJSON(steps) }}

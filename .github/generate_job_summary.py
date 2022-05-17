@@ -21,4 +21,4 @@ if __name__ == "__main__":
 
     for key in steps:
         value = steps[key];
-        print(f"| {key} | {value.outcome} | :rocket: |")
+        print(f"| {key} | {value} | :rocket: |")

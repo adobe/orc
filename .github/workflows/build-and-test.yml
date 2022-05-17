@@ -61,31 +61,11 @@ jobs:
         with:
           name: "github.json"
           json: ${{ toJSON(github) }}
-      - name: ✏️ job json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "job.json"
-          json: ${{ toJSON(job) }}
       - name: ✏️ steps json
         uses: jsdaniell/create-json@1.1.2
         with:
           name: "steps.json"
           json: ${{ toJSON(steps) }}
-      - name: ✏️ runner json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "runner.json"
-          json: ${{ toJSON(runner) }}
-      - name: ✏️ strategy json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "strategy.json"
-          json: ${{ toJSON(strategy) }}
-      - name: ✏️ matrix json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "matrix.json"
-          json: ${{ toJSON(matrix) }}
       - name: ✍️ job summary
         run: |
-          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY github.json job.json steps.json runner.json strategy.json matrix.json
+          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY github.json steps.json

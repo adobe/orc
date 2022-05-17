@@ -20,7 +20,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
+          # cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ orc debug
         run: |
           # xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
@@ -53,10 +53,10 @@ jobs:
           # ./build/Release/orc_test ./test/battery
       - name: ✍️ job summary
         run: |
-          echo "${{ toJSON(github) }}" > github.json
-          echo "${{ toJSON(job) }}" > job.json
-          echo "${{ toJSON(steps) }}" > steps.json
-          echo "${{ toJSON(runner) }}" > runner.json
-          echo "${{ toJSON(strategy) }}" > strategy.json
-          echo "${{ toJSON(matrix) }}" > matrix.json
+          echo '${{ toJSON(github) }}' > github.json
+          echo '${{ toJSON(job) }}' > job.json
+          echo '${{ toJSON(steps) }}' > steps.json
+          echo '${{ toJSON(runner) }}' > runner.json
+          echo '${{ toJSON(strategy) }}' > strategy.json
+          echo '${{ toJSON(matrix) }}' > matrix.json
           python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY github.json job.json steps.json runner.json strategy.json matrix.json

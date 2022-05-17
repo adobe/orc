@@ -1,4 +1,5 @@
 import sys
+import json
 
 if __name__ == "__main__":
     print(f"Arguments count: {len(sys.argv)}")

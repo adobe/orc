@@ -53,4 +53,4 @@ jobs:
           # ./build/Release/orc_test ./test/battery
       - name: ✍️ job summary
         run: |
-          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY ${{ steps }}
+          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY '${{ toJSON(steps) }}'

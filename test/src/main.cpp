@@ -414,7 +414,7 @@ int main(int argc, char** argv) try {
         std::cerr << "Usage: " << argv[0] << " /path/to/test/battery/\n";
         throw std::runtime_error("no path to test battery given");
     }
-
+x
     std::filesystem::path battery_path{argv[1]};
 
     if (!exists(battery_path) || !is_directory(battery_path)) {

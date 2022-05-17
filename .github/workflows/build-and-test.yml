@@ -9,8 +9,15 @@ jobs:
   build-and-test:
     runs-on: macos-latest
     steps:
+      - name: Updating Action Summary
+        run: echo '# Job Summary' >> $GITHUB_STEP_SUMMARY
+        run: echo '| Run | Result | Notes |' >> $GITHUB_STEP_SUMMARY
+        run: echo '|---|---|---|' >> $GITHUB_STEP_SUMMARY
       - name: ⬇️ sources
+        id: checkout
         uses: actions/checkout@v3
+      - name: Updating Action Summary
+        run: echo '| Checkout | ${{ steps.checkout.outcome }} | |' >> $GITHUB_STEP_SUMMARY
       - name: 🏗️ project files
         run: |
           mkdir build

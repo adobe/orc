@@ -21,4 +21,6 @@ if __name__ == "__main__":
 
     for key in steps:
         value = steps[key];
-        print(f"| {key} | {value} | :rocket: |")
+        outcome = value['outcome']
+        outcome_emoji = outcome == 'success' ? ":green_circle:" : ":red_circle:"
+        print(f"| {key} | {outcome_emoji} {outcome} | :rocket: |")

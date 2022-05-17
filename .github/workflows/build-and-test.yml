@@ -47,32 +47,32 @@ jobs:
         id: build-orc_test-asan
         continue-on-error: true
         run: |
-          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ ASan
         id: run-orc_test-asan
         continue-on-error: true
         run: |
-          # ./build/Release/orc_test ./test/battery
+          ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ TSan
         id: build-orc_test-tsan
         continue-on-error: true
         run: |
-          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ TSan
         id: run-orc_test-tsan
         continue-on-error: true
         run: |
-          # ./build/Release/orc_test ./test/battery
+          ./build/Release/orc_test ./test/battery
       - name: 🛠️ orc_test w/ UBSan
         id: build-orc_test-ubsan
         continue-on-error: true
         run: |
-          # xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
       - name: 🏃 orc_test w/ UBSan
         id: run-orc_test-ubsan
         continue-on-error: true
         run: |
-          # ./build/Release/orc_test ./test/battery
+          ./build/Release/orc_test ./test/battery
       - name: ✏️ github json
         uses: jsdaniell/create-json@1.1.2
         continue-on-error: true

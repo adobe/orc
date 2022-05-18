@@ -497,6 +497,16 @@ int main(int argc, char** argv) try {
         std::cout << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
     }
 
+    std::vector<pool_string>& paths = unsafe_odrv_paths();
+    std::sort(paths.begin(), paths.end());
+    auto it = std::unique(paths.begin(), paths.end());
+    paths.resize(std::distance(paths.begin(), it));
+    
+    for(pool_string ps : paths) {
+        std::cout << "Path: " << ps << "\n";
+    }
+    std::cout << "Count=" << paths.size() << "\n";
+        
     return epilogue(false);
 } catch (const std::exception& error) {
     std::cerr << "Fatal error: " << error.what() << '\n';

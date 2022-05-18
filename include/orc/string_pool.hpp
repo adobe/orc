@@ -73,6 +73,10 @@ struct pool_string {
     friend inline bool operator!=(const pool_string& x, const pool_string& y) {
         return !(x == y);
     }
+    
+    friend inline bool operator<(pool_string x, pool_string y) {
+        return x.view() < y.view();
+    }
 
     friend inline auto& operator<<(std::ostream& x, const pool_string& y) {
         return x << y.view();

@@ -40,6 +40,11 @@
 
 /**************************************************************************************************/
 
+std::vector<pool_string>& unsafe_odrv_paths() {
+    static std::vector<pool_string> paths;
+    return paths;
+}
+
 namespace {
 
 /**************************************************************************************************/
@@ -91,15 +96,35 @@ auto& unsafe_odrv_records() {
 
 /**************************************************************************************************/
 
+bool should_report(const odrv_report& report) {
+    auto& settings = settings::instance();
+    const std::string& odrv_category = report.category();
+    bool do_report = true;
+
+    if (!settings._violation_ignore.empty()) {
+        // Report everything except the stuff on the ignore list
+        do_report = !sorted_has(settings._violation_ignore, odrv_category);
+    } else if (!settings._violation_report.empty()) {
+        // Report nothing except the the stuff on the report list
+        do_report = sorted_has(settings._violation_report, odrv_category);
+    }
+    return do_report;
+}
+
 void record_odrv(const std::string_view& symbol, const die& a, const die& b, dw::at name) {
     static std::mutex record_mutex;
     std::lock_guard<std::mutex> lock(record_mutex);
+
     unsafe_odrv_records().push_back(odrv_report{
         symbol,
         a,
         b,
         name
     });
+
+    if (should_report(unsafe_odrv_records().back())) {
+        unsafe_odrv_paths().push_back(a._path);
+    }
 }
 
 /**************************************************************************************************/
@@ -580,23 +605,15 @@ pool_string odrv_report::attribute_string(dw::at name) const {
 
 /**************************************************************************************************/
 
+
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     const die& a = report._a;
     const die& b = report._b;
     auto& settings = settings::instance();
     std::string odrv_category(report.category());
-    bool do_report{true};
 
-    if (!settings._violation_ignore.empty()) {
-        // Report everything except the stuff on the ignore list
-        do_report = !sorted_has(settings._violation_ignore, odrv_category);
-    } else if (!settings._violation_report.empty()) {
-        // Report nothing except the the stuff on the report list
-        do_report = sorted_has(settings._violation_report, odrv_category);
-    }
-
-    if (!do_report) return s;
+    if (!should_report(report)) return s;
 
     // The number of unique ODRVs is tricky.
     // If A, B, and C are types, and C is different, then if we scan:

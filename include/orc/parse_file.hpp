@@ -44,7 +44,7 @@ inline std::size_t hash_combine(std::size_t seed, const T& x) {
     return seed ^ std::hash<T>{}(x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
-template <class T, class ... Args>
+template <class T, class... Args>
 inline std::size_t hash_combine(std::size_t seed, const T& x, Args&&... args) {
     // This routine reduces the argument count by 1 by hashing `x` into the seed, and calling
     // hash_combine on the remaining arguments and the new seed. Eventually Args will disintegrate
@@ -110,7 +110,8 @@ struct freader {
     std::string_view read_c_string_view() {
         assert(*this);
         auto f = _p;
-        for (; *_p; ++_p) {}
+        for (; *_p; ++_p) {
+        }
         auto n = _p++ - f;
         return std::string_view(f, n);
     }
@@ -131,6 +132,7 @@ auto temp_seek(freader& s, std::istream::off_type offset, std::ios::seekdir dir,
     struct posmark {
         explicit posmark(freader& s) : _s{s}, _pos{_s.tellg()} {}
         ~posmark() { _s.seekg(_pos); }
+
     private:
         freader& _s;
         std::size_t _pos;
@@ -228,10 +230,10 @@ std::int32_t sleb128(freader& s);
     explicit about the intent of the call.
 */
 template <typename T>
-constexpr std::decay_t<T> copy(T&& value) noexcept(
-    noexcept(std::decay_t<T>{static_cast<T&&>(value)})) {
-  static_assert(!std::is_same<std::decay_t<T>, T>::value, "explicit copy of rvalue.");
-  return std::decay_t<T>{static_cast<T&&>(value)};
+constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
+    static_cast<T&&>(value)})) {
+    static_assert(!std::is_same<std::decay_t<T>, T>::value, "explicit copy of rvalue.");
+    return std::decay_t<T>{static_cast<T&&>(value)};
 }
 
 /**************************************************************************************************/

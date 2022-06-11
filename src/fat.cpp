@@ -38,11 +38,14 @@ struct fat_arch_64 {
 
 /**************************************************************************************************/
 
-const char* magic_to_string(std::uint32_t magic) {
-    switch (magic) {
-        case FAT_MAGIC: return "fat32";
-        case FAT_MAGIC_64: return "fat64";
-        default: assert(false);
+const char* cputype_to_string(cpu_type_t cputype) {
+    switch (cputype) {
+        case CPU_TYPE_X86: return "arch.x86";
+        case CPU_TYPE_ARM: return "arch.arm";
+        case CPU_TYPE_X86_64: return "arch.x86_64";
+        case CPU_TYPE_ARM64: return "arch.arm64";
+        case CPU_TYPE_ARM64_32: return "arch.arm64_32";
+        default: return "arch.unknown";
     }
 }
 
@@ -70,7 +73,8 @@ void read_fat(object_ancestry&& ancestry,
     for (std::size_t i = 0; i < header.nfat_arch; ++i) {
         std::size_t offset{0};
         std::size_t size{0};
-
+        cpu_type_t cputype{0};
+    
         if (is_64_bit) {
             auto arch = read_pod<fat_arch_64>(s);
             if (details._needs_byteswap) {
@@ -82,6 +86,7 @@ void read_fat(object_ancestry&& ancestry,
             }
             offset = arch.offset;
             size = arch.size;
+            cputype = arch.cputype;
         } else {
             auto arch = read_pod<fat_arch>(s);
             if (details._needs_byteswap) {
@@ -93,10 +98,11 @@ void read_fat(object_ancestry&& ancestry,
             }
             offset = arch.offset;
             size = arch.size;
+            cputype = arch.cputype;
         }
 
         temp_seek(s, offset, [&] {
-            parse_file(magic_to_string(header.magic),
+            parse_file(cputype_to_string(cputype),
                        ancestry,
                        s,
                        s.tellg() + static_cast<std::streamoff>(size),

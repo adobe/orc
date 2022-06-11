@@ -7,10 +7,11 @@
 #pragma once
 
 // stdc++
-#include <cstdint>
-#include <vector>
-#include <string>
+#include <array>
 #include <cassert>
+#include <cstdint>
+#include <string>
+#include <vector>
 
 // application
 #include "orc/dwarf_constants.hpp"
@@ -27,22 +28,21 @@ struct freader;
 // have both values around (especially in the DIE reference case.)
 struct attribute_value {
     enum class type {
-        none      = 0,
-        passover  = 1 << 0,
-        uint      = 1 << 1,
-        sint      = 1 << 2,
-        string    = 1 << 3,
+        none = 0,
+        passover = 1 << 0,
+        uint = 1 << 1,
+        sint = 1 << 2,
+        string = 1 << 3,
         reference = 1 << 4,
-        die       = 1 << 5,
+        die = 1 << 5,
     };
     using ut = typename std::underlying_type<type>::type;
 
     friend auto operator|=(type& x, const type& y) {
-        return reinterpret_cast<enum type&>(reinterpret_cast<ut&>(x) |= reinterpret_cast<const ut&>(y));
+        return reinterpret_cast<enum type&>(reinterpret_cast<ut&>(x) |=
+                                            reinterpret_cast<const ut&>(y));
     }
-    friend auto has_type(type x, type y) {
-        return (static_cast<ut>(x) & static_cast<ut>(y)) != 0;
-    }
+    friend auto has_type(type x, type y) { return (static_cast<ut>(x) & static_cast<ut>(y)) != 0; }
 
     void passover() { _type = type::passover; }
 
@@ -179,6 +179,25 @@ enum class arch : std::uint8_t {
 const char* to_string(arch arch);
 
 /**************************************************************************************************/
+
+struct object_ancestry {
+    std::array<pool_string, 5> _ancestors;
+    std::size_t _count{0};
+
+    auto begin() const { return _ancestors.begin(); }
+    auto end() const { return begin() + _count; }
+    auto& back() {
+        assert(_count);
+        return _ancestors[_count];
+    }
+
+    void emplace_back(pool_string&& ancestor) {
+        assert((_count + 1) < _ancestors.size());
+        _ancestors[_count++] = std::move(ancestor);
+    }
+};
+
+/**************************************************************************************************/
 // A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to
 // use the same abbreviation, but because the die is listed in a different place in the debug_info
@@ -187,7 +206,7 @@ struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    pool_string _object_file;
+    object_ancestry _ancestry;
     pool_string _path;
     attribute* _attributes;
     std::size_t _attributes_size{0};
@@ -240,18 +259,10 @@ struct die {
         return attribute_has_type(at, attribute_value::type::die);
     }
 
-    auto attribute_uint(dw::at at) const {
-        return attribute(at)._value.uint();
-    }
-    const auto& attribute_string(dw::at at) const {
-        return attribute(at)._value.string();
-    }
-    auto attribute_reference(dw::at at) const {
-        return attribute(at)._value.reference();
-    }
-    const auto& attribute_die(dw::at at) const {
-        return attribute(at)._value.die();
-    }
+    auto attribute_uint(dw::at at) const { return attribute(at)._value.uint(); }
+    const auto& attribute_string(dw::at at) const { return attribute(at)._value.string(); }
+    auto attribute_reference(dw::at at) const { return attribute(at)._value.reference(); }
+    const auto& attribute_die(dw::at at) const { return attribute(at)._value.die(); }
 };
 
 std::ostream& operator<<(std::ostream& s, const die& x);

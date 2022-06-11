@@ -38,11 +38,24 @@ struct fat_arch_64 {
 
 /**************************************************************************************************/
 
+const char* cputype_to_string(cpu_type_t cputype) {
+    switch (cputype) {
+        case CPU_TYPE_X86: return "arch.x86";
+        case CPU_TYPE_ARM: return "arch.arm";
+        case CPU_TYPE_X86_64: return "arch.x86_64";
+        case CPU_TYPE_ARM64: return "arch.arm64";
+        case CPU_TYPE_ARM64_32: return "arch.arm64_32";
+        default: return "arch.unknown";
+    }
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
 
-void read_fat(const std::string& object_name,
+void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
@@ -60,7 +73,8 @@ void read_fat(const std::string& object_name,
     for (std::size_t i = 0; i < header.nfat_arch; ++i) {
         std::size_t offset{0};
         std::size_t size{0};
-
+        cpu_type_t cputype{0};
+    
         if (is_64_bit) {
             auto arch = read_pod<fat_arch_64>(s);
             if (details._needs_byteswap) {
@@ -72,6 +86,7 @@ void read_fat(const std::string& object_name,
             }
             offset = arch.offset;
             size = arch.size;
+            cputype = arch.cputype;
         } else {
             auto arch = read_pod<fat_arch>(s);
             if (details._needs_byteswap) {
@@ -83,10 +98,15 @@ void read_fat(const std::string& object_name,
             }
             offset = arch.offset;
             size = arch.size;
+            cputype = arch.cputype;
         }
 
         temp_seek(s, offset, [&] {
-            parse_file(object_name, s, s.tellg() + static_cast<std::streamoff>(size), callbacks);
+            parse_file(cputype_to_string(cputype),
+                       ancestry,
+                       s,
+                       s.tellg() + static_cast<std::streamoff>(size),
+                       callbacks);
         });
     }
 }

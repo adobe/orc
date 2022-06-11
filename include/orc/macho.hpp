@@ -14,7 +14,7 @@
 
 /**************************************************************************************************/
 
-void read_macho(std::string object_name,
+void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,

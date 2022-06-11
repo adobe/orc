@@ -16,7 +16,7 @@
 /**************************************************************************************************/
 
 struct dwarf {
-    dwarf(const std::string& object_file,
+    dwarf(object_ancestry&& ancestry,
           freader& s,
           const file_details& details,
           callbacks callbacks);

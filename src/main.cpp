@@ -384,17 +384,12 @@ auto epilogue(bool exception) {
 
     if (log_level_at_least(settings::log_level::info)) {
         cout_safe([&](auto& s){
-            s << "info: ORC complete " << g._odrv_count << " ODRVs reported\n";
+            s << "info: ORC complete.\n"
+              << "info:   " << g._odrv_count << " ODRVs reported\n"
+              << "info:   " << g._object_file_count << " compilation units processed\n"
+              << "info:   " << g._die_processed_count << " dies processed\n"
+              << "info:   " << g._die_registered_count << " dies registered\n";
         });
-
-        if (log_level_at_least(settings::log_level::verbose)) {
-            cout_safe([&](auto& s){
-            s   << "verbose: additional stats:\n"
-                << "  " << g._object_file_count << " compilation units processed\n"
-                << "  " << g._die_processed_count << " dies processed\n"
-                << "  " << g._die_registered_count << " dies registered\n";
-            });
-        }
     }
 
     if (exception || g._odrv_count != 0) {

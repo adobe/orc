@@ -80,7 +80,9 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
     std::string def_loc;
     std::vector<attribute> attributes(x._attributes, x._attributes + x._attributes_size);
 
-    s << "compilation unit: " << x._object_file.allocate_path().filename().string() << ":\n";
+    for (const auto& ancestor: x._ancestry) {
+        s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
+    }
 
     auto erase_attr = [](auto& attributes, auto key){
         auto found = std::find_if(attributes.begin(), attributes.end(), [&](auto& x){

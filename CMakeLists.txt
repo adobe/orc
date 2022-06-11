@@ -60,8 +60,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_XCODE_GENERATE_SCHEME OFF)
 
 file(GLOB SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
+file(GLOB HEADER_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/orc/*.hpp)
 
-add_executable(orc_orc ${SRC_FILES})
+add_executable(orc_orc ${SRC_FILES} ${HEADER_FILES})
 add_executable(orc::orc ALIAS orc_orc)
 
 set_target_properties(orc_orc PROPERTIES OUTPUT_NAME "orc")

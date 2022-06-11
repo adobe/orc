@@ -220,7 +220,13 @@ std::uint32_t uleb128(freader& s);
 std::int32_t sleb128(freader& s);
 
 /**************************************************************************************************/
-
+/*
+    For functions that take values by rvalue reference (aka sink functions), it can be helpful to be
+    explicit about the object being passed in. In such cases, the object can only be moved or
+    copied. C++ already provides a `move` routine; this is the `copy` equivalent. It is more
+    helpful than passing T(x) (which would create a copy of x) because, at a minimum, it is more
+    explicit about the intent of the call.
+*/
 template <typename T>
 constexpr std::decay_t<T> copy(T&& value) noexcept(
     noexcept(std::decay_t<T>{static_cast<T&&>(value)})) {

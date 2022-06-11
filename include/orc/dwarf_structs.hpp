@@ -7,6 +7,7 @@
 #pragma once
 
 // stdc++
+#include <array>
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -179,6 +180,22 @@ enum class arch : std::uint8_t {
 const char* to_string(arch arch);
 
 /**************************************************************************************************/
+
+struct object_ancestry {
+    std::array<pool_string, 5> _ancestors;
+    std::size_t _count{0};
+
+    auto begin() const { return _ancestors.begin(); }
+    auto end() const { return begin() + _count; }
+    auto& back() { assert(_count); return _ancestors[_count]; }
+
+    void emplace_back(pool_string&& ancestor) {
+        assert((_count + 1) < _ancestors.size());
+        _ancestors[_count++] = std::move(ancestor);
+    }
+};
+
+/**************************************************************************************************/
 // A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to
 // use the same abbreviation, but because the die is listed in a different place in the debug_info
@@ -187,7 +204,7 @@ struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    pool_string _object_file;
+    object_ancestry _ancestry;
     pool_string _path;
     attribute* _attributes;
     std::size_t _attributes_size{0};

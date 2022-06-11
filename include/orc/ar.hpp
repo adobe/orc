@@ -14,7 +14,7 @@
 
 /**************************************************************************************************/
 
-void read_ar(const std::string& object_name,
+void read_ar(object_ancestry&& ancestry,
              freader& s,
              std::istream::pos_type end_pos,
              file_details details,

@@ -160,12 +160,12 @@ struct mach_header {
 
 /**************************************************************************************************/
 
-void read_macho(std::string object_name,
+void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
                 callbacks callbacks) {
-    callbacks._do_work([_object_name = std::move(object_name),
+    callbacks._do_work([_ancestry = std::move(ancestry),
                         _s = std::move(s),
                         _details = std::move(details),
                         _callbacks = std::move(callbacks)]() mutable {
@@ -203,7 +203,7 @@ void read_macho(std::string object_name,
         // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
         // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
         // is found? A problem for later...
-        dwarf dwarf(_object_name, _s, std::move(_details), std::move(_callbacks));
+        dwarf dwarf(std::move(_ancestry), _s, std::move(_details), std::move(_callbacks));
 
         for (std::size_t i = 0; i < load_command_sz; ++i) {
             read_load_command(_s, _details, dwarf);

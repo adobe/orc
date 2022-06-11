@@ -29,7 +29,7 @@ std::string read_string(freader& s, std::size_t n) {
 
 /**************************************************************************************************/
 
-void read_ar(const std::string&,
+void read_ar(object_ancestry&& ancestry,
              freader& s,
              std::istream::pos_type end_pos,
              file_details details,
@@ -56,7 +56,7 @@ void read_ar(const std::string&,
 
         if (identifier.rfind(".o") == identifier.size() - 2) {
             auto end_pos = s.tellg() + static_cast<std::streamoff>(file_size);
-            parse_file(identifier, s, end_pos, callbacks);
+            parse_file(identifier, ancestry, s, end_pos, callbacks);
             s.seekg(end_pos); // parse_file could leave the read head anywhere.
         } else {
             // skip to next file in the archive.

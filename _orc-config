@@ -28,7 +28,7 @@ filter_redundant = true
 #
 # The default value is `true`.
 
-forward_to_linker = true
+forward_to_linker = false
 
 # Print the symbol paths as they are processed by ORC. Setting this value to `true` will result in
 # copious output. Because this can produce such a flurry of information, it is tracked separately
@@ -48,7 +48,7 @@ print_symbol_paths = false
 #
 # The default value is `'warning'`.
 
-log_level = 'warning'
+log_level = 'verbose'
 
 # Output a die-count-based progress update throughout the session.
 #
@@ -61,7 +61,7 @@ show_progress = false
 #
 # The default value is `false`.
 
-standalone_mode = false
+standalone_mode = true
 
 # If defined, ORC will log output to the specified file. (Normal stream output 
 # is unaffected by the `output_file`.) 

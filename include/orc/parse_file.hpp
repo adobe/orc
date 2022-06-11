@@ -221,6 +221,15 @@ std::int32_t sleb128(freader& s);
 
 /**************************************************************************************************/
 
+template <typename T>
+constexpr std::decay_t<T> copy(T&& value) noexcept(
+    noexcept(std::decay_t<T>{static_cast<T&&>(value)})) {
+  static_assert(!std::is_same<std::decay_t<T>, T>::value, "explicit copy of rvalue.");
+  return std::decay_t<T>{static_cast<T&&>(value)};
+}
+
+/**************************************************************************************************/
+
 using dies = std::vector<die>;
 using register_dies_callback = std::function<void(dies)>;
 using do_work_callback = std::function<void(std::function<void()>)>;
@@ -233,6 +242,7 @@ struct callbacks {
 };
 
 void parse_file(const std::string& object_name,
+                const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,
                 callbacks callbacks);

@@ -42,7 +42,7 @@ struct fat_arch_64 {
 
 /**************************************************************************************************/
 
-void read_fat(const std::string& object_name,
+void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
@@ -86,7 +86,11 @@ void read_fat(const std::string& object_name,
         }
 
         temp_seek(s, offset, [&] {
-            parse_file(object_name, s, s.tellg() + static_cast<std::streamoff>(size), callbacks);
+            parse_file(std::to_string(header.magic),
+                       ancestry,
+                       s,
+                       s.tellg() + static_cast<std::streamoff>(size),
+                       callbacks);
         });
     }
 }

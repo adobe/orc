@@ -151,20 +151,25 @@ std::int32_t sleb128(freader& s) {
 /**************************************************************************************************/
 
 void parse_file(const std::string& object_name,
+                const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,
                 callbacks callbacks) {
     auto detection = detect_file(s);
 
+    // append this object name to the ancestry
+    object_ancestry new_ancestry = ancestry;
+    new_ancestry.emplace_back(callbacks._empool(object_name));
+
     switch (detection._format) {
         case file_details::format::unknown:
             throw std::runtime_error("unknown format");
         case file_details::format::macho:
-            return read_macho(object_name, s, end_pos, std::move(detection), std::move(callbacks));
+            return read_macho(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
         case file_details::format::ar:
-            return read_ar(object_name, s, end_pos, std::move(detection), std::move(callbacks));
+            return read_ar(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
         case file_details::format::fat:
-            return read_fat(object_name, s, end_pos, std::move(detection), std::move(callbacks));
+            return read_fat(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
     }
 }
 

@@ -391,6 +391,8 @@ void register_dies(dies die_vector) {
         return --collection.end();
     });
 
+    globals::instance()._die_processed_count += dies.size();
+
     for (auto& d : dies) {
         // save for debugging. Useful to watch for a specific symbol.
 #if 0
@@ -404,6 +406,7 @@ void register_dies(dies die_vector) {
         auto should_skip = skip_die(dies, d, symbol);
 
         if (settings::instance()._print_symbol_paths) {
+#if 0
             // This is all horribly broken, especially now that we're calling this from multiple threads.
             static pool_string last_object_file_s;
 
@@ -418,6 +421,7 @@ void register_dies(dies die_vector) {
                 s.fill('0');
                 s << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
             });
+#endif
         }
 
         if (should_skip) continue;
@@ -615,8 +619,8 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << demangle(symbol.data()) << "`\n";
-    s << "    " << a << '\n';
-    s << "    " << b << '\n';
+    s << a << '\n';
+    s << b << '\n';
     s << "\n";
 
     ++globals::instance()._odrv_count;
@@ -644,7 +648,12 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
                 do_work,
                 empool,
             };
-            parse_file(_input_path.string(), input, input.size(), std::move(callbacks));
+
+            parse_file(_input_path.string(),
+                       object_ancestry(),
+                       input,
+                       input.size(),
+                       std::move(callbacks));
         });
     }
 

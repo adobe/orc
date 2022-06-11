@@ -327,11 +327,11 @@ attribute* alloc_attributes(std::size_t n) {
 /**************************************************************************************************/
 
 struct dwarf::implementation {
-    implementation(const std::string& object_file,
+    implementation(object_ancestry&& ancestry,
                    freader& s,
                    const file_details& details,
                    callbacks callbacks)
-        : _object_file(callbacks._empool(object_file)), _s(s), _details(details),
+        : _ancestry(std::move(ancestry)), _s(s), _details(details),
           _callbacks(std::move(callbacks)) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
@@ -367,7 +367,7 @@ struct dwarf::implementation {
 
     die abbreviation_to_die(std::size_t die_address, std::uint32_t abbrev_code);
 
-    pool_string _object_file;
+    object_ancestry _ancestry;
     freader& _s;
     const file_details _details;
     callbacks _callbacks;
@@ -856,7 +856,7 @@ void dwarf::implementation::process() {
     if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return;
 
 #if 0 // save for debugging, waiting to catch a particular file.
-    if (_object_file.allocate_string() == "ImathBox.cpp.o") {
+    if (_ancestry.back().allocate_string() == "ImathBox.cpp.o") {
         int x;
         (void)x;
     }
@@ -920,7 +920,7 @@ void dwarf::implementation::process() {
                 path_identifier_push();
             }
 
-            die._object_file = _object_file;
+            die._ancestry = _ancestry;
             die._hash = die_hash(die); // precompute the hash we'll use for the die map.
 
             dies.push_back(std::move(die));
@@ -937,11 +937,11 @@ void dwarf::implementation::process() {
 
 /**************************************************************************************************/
 
-dwarf::dwarf(const std::string& object_file,
+dwarf::dwarf(object_ancestry&& ancestry,
              freader& s,
              const file_details& details,
              callbacks callbacks)
-    : _impl(new implementation(object_file, s, details, std::move(callbacks)),
+    : _impl(new implementation(std::move(ancestry), s, details, std::move(callbacks)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

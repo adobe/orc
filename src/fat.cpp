@@ -38,6 +38,16 @@ struct fat_arch_64 {
 
 /**************************************************************************************************/
 
+const char* magic_to_string(std::uint32_t magic) {
+    switch (magic) {
+        case FAT_MAGIC: return "fat32";
+        case FAT_MAGIC_64: return "fat64";
+        default: assert(false);
+    }
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
@@ -86,7 +96,7 @@ void read_fat(object_ancestry&& ancestry,
         }
 
         temp_seek(s, offset, [&] {
-            parse_file(std::to_string(header.magic),
+            parse_file(magic_to_string(header.magic),
                        ancestry,
                        s,
                        s.tellg() + static_cast<std::streamoff>(size),

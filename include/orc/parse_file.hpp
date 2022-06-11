@@ -249,7 +249,7 @@ struct callbacks {
     empool_callback _empool;
 };
 
-void parse_file(const std::string& object_name,
+void parse_file(std::string_view object_name,
                 const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,

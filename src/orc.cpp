@@ -218,7 +218,7 @@ dw::at find_die_conflict(const die& x, const die& y) {
         if (nonfatal_attribute(name)) continue;
 
         auto yfound = std::find_if(yfirst, ylast, [&](auto& x) { return name == x._name; });
-        if (yfound == ylast) continue; // return name;
+        if (yfound == ylast) return name;
 
         const auto& yattr = *yfound;
 
@@ -314,6 +314,9 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
 
     // we don't handle any die that's ObjC-based.
     if (d.has_attribute(dw::at::apple_runtime_class)) return true;
+
+    // don't handle declarations - only definitions
+    if (d.has_attribute(dw::at::declaration) && d.attribute_uint(dw::at::declaration) == 1) return true;
 
     // If the symbol is listed in the symbol_ignore list, we're done here.
     if (sorted_has(settings::instance()._symbol_ignore, symbol)) return true;

@@ -238,7 +238,6 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
 
 /**************************************************************************************************/
 
-using dies = std::vector<die>;
 using register_dies_callback = std::function<void(dies)>;
 using do_work_callback = std::function<void(std::function<void()>)>;
 using empool_callback = std::function<pool_string(std::string_view)>;

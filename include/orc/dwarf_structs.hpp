@@ -267,4 +267,6 @@ struct die {
 
 std::ostream& operator<<(std::ostream& s, const die& x);
 
+using dies = std::vector<die>;
+
 /**************************************************************************************************/

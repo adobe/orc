@@ -45,8 +45,9 @@ const char* cputype_to_string(cpu_type_t cputype) {
         case CPU_TYPE_X86_64: return "arch.x86_64";
         case CPU_TYPE_ARM64: return "arch.arm64";
         case CPU_TYPE_ARM64_32: return "arch.arm64_32";
-        default: return "arch.unknown";
     }
+
+    return "arch.unknown";
 }
 
 /**************************************************************************************************/

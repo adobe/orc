@@ -21,15 +21,16 @@ if __name__ == "__main__":
     print("| Run | Result | Notes |")
     print("|---|---|---|")
 
-    failure = False
+    all_success = True
 
     for key in steps:
         value = steps[key];
         outcome = value['outcome']
-        failure |= outcome == 'success'
-        outcome_emoji = ":green_circle:" if outcome == 'success' else ":red_circle:"
+        cur_success = outcome == 'success'
+        all_success &= cur_success
+        outcome_emoji = ":green_circle:" if cur_success else ":red_circle:"
         outputs = value['outputs']
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
 
-    if failure:
+    if not all_success:
         sys.exit("One or more tests failed")

@@ -9,10 +9,9 @@ if __name__ == "__main__":
     print(f"# {github['workflow']}: Job Summary")
     print("")
 
-
     print("## Details")
     print(f"- started by: `{github['actor']}`")
-    if (github['event']['pull_request']):
+    if "event" in github && "pull_request" in github['event']:
         print(f"- branch: `{github['event']['pull_request']['head']['ref']}`")
     print(f"- action: `{github['event']['action']}`")
 
@@ -22,9 +21,17 @@ if __name__ == "__main__":
     print("| Run | Result | Notes |")
     print("|---|---|---|")
 
+    failure = False
+
     for key in steps:
         value = steps[key];
         outcome = value['outcome']
+        failure |= outcome == 'success'
         outcome_emoji = ":green_circle:" if outcome == 'success' else ":red_circle:"
         outputs = value['outputs']
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
+
+    if failure:
+        exit 1
+    else:
+        exit 0

@@ -189,7 +189,9 @@ struct file_name {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d) {
-    return hash_combine(0, d._arch, d._tag, d._path.hash());
+    bool is_declaration = d.has_attribute(dw::at::declaration) &&
+                          d.attribute_uint(dw::at::declaration) == 1;
+    return hash_combine(0, d._arch, d._tag, d._path.hash(), is_declaration);
 };
 
 /**************************************************************************************************/
@@ -320,6 +322,102 @@ attribute* alloc_attributes(std::size_t n) {
     return result;
 }
 
+/**************************************************************************************************/
+
+const die& lookup_die(const dies& dies, std::uint32_t offset) {
+    auto found = std::lower_bound(dies.begin(), dies.end(), offset,
+                                  [](const auto& x, const auto& offset){
+        return x._debug_info_offset < offset;
+    });
+    bool match = found != dies.end() && found->_debug_info_offset == offset;
+    assert(match);
+    if (!match) throw std::runtime_error("die not found");
+    return *found;
+}
+
+/**************************************************************************************************/
+
+void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
+    for (auto& attr : d) {
+        if (attr._name == dw::at::type) continue;
+        if (!attr.has(attribute_value::type::reference)) continue;
+        const die& resolved = lookup_die(dies, attr.reference());
+        attr._value.die(resolved);
+        attr._value.string(resolved._path);
+    }
+}
+
+/**************************************************************************************************/
+
+const die& find_base_reference(const dies& dies, const die& d, dw::at attribute) {
+    if (!d.has_attribute(attribute)) return d;
+    return find_base_reference(dies, lookup_die(dies, d.attribute_reference(attribute)), attribute);
+}
+
+/**************************************************************************************************/
+
+void resolve_type_attribute(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
+    constexpr auto type_k = dw::at::type;
+
+    if (!d.has_attribute(type_k)) return; // nothing to resolve
+    if (d._type_resolved) return; // already resolved
+
+    const die& base_type_die = find_base_reference(dies, d, type_k);
+
+    // Now that we have the resolved type die, overwrite this die's type to reflect
+    // the resolved type.
+    attribute& type_attr = d.attribute(type_k);
+    type_attr._value.die(base_type_die);
+    if (base_type_die.has_attribute(dw::at::name)) {
+        type_attr._value.string(base_type_die.attribute_string(dw::at::name));
+    }
+
+    d._type_resolved = true;
+}
+
+/**************************************************************************************************/
+#if 0
+bool resolve_specification_attribute(const dies& dies, die& d, const empool_callback& empool) { // REVISIT (fbrereto): d is an out-arg
+    // Section 2.13.2 (Declarations Completing Non-Defining Declarations) of the DWARF spec
+    // indicate that DIEs with a specification attribute do not need to duplicate the
+    // information present in the specification die. However, it _also_ says that not all
+    // attributes in the specification die will apply to _this_ die. So we have to pick
+    // and choose them. Nice. Here we make the expensive choice to copy over the attributes
+    // we care about from the specification die to this one. REVISIT (fosterbrereton) this
+    // is also sub-optimal, as it throws away the previous attribute memory block that gets
+    // allocated to make room for these other attributes.
+    if (!d.attribute_has_die(dw::at::specification)) return false;
+
+    const auto& spec_die = d.attribute_die(dw::at::specification);
+    const dw::at attributes_to_copy_over[] = {
+        dw::at::accessibility,
+        dw::at::linkage_name,
+    };
+
+    // replace with a std::accumulate when my head stops spinning from the problem at hand.
+    std::size_t additional{0};
+    for (const auto& attribute : attributes_to_copy_over) {
+        additional += spec_die.has_attribute(attribute);
+    }
+
+    if (additional == 0) return false;
+
+    std::size_t old_attr_count = d._attributes_size;
+    attribute* old_attr = d._attributes;
+
+    d._attributes_size += additional;
+    d._attributes = alloc_attributes(d._attributes_size);
+
+    attribute* next_attr = std::copy(old_attr, old_attr + old_attr_count, d._attributes);
+
+    for (const auto& attribute : attributes_to_copy_over) {
+        if (!spec_die.has_attribute(attribute)) continue;
+        *next_attr++ = spec_die.attribute(attribute);
+    }
+
+    return true;
+}
+#endif
 /**************************************************************************************************/
 
 } // namespace
@@ -931,6 +1029,31 @@ void dwarf::implementation::process() {
     // details out and reported to the surface.
 
     dies.shrink_to_fit();
+
+    for (auto& d : dies) {
+        resolve_reference_attributes(dies, d);
+
+        resolve_type_attribute(dies, d);
+#if 0
+        bool modified = resolve_specification_attribute(dies, d, _callbacks._empool);
+
+        if (modified) {
+            //
+            // Redo some finalization of the DIE
+            //
+            path_identifier_set(die_identifier(d));
+
+            d._path = empool(std::string_view(qualified_symbol_name(d)));
+
+            // recompute the die hash
+            // REVISIT (fosterbrereton) : There are a number of values that,
+            // when changed, require a re-hash of the die (arch, tag, and path). The setting of those values
+            // so either be tucked within an API of the die (so it can rehash the value
+            // on its own) or done at the end of these resolve_*
+            d._hash = die_hash(d); // precompute the hash we'll use for the die map.
+        }
+#endif
+    }
 
     _callbacks._register_die(std::move(dies));
 }

@@ -93,18 +93,25 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
             attributes.erase(found);
     };
 
+    bool first = true;
+
     if (x.attribute_has_string(dw::at::decl_file)) {
         s << "        definition location: " << x.attribute_string(dw::at::decl_file);
         erase_attr(attributes, dw::at::decl_file);
+
+        if (x.attribute_has_uint(dw::at::decl_line)) {
+            s << ":" + std::to_string(x.attribute_uint(dw::at::decl_line));
+            erase_attr(attributes, dw::at::decl_line);
+        }
+
+        first = false;
     }
 
-    if (x.attribute_has_uint(dw::at::decl_line)) {
-        s << ":" + std::to_string(x.attribute_uint(dw::at::decl_line));
-        erase_attr(attributes, dw::at::decl_line);
-    }
 
     for (const auto& attr : attributes) {
-        s << '\n' << attr;
+        if (!first) s << '\n';
+        s << attr;
+        first = false;
     }
 
     return s;

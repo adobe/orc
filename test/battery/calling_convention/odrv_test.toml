@@ -17,5 +17,4 @@
     symbol = "object"
 
 [orc_test_flags]
-
-disable = false
+    disable = true

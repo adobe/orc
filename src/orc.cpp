@@ -155,59 +155,6 @@ bool nonfatal_attribute(dw::at at) {
 }
 
 /**************************************************************************************************/
-
-const die& lookup_die(const dies& dies, std::uint32_t offset) {
-    auto found = std::lower_bound(dies.begin(), dies.end(), offset,
-                                  [](const auto& x, const auto& offset){
-        return x._debug_info_offset < offset;
-    });
-    bool match = found != dies.end() && found->_debug_info_offset == offset;
-    assert(match);
-    if (!match) throw std::runtime_error("die not found");
-    return *found;
-}
-
-/**************************************************************************************************/
-
-const die& find_base_type(const dies& dies, const die& d) {
-    if (!d.has_attribute(dw::at::type)) return d;
-    return find_base_type(dies, lookup_die(dies, d.attribute_reference(dw::at::type)));
-}
-
-/**************************************************************************************************/
-
-void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
-    for (auto& attr : d) {
-        if (attr._name == dw::at::type) continue;
-        if (!attr.has(attribute_value::type::reference)) continue;
-        const die& resolved = lookup_die(dies, attr.reference());
-        attr._value.die(resolved);
-        attr._value.string(resolved._path);
-    }
-}
-
-/**************************************************************************************************/
-
-void resolve_type_attribute(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
-    constexpr auto type_k = dw::at::type;
-
-    if (!d.has_attribute(type_k)) return; // nothing to resolve
-    if (d._type_resolved) return; // already resolved
-
-    const die& base_type_die = find_base_type(dies, d);
-
-    // Now that we have the resolved type die, overwrite this die's type to reflect
-    // the resolved type.
-    attribute& type_attr = d.attribute(type_k);
-    type_attr._value.die(base_type_die);
-    if (base_type_die.has_attribute(dw::at::name)) {
-        type_attr._value.string(base_type_die.attribute_string(dw::at::name));
-    }
-
-    d._type_resolved = true;
-}
-
-/**************************************************************************************************/
 bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_die_conflict(const die& x, const die& y) {
     const auto& yfirst = y.begin();
@@ -315,16 +262,12 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
     // we don't handle any die that's ObjC-based.
     if (d.has_attribute(dw::at::apple_runtime_class)) return true;
 
-    // don't handle declarations - only definitions
-    if (d.has_attribute(dw::at::declaration) && d.attribute_uint(dw::at::declaration) == 1) return true;
-
     // If the symbol is listed in the symbol_ignore list, we're done here.
     if (sorted_has(settings::instance()._symbol_ignore, symbol)) return true;
 
     // Unfortunately we have to do this work to see if we're dealing with
     // a self-referential type.
     if (d.has_attribute(dw::at::type)) {
-        resolve_type_attribute(dies, d);
         const auto& type = d.attribute(dw::at::type);
         // if this is a self-referential type, it's die will have no attributes.
         if (type.die()._attributes_size == 0) return true;
@@ -430,11 +373,9 @@ void register_dies(dies die_vector) {
         if (should_skip) continue;
 
         //
-        // After this point, we KNOW we're going to register the die. Do additional work
-        // necessary just for DIEs we're registering after this point.
+        // At this point we know we're going to register the die. Hereafter belongs
+        // work exclusive to DIEs getting registered/odr-enforced.
         //
-
-        resolve_reference_attributes(dies, d);
 
         auto result = global_die_map().insert(std::make_pair(d._hash, &d));
         if (result.second) {
@@ -621,7 +562,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     }
 
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
-      << demangle(symbol.data()) << "`\n";
+      << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     s << a << '\n';
     s << b << '\n';
     s << "\n";

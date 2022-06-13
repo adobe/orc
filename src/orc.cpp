@@ -157,8 +157,8 @@ bool nonfatal_attribute(dw::at at) {
 /**************************************************************************************************/
 bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_die_conflict(const die& x, const die& y) {
-    const auto& yfirst = y.begin();
-    const auto& ylast = y.end();
+    auto yfirst = y.begin();
+    auto ylast = y.end();
 
     for (const auto& xattr : x) {
         auto name = xattr._name;
@@ -173,6 +173,16 @@ dw::at find_die_conflict(const die& x, const die& y) {
         else if (xattr == yattr) continue;
 
         return name;
+    }
+
+    // Find and flag any nonfatal attributes that exist in y but not in x
+    const auto xfirst = x.begin();
+    const auto xlast = x.end();
+    for (; yfirst != ylast; ++yfirst) {
+        const auto& name = yfirst->_name;
+        if (nonfatal_attribute(name)) continue;
+        auto xfound = std::find_if(xfirst, xlast, [&](auto& x) { return name == x._name; });
+        if (xfound == xlast) return name;
     }
 
     // REVISIT (fbrereto) : There may be some attributes left over in y; should we care?

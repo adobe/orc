@@ -16,5 +16,9 @@
     category = "structure:calling_convention"
     symbol = "object"
 
+[[odrv]]
+    category = "subprogram:virtuality"
+    symbol = "object::api() const"
+
 [orc_test_flags]
-    disable = true
+    disable = false

@@ -86,6 +86,6 @@ jobs:
           name: "steps.json"
           json: ${{ toJSON(steps) }}
       - name: ✍️ job summary
-        continue-on-error: true
+        continue-on-error: false
         run: |
           python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY github.json steps.json

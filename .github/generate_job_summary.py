@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     print("## Details")
     print(f"- started by: `{github['actor']}`")
-    if "event" in github && "pull_request" in github['event']:
+    if "event" in github and "pull_request" in github['event']:
         print(f"- branch: `{github['event']['pull_request']['head']['ref']}`")
     print(f"- action: `{github['event']['action']}`")
 

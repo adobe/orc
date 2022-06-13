@@ -32,6 +32,4 @@ if __name__ == "__main__":
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
 
     if failure:
-        exit 1
-    else:
-        exit 0
+        sys.exit("One or more tests failed")

@@ -1,0 +1,16 @@
+[[source]]
+    path = "src.cpp"
+    object_file_name = "static_1"
+    flags = [
+        "-DORC_TEST_FILE=1"
+    ]
+
+[[source]]
+    path = "src.cpp"
+    object_file_name = "static_2"
+    flags = [
+        "-DORC_TEST_FILE=2"
+    ]
+
+[orc_test_flags]
+    disable = false

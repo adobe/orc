@@ -3,6 +3,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
 
 // posix
@@ -22,11 +23,38 @@ namespace {
 /**************************************************************************************************/
 
 struct orc_test_settings {
-    bool _github_actions_output_mode{false};
+    bool _json_mode{false};
 };
 
 auto& settings() {
     static orc_test_settings result;
+    return result;
+}
+
+/**************************************************************************************************/
+
+std::ostream& console() {
+    if (settings()._json_mode) {
+        static std::stringstream s;
+        return s;
+    }
+
+    return std::cout;
+}
+
+std::ostream& console_error() {
+    if (settings()._json_mode) {
+        static std::stringstream s;
+        return s;
+    }
+
+    return std::cerr;
+}
+
+/**************************************************************************************************/
+
+auto& toml_out() {
+    static toml::table result;
     return result;
 }
 
@@ -40,40 +68,32 @@ namespace log {
 
 /**************************************************************************************************/
 
-void set_output(const std::string& name, const std::string& value) {
-    if (!settings()._github_actions_output_mode) return;
-    std::cout << "::set-output name=" << name << "::" << value << '\n';
-}
-
-/**************************************************************************************************/
-
 void log(const std::string& type,
          const std::string& message,
          std::optional<std::string> title = std::nullopt,
          std::optional<std::string> filename = std::nullopt) {
-    if (settings()._github_actions_output_mode) {
-        std::string result("::");
-        result += type + " ";
-        bool first = true;
-        auto append_optional_param = [&](const std::string& key, const auto& value){
-            if (!value) return;
-            if (!first) result += ",";
-            result += key + "=" + *value;
-            first = false;
-        };
-        append_optional_param("file", filename);
-        append_optional_param("title", title);
-        result += "::" + message;
-        std::cout << result << '\n';
+    if (settings()._json_mode) {
+        toml::table result;
+        result.insert("type", type);
+        result.insert("message", message);
+        if (title) result.insert("title", *title);
+        if (filename) result.insert("filename", *filename);
+        if (auto* array = toml_out()["log"].as_array()) {
+            array->push_back(result);
+        } else {
+            toml::array new_log;
+            new_log.push_back(std::move(result));
+            toml_out().insert("log", std::move(new_log));
+        }
     } else {
         if (title) {
-            std::cout << *title << ": ";
+            console() << *title << ": ";
         }
-        std::cout << message;
+        console() << message;
         if (filename) {
-            std::cout << " (" << *filename << ")";
+            console() << " (" << *filename << ")";
         }
-        std::cout << '\n';
+        console() << '\n';
     }
 }
 
@@ -88,16 +108,16 @@ void notice(const std::string& message,
 /**************************************************************************************************/
 
 void warning(const std::string& message,
-            std::optional<std::string> title = std::nullopt,
-            std::optional<std::string> filename = std::nullopt) {
+             std::optional<std::string> title = std::nullopt,
+             std::optional<std::string> filename = std::nullopt) {
     log("warning", message, title, filename);
 }
 
 /**************************************************************************************************/
 
 void error(const std::string& message,
-            std::optional<std::string> title = std::nullopt,
-            std::optional<std::string> filename = std::nullopt) {
+           std::optional<std::string> title = std::nullopt,
+           std::optional<std::string> filename = std::nullopt) {
     log("error", message, title, filename);
 }
 
@@ -298,11 +318,11 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
     std::vector<std::filesystem::path> object_files;
     const bool preserve_object_files =
         settings["orc_test_flags"]["preserve_object_files"].value_or(false);
-    std::cout << "Compiling " << units.size() << " source file(s):\n";
+    console() << "Compiling " << units.size() << " source file(s):\n";
     for (auto& unit : units) {
         auto temp_path = object_file_path(home, unit);
         if (preserve_object_files) {
-            std::cout << temp_path << '\n';
+            console() << temp_path << '\n';
         } else {
             unit._path = temp_path;
         }
@@ -312,14 +332,14 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
         }
         command += " -g -c " + unit._src.string() + " -o " + temp_path.string();
         // Save this for debugging purposes.
-        // std::cout << command << '\n';
+        // console() << command << '\n';
         std::string result = exec(command.c_str());
         if (!result.empty()) {
-            std::cout << result;
+            console() << result;
             throw std::runtime_error("unexpected compilation failure");
         }
         object_files.emplace_back(std::move(temp_path));
-        std::cout << "    " << unit._src.filename() << " -> " << object_files.back().filename() << '\n';
+        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename() << '\n';
     }
     return object_files;
 }
@@ -385,7 +405,7 @@ void run_battery_test(const std::filesystem::path& home) {
     static bool first_s = false;
 
     if (!first_s) {
-        std::cout << '\n';
+        console() << '\n';
     } else {
         first_s = false;
     }
@@ -395,17 +415,17 @@ void run_battery_test(const std::filesystem::path& home) {
     assume(is_regular_file(tomlpath), "\"" + tomlpath.string() + "\" is not a regular file");
     toml::table settings;
 
-    std::cout << "-=-=- Test: " << home << "\n";
+    console() << "-=-=- Test: " << home << "\n";
 
     try {
         settings = toml::parse_file(tomlpath.string());
     } catch (const toml::parse_error& error) {
-        std::cerr << error << '\n';
+        console_error() << error << '\n';
         throw std::runtime_error("settings file parsing error");
     }
 
     // Save this for debugging purposes.
-    // std::cerr << toml::json_formatter{settings} << '\n';
+    // console_error() << toml::json_formatter{settings} << '\n';
 
     const bool skip_test = settings["orc_test_flags"]["disable"].value_or(false);
 
@@ -429,10 +449,12 @@ void run_battery_test(const std::filesystem::path& home) {
     orc_reset();
     auto reports = orc_process(object_files);
 
-    std::cout << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
+    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
 
-    log::set_output(home.stem().string() + ".expected", std::to_string(expected_odrvs.size()));
-    log::set_output(home.stem().string() + ".reported", std::to_string(reports.size()));
+    toml::table result;
+    result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
+    result.insert("reported", static_cast<toml::int64_t>(reports.size()));
+    toml_out().insert(home.stem().string(), std::move(result));
 
     // At this point, the reports.size() should match the expected_odrvs.size()
     bool unexpected_result = false;
@@ -451,22 +473,22 @@ void run_battery_test(const std::filesystem::path& home) {
                 break;
             }
 
-            std::cout << "    Found expected ODRV: " << report.category() << "\n";
+            console() << "    Found expected ODRV: " << report.category() << "\n";
         }
     }
 
     if (unexpected_result) {
-        std::cerr << "Reported ODRV(s):\n";
+        console_error() << "Reported ODRV(s):\n";
 
         // If there's an error in the test, dump what we've found to assist debugging.
         for (const auto& report : reports) {
-            std::cout << report << '\n';
+            console() << report << '\n';
         }
 
-        std::cerr << "Expected ODRV(s):\n";
+        console_error() << "Expected ODRV(s):\n";
         std::size_t count{0};
         for (const auto& expected : expected_odrvs) {
-            std::cout << ++count << ":\n" << expected << '\n';
+            console() << ++count << ":\n" << expected << '\n';
         }
 
         throw std::runtime_error("ODRV count mismatch");
@@ -490,7 +512,7 @@ void traverse_directory_tree(std::filesystem::path& directory) {
                 traverse_directory_tree(path);
             }
         } catch (...) {
-            std::cerr << "\nIn battery " << entry.path() << ":";
+            console_error() << "\nIn battery " << entry.path() << ":";
             throw;
         }
     }
@@ -504,7 +526,7 @@ void traverse_directory_tree(std::filesystem::path& directory) {
 
 int main(int argc, char** argv) try {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " /path/to/test/battery/\n";
+        console_error() << "Usage: " << argv[0] << " /path/to/test/battery/\n";
         throw std::runtime_error("no path to test battery given");
     }
 
@@ -514,13 +536,13 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("test battery path is missing or not a directory");
     }
 
-    settings()._github_actions_output_mode = argc > 2 && std::string(argv[2]) == "GITHUB";
-
-    if (settings()._github_actions_output_mode) {
-        log::notice("Github Actions output mode enabled");
-    }
+    settings()._json_mode = argc > 2 && std::string(argv[2]) == "--json_mode";
 
     traverse_directory_tree(battery_path);
+
+    if (settings()._json_mode) {
+        std::cout << toml::json_formatter{ toml_out() } << '\n';
+    }
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

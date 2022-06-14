@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # careful, though, not to leave these in production: they produce
     # copious (and possibly sensitive) output.
 
-    if False:
+    if True:
         print("## github")
         print("<code>")
         print(json.dumps(github, indent=4, sort_keys=False))

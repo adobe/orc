@@ -38,7 +38,7 @@ void output(const std::string& type,
             std::optional<std::string> filename = std::nullopt) {
     if (settings()._github_actions_output_mode) {
         std::string result("::");
-        result += output + " ";
+        result += type + " ";
         if (filename) result += "file=" + *filename;
         if (title) result += "title=" + *title;
         result += "::" + message;

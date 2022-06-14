@@ -43,9 +43,18 @@ if __name__ == "__main__":
             outputs = outputs_string
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
 
-    print("<code>")
-    print(json.dumps(steps, indent=4, sort_keys=False))
-    print("</code>")
+    # Keep these for debugging; they can be used to serialize the various
+    # environment variables available to us through GitHub Actions.
+    if True:
+        print("## github")
+        print("<code>")
+        print(json.dumps(github, indent=4, sort_keys=False))
+        print("</code>")
+
+        print("## steps")
+        print("<code>")
+        print(json.dumps(steps, indent=4, sort_keys=False))
+        print("</code>")
 
     if not all_success:
         sys.exit("One or more tests failed")

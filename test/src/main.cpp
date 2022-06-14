@@ -520,10 +520,6 @@ int main(int argc, char** argv) try {
         log::notice("Github Actions output mode enabled");
     }
 
-    log::notice("This is a sample notice", "Title", "filename");
-    log::warning("This is a sample warning");
-    log::error("This is a sample error", "title", "filename");
-
     traverse_directory_tree(battery_path);
 
     return EXIT_SUCCESS;

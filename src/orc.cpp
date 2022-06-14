@@ -258,6 +258,11 @@ bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
     // These are the tags we don't deal with (yet, if ever.)
     if (skip_tagged_die(d)) return true;
 
+    // According to DWARF 3.3.1, a subprogram tag that is missing the external
+    // flag means the function is invisible outside its compilation unit. As
+    // such, it cannot contribute to an ODRV.
+    if (d._tag == dw::tag::subprogram && !d.has_attribute(dw::at::external)) return true;
+
     // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
     // them.
     if (d._path.empty()) return true;

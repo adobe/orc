@@ -53,9 +53,16 @@ void log(const std::string& type,
          std::optional<std::string> filename = std::nullopt) {
     if (settings()._github_actions_output_mode) {
         std::string result("::");
-        result += type + " line=1";
-        if (filename) result += ",file=" + *filename;
-        if (title) result += ",title=" + *title;
+        result += type + " ";
+        bool first = true;
+        auto append_optional_param = [&](const std::string& key, const auto& value){
+            if (!value) return;
+            if (!first) result += ",";
+            result += key + "=" + *value;
+            first = false;
+        };
+        append_optional_param("file", filename);
+        append_optional_param("title", title);
         result += "::" + message;
         std::cout << result << '\n';
     } else {

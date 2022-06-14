@@ -2,8 +2,6 @@ import sys
 import json
 
 if __name__ == "__main__":
-    print("::notice file=app.js,line=1,col=5,endColumn=7::Missing semicolon")
-
     sys.stdout = open(sys.argv[1], "w")
     github = json.load(open(sys.argv[2], "r"))
     steps = json.load(open(sys.argv[3], "r"))
@@ -35,7 +33,19 @@ if __name__ == "__main__":
         all_success &= cur_success
         outcome_emoji = ":green_circle:" if cur_success else ":red_circle:"
         outputs = value['outputs']
+        if outputs == {}:
+            outputs = ""
+        else:
+            outputs_string = "<ol>"
+            for key in outputs:
+                outputs_string += f"<li>{key}: {outputs[key]}</li>"
+            outputs_string = "</ol>"
+            outputs = outputs_string
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
+
+    print("<code>")
+    print(json.dumps(steps, indent=4, sort_keys=False))
+    print("</code>")
 
     if not all_success:
         sys.exit("One or more tests failed")

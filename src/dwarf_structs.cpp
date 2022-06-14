@@ -41,6 +41,16 @@ void attribute::read(freader& s) {
 
 /**************************************************************************************************/
 
+std::size_t attribute_value::hash() const {
+    // order here matches operator==
+    if (has_string()) return hash_combine(0, string().hash());
+    else if (has_uint()) return hash_combine(0, uint());
+    else if (has_sint()) return hash_combine(0, sint());
+    return hash_combine(0, type());
+}
+
+/**************************************************************************************************/
+
 std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
     if (x.type() == attribute_value::type::none) return s << "<none>";
     if (x.type() == attribute_value::type::passover) return s << "<unhandled>";

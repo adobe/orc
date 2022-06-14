@@ -101,6 +101,8 @@ struct attribute_value {
         return *_die;
     }
 
+    std::size_t hash() const;
+
     auto type() const { return _type; }
     bool has(enum type t) const { return has_type(type(), t); }
     bool has_none() const { return has(type::none); }
@@ -208,7 +210,8 @@ struct die {
     // here, please consider alignment issues.
     object_ancestry _ancestry;
     pool_string _path;
-    attribute* _attributes;
+    attribute* _attributes{nullptr};
+    die* _next_die{nullptr};
     std::size_t _attributes_size{0};
     std::size_t _hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
@@ -216,6 +219,7 @@ struct die {
     arch _arch{arch::unknown};
     bool _has_children{false};
     bool _type_resolved{false};
+    bool _conflict{false};
 
     auto begin() { return _attributes; }
     auto begin() const { return _attributes; }

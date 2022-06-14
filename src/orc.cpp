@@ -91,13 +91,12 @@ auto& unsafe_odrv_records() {
 
 /**************************************************************************************************/
 
-void record_odrv(const std::string_view& symbol, const die& a, const die& b, dw::at name) {
+void record_odrv(const std::string_view& symbol, const die& registered, dw::at name) {
     static std::mutex record_mutex;
     std::lock_guard<std::mutex> lock(record_mutex);
     unsafe_odrv_records().push_back(odrv_report{
         symbol,
-        a,
-        b,
+        &registered,
         name
     });
 }
@@ -235,19 +234,22 @@ bool skip_tagged_die(const die& d) {
 
 /**************************************************************************************************/
 
-void enforce_odr(const std::string_view& symbol, const die& x, const die& y) {
+bool enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
 #if 0
-    if (x._path == "::[arm64]::size_type") {
+    if (registered._path == "::[arm64]::size_type") {
         int x;
         (void)x;
     }
 #endif
 
-    auto conflict_name = find_die_conflict(x, y);
+    auto conflict_name = find_die_conflict(registered, current);
+    auto conflict = conflict_name != dw::at::none;
 
-    if (conflict_name != dw::at::none) {
-        record_odrv(symbol, x, y, conflict_name);
+    if (conflict) {
+        record_odrv(symbol, registered, conflict_name);
     }
+
+    return conflict;
 }
 
 /**************************************************************************************************/
@@ -324,7 +326,7 @@ auto with_global_die_collection(F&& f) {
 /**************************************************************************************************/
 
 auto& global_die_map() {
-    using map_type = tbb::concurrent_unordered_map<std::size_t, const die*>;
+    using map_type = tbb::concurrent_unordered_map<std::size_t, die*>;
 
 #if ORC_FEATURE(LEAKY_MEMORY)
     static map_type* map_s = new map_type;
@@ -395,7 +397,25 @@ void register_dies(dies die_vector) {
 
         // possible violation - make sure everything lines up!
 
-        enforce_odr(symbol, d, *result.first->second);
+        die& head_die = *result.first->second;
+
+        constexpr auto mutex_count_k = 63;
+        static std::mutex mutexi[mutex_count_k]; // Mutexes? Mutexi? Mutexae?
+        std::lock_guard<std::mutex> lock(mutexi[d._hash % mutex_count_k]);
+
+        // If we have already found a conflict for this symbol, no need to find others.
+        // They'll all get output in the report.
+        if (!head_die._conflict) {
+            head_die._conflict |= enforce_odr(symbol, head_die, d);
+        }
+
+        // append this die to the linked list starting from the head die.
+        die* tail_die = &head_die;
+        while (true) {
+            if (!tail_die->_next_die) break;
+            tail_die = tail_die->_next_die;
+        }
+        tail_die->_next_die = &d;
     }
 
     globals::instance()._die_analyzed_count += dies.size();
@@ -512,39 +532,57 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 std::string odrv_report::category() const {
-    return to_string(_a._tag) + std::string(":") + to_string(_name);
+    return to_string(_die->_tag) + std::string(":") + to_string(_name);
 }
 
 /**************************************************************************************************/
 
 pool_string odrv_report::attribute_string(dw::at name) const {
-    if (!_a.has_attribute(name) || !_b.has_attribute(name)) {
+    if (!_die->has_attribute(name)) {
         throw std::runtime_error(std::string("Missing attribute: ") + to_string(name));
     }
 
-    if (!_a.attribute_has_string(name) || !_b.attribute_has_string(name)) {
-        throw std::runtime_error(std::string("Attribute type mismatch: ") + to_string(name));
+    if (!_die->attribute_has_string(name)) {
+        throw std::runtime_error(std::string("Missing string attribute: ") + to_string(name));
     }
 
-    auto a_value = _a.attribute_string(name);
-    auto b_value = _b.attribute_string(name);
+    return _die->attribute_string(name);
+}
 
-    if (a_value != b_value) {
-        throw std::runtime_error(std::string("Attribute value mismatch: ") + to_string(name));
+/**************************************************************************************************/
+
+std::size_t fatal_attribute_hash(const die& d) {
+    if (d._path == empool("::[u]::cr_pipe")) {
+        int x(42);
+        (void)x;
     }
 
-    return a_value;
+    std::size_t h{0};
+    std::vector<dw::at> names;
+
+    for (const auto& attr : d) {
+        if (nonfatal_attribute(attr._name)) continue;
+        names.push_back(attr._name);
+    }
+
+    std::sort(names.begin(), names.end());
+
+    for (const auto& name : names) {
+        h = hash_combine(h, d.attribute(name)._value.hash());
+    }
+    return h;
 }
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    const die& a = report._a;
-    const die& b = report._b;
+    const die& d = *report._die;
     auto& settings = settings::instance();
     std::string odrv_category(report.category());
     bool do_report{true};
+
+    assert(d._conflict);
 
     if (!settings._violation_ignore.empty()) {
         // Report everything except the stuff on the ignore list
@@ -556,25 +594,19 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     if (!do_report) return s;
 
-    // The number of unique ODRVs is tricky.
-    // If A, B, and C are types, and C is different, then if we scan:
-    // A, B, then C -> 1 ODRV, but C, then A, B -> 2 ODRVs. Complicating
-    // this is that (as this comment is written) we don't detect supersets.
-    // So if C has more methods than A and B it may not be detected.
-    if (settings._filter_redundant) {
-        static std::set<std::size_t> unique_odrv_types;
-        static std::mutex unique_odrv_mutex;
-        
-        std::lock_guard guard(unique_odrv_mutex);
-        std::size_t symbol_hash = hash_combine(0, symbol, odrv_category);
-        bool did_insert = unique_odrv_types.insert(symbol_hash).second;
-        if (!did_insert) return s; // We have already reported an instance of this.
-    }
-
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
-    s << a << '\n';
-    s << b << '\n';
+
+    std::unordered_map<std::size_t, const die*> conflict_map;
+    for (const die* next_die = &d; next_die; next_die = next_die->_next_die) {
+        std::size_t hash = fatal_attribute_hash(*next_die);
+        if (conflict_map.count(hash)) continue;
+        conflict_map[hash] = next_die;
+    }
+
+    for (const auto& entry : conflict_map) {
+        s << *entry.second << '\n';
+    }
     s << "\n";
 
     ++globals::instance()._odrv_count;

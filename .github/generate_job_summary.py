@@ -2,6 +2,8 @@ import sys
 import json
 
 if __name__ == "__main__":
+    print("::notice file=app.js,line=1,col=5,endColumn=7::Missing semicolon")
+
     sys.stdout = open(sys.argv[1], "w")
     github = json.load(open(sys.argv[2], "r"))
     steps = json.load(open(sys.argv[3], "r"))
@@ -23,8 +25,6 @@ if __name__ == "__main__":
     print("## Summary of Steps")
     print("| Run | Result | Notes |")
     print("|---|---|---|")
-
-    print("::notice file=app.js,line=1,col=5,endColumn=7::Missing semicolon")
 
     all_success = True
 

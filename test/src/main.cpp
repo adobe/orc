@@ -441,7 +441,7 @@ void run_battery_test(const std::filesystem::path& home) {
 
     auto expected_odrvs = derive_expected_odrvs(home, settings);
     if (expected_odrvs.empty()) {
-        std::cout << "Found no expected ODRVs; expected?\n";
+        log::notice("Found no expected ODRVs for this test");
     }
 
     auto object_files = compile_compilation_units(home, settings, compilation_units);

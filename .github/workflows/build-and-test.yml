@@ -42,8 +42,8 @@ jobs:
         id: run-orc_test
         continue-on-error: true
         run: |
-          orc_test_results=$(./build/Release/orc_test ./test/battery --json_mode)
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test "${orc_test_results}"
+          ./build/Release/orc_test ./test/battery --json_mode > test_out.json
+          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test test_out.json
       - name: 🛠️ orc_test w/ ASan
         id: build-orc_test-asan
         continue-on-error: true

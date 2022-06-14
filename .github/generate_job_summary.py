@@ -36,16 +36,19 @@ if __name__ == "__main__":
         if outputs == {}:
             outputs = ""
         else:
-            outputs_string = "<ol>"
-            for key in outputs:
-                outputs_string += f"<li>{key}: {outputs[key]}</li>"
-            outputs_string = "</ol>"
+            outputs_string = "<ul>"
+            for out_key in outputs:
+                outputs_string += f"<li>`{out_key}`: {outputs[out_key]}</li>"
+            outputs_string += "</ul>"
             outputs = outputs_string
         print(f"| {key} | {outcome_emoji} {outcome} | {outputs} |")
 
     # Keep these for debugging; they can be used to serialize the various
-    # environment variables available to us through GitHub Actions.
-    if True:
+    # environment variables available to us through GitHub Actions. Be
+    # careful, though, not to leave these in production: they produce
+    # copious (and possibly sensitive) output.
+
+    if False:
         print("## github")
         print("<code>")
         print(json.dumps(github, indent=4, sort_keys=False))

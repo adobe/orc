@@ -41,8 +41,8 @@ pool_string empool(std::string_view src);
     and out, just in case the processor doesn't like un-aligned reads.
 */
 struct pool_string {
-    pool_string() {}
-    ~pool_string() {}
+    pool_string() = default;
+    ~pool_string() = default;
 
     bool empty() const { return _data == nullptr; }
 

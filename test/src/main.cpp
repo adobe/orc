@@ -21,6 +21,59 @@ namespace {
 
 /**************************************************************************************************/
 
+struct orc_test_settings {
+    bool _github_actions_output_mode{false};
+};
+
+auto& settings() {
+    static orc_test_settings result;
+    return result;
+}
+
+/**************************************************************************************************/
+
+void output(const std::string& type,
+            const std::string& message,
+            std::optional<std::string> title = std::nullopt,
+            std::optional<std::string> filename = std::nullopt) {
+    if (settings()._github_actions_output_mode) {
+        std::string result("::");
+        result += output + " ";
+        if (filename) result += "file=" + *filename;
+        if (title) result += "title=" + *title;
+        result += "::" + message;
+        std::cout << result << '\n';
+    } else {
+        std::cout << message << '\n';
+    }
+}
+
+/**************************************************************************************************/
+
+void notice(const std::string& message,
+            std::optional<std::string> title = std::nullopt,
+            std::optional<std::string> filename = std::nullopt) {
+    output("notice", message, title, filename);
+}
+
+/**************************************************************************************************/
+
+void warning(const std::string& message,
+            std::optional<std::string> title = std::nullopt,
+            std::optional<std::string> filename = std::nullopt) {
+    output("warning", message, title, filename);
+}
+
+/**************************************************************************************************/
+
+void error(const std::string& message,
+            std::optional<std::string> title = std::nullopt,
+            std::optional<std::string> filename = std::nullopt) {
+    output("error", message, title, filename);
+}
+
+/**************************************************************************************************/
+
 void assume(bool condition, std::string message) {
     if (condition) return;
     throw std::runtime_error(message);
@@ -410,7 +463,7 @@ void traverse_directory_tree(std::filesystem::path& directory) {
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    if (argc != 2) {
+    if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " /path/to/test/battery/\n";
         throw std::runtime_error("no path to test battery given");
     }
@@ -420,6 +473,16 @@ int main(int argc, char** argv) try {
     if (!exists(battery_path) || !is_directory(battery_path)) {
         throw std::runtime_error("test battery path is missing or not a directory");
     }
+
+    settings()._github_actions_output_mode = argc > 2 && std::string(argv[2]) == "GITHUB";
+
+    if (settings()._github_actions_output_mode) {
+        notice("Github Actions output mode enabled");
+    }
+
+    notice("This is a sample notice");
+    warning("This is a sample warning");
+    error("This is a sample error");
 
     traverse_directory_tree(battery_path);
 

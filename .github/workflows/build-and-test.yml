@@ -22,6 +22,17 @@ jobs:
         run: |
           mkdir build
           cd build
+          cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
+      - name: 🛠️ orc_test
+        id: build-orc_test
+        continue-on-error: true
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
+      - name: 🏃 orc_test
+        id: run-orc_test
+        continue-on-error: true
+        run: |
+          /usr/bin/time -l ./build/Release/orc_test ./test/battery GITHUB
       - name: ✏️ github json
         uses: jsdaniell/create-json@1.1.2
         continue-on-error: true

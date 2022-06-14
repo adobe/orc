@@ -18,12 +18,10 @@
 
 struct odrv_report {
     std::string_view _symbol;
-    die _a;
-    die _b;
+    const die* _list_head{nullptr};
     dw::at _name;
 
     std::string category() const;
-    pool_string attribute_string(dw::at name) const;
 };
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);

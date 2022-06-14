@@ -388,7 +388,7 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
 
     const std::string& linkage_name = odrv.linkage_name();
     if (!linkage_name.empty()) {
-        const pool_string report_linkage_name = report.attribute_string(dw::at::linkage_name);
+        const pool_string report_linkage_name = report._list_head->attribute_string(dw::at::linkage_name);
         if (linkage_name != report_linkage_name.view())
             return false;
     }
@@ -441,7 +441,7 @@ void run_battery_test(const std::filesystem::path& home) {
 
     auto expected_odrvs = derive_expected_odrvs(home, settings);
     if (expected_odrvs.empty()) {
-        throw std::runtime_error("found no expected ODRVs");
+        std::cout << "Found no expected ODRVs; expected?\n";
     }
 
     auto object_files = compile_compilation_units(home, settings, compilation_units);

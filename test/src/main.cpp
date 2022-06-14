@@ -32,19 +32,41 @@ auto& settings() {
 
 /**************************************************************************************************/
 
-void output(const std::string& type,
-            const std::string& message,
-            std::optional<std::string> title = std::nullopt,
-            std::optional<std::string> filename = std::nullopt) {
+} // namespace {
+
+/**************************************************************************************************/
+
+namespace log {
+
+/**************************************************************************************************/
+
+void set_output(const std::string& name, const std::string& value) {
+    if (!settings()._github_actions_output_mode) return;
+    std::cout << "::set-output name=" << name << "::" << value << '\n';
+}
+
+/**************************************************************************************************/
+
+void log(const std::string& type,
+         const std::string& message,
+         std::optional<std::string> title = std::nullopt,
+         std::optional<std::string> filename = std::nullopt) {
     if (settings()._github_actions_output_mode) {
         std::string result("::");
-        result += type + " ";
-        if (filename) result += "file=" + *filename;
-        if (title) result += "title=" + *title;
+        result += type + " line=1";
+        if (filename) result += ",file=" + *filename;
+        if (title) result += ",title=" + *title;
         result += "::" + message;
         std::cout << result << '\n';
     } else {
-        std::cout << message << '\n';
+        if (title) {
+            std::cout << *title << ": ";
+        }
+        std::cout << message;
+        if (filename) {
+            std::cout << " (" << *filename << ")";
+        }
+        std::cout << '\n';
     }
 }
 
@@ -53,7 +75,7 @@ void output(const std::string& type,
 void notice(const std::string& message,
             std::optional<std::string> title = std::nullopt,
             std::optional<std::string> filename = std::nullopt) {
-    output("notice", message, title, filename);
+    log("notice", message, title, filename);
 }
 
 /**************************************************************************************************/
@@ -61,7 +83,7 @@ void notice(const std::string& message,
 void warning(const std::string& message,
             std::optional<std::string> title = std::nullopt,
             std::optional<std::string> filename = std::nullopt) {
-    output("warning", message, title, filename);
+    log("warning", message, title, filename);
 }
 
 /**************************************************************************************************/
@@ -69,8 +91,16 @@ void warning(const std::string& message,
 void error(const std::string& message,
             std::optional<std::string> title = std::nullopt,
             std::optional<std::string> filename = std::nullopt) {
-    output("error", message, title, filename);
+    log("error", message, title, filename);
 }
+
+/**************************************************************************************************/
+
+} // namespace log
+
+/**************************************************************************************************/
+
+namespace {
 
 /**************************************************************************************************/
 
@@ -373,7 +403,7 @@ void run_battery_test(const std::filesystem::path& home) {
     const bool skip_test = settings["orc_test_flags"]["disable"].value_or(false);
 
     if (skip_test) {
-        std::cout << "(disabled)\n";
+        log::notice("test disabled");
         return;
     }
 
@@ -393,6 +423,9 @@ void run_battery_test(const std::filesystem::path& home) {
     auto reports = orc_process(object_files);
 
     std::cout << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
+
+    log::set_output(home.stem().string() + ".expected", std::to_string(expected_odrvs.size()));
+    log::set_output(home.stem().string() + ".reported", std::to_string(reports.size()));
 
     // At this point, the reports.size() should match the expected_odrvs.size()
     bool unexpected_result = false;
@@ -477,21 +510,21 @@ int main(int argc, char** argv) try {
     settings()._github_actions_output_mode = argc > 2 && std::string(argv[2]) == "GITHUB";
 
     if (settings()._github_actions_output_mode) {
-        notice("Github Actions output mode enabled");
+        log::notice("Github Actions output mode enabled");
     }
 
-    notice("This is a sample notice");
-    warning("This is a sample warning");
-    error("This is a sample error");
+    log::notice("This is a sample notice", "Title", "filename");
+    log::warning("This is a sample warning");
+    log::error("This is a sample error", "title", "filename");
 
     traverse_directory_tree(battery_path);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
-    std::cerr << "\nFatal error: " << error.what() << '\n';
+    log::error(error.what(), "Fatal error");
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "\nFatal error: unknown\n";
+    log::error("unknown", "Fatal error");
     return EXIT_FAILURE;
 }
 

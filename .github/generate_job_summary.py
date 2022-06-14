@@ -24,6 +24,8 @@ if __name__ == "__main__":
     print("| Run | Result | Notes |")
     print("|---|---|---|")
 
+    print "::notice file=app.js,line=1,col=5,endColumn=7::Missing semicolon"
+
     all_success = True
 
     for key in steps:

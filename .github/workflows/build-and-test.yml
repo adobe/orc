@@ -23,56 +23,6 @@ jobs:
           mkdir build
           cd build
           cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: 🛠️ orc debug
-        id: build-orc-debug
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
-      - name: 🛠️ orc release
-        id: build-orc-release
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
-      - name: 🛠️ orc_test
-        id: build-orc_test
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -hideShellScriptEnvironment
-      - name: 🏃 orc_test
-        id: run-orc_test
-        continue-on-error: true
-        run: |
-          /usr/bin/time -l ./build/Release/orc_test ./test/battery
-      - name: 🛠️ orc_test w/ ASan
-        id: build-orc_test-asan
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableAddressSanitizer YES -hideShellScriptEnvironment
-      - name: 🏃 orc_test w/ ASan
-        id: run-orc_test-asan
-        continue-on-error: true
-        run: |
-          ./build/Release/orc_test ./test/battery
-      - name: 🛠️ orc_test w/ TSan
-        id: build-orc_test-tsan
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableThreadSanitizer YES -hideShellScriptEnvironment
-      - name: 🏃 orc_test w/ TSan
-        id: run-orc_test-tsan
-        continue-on-error: true
-        run: |
-          ./build/Release/orc_test ./test/battery
-      - name: 🛠️ orc_test w/ UBSan
-        id: build-orc_test-ubsan
-        continue-on-error: true
-        run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_test -configuration Release -enableUndefinedBehaviorSanitizer YES -hideShellScriptEnvironment
-      - name: 🏃 orc_test w/ UBSan
-        id: run-orc_test-ubsan
-        continue-on-error: true
-        run: |
-          ./build/Release/orc_test ./test/battery
       - name: ✏️ github json
         uses: jsdaniell/create-json@1.1.2
         continue-on-error: true

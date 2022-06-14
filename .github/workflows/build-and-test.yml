@@ -43,8 +43,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --json_mode > test_out.json
-          cat test_out.json
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test test_out.json
+          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
       - name: 🛠️ orc_test w/ ASan
         id: build-orc_test-asan
         continue-on-error: true
@@ -55,8 +54,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --json_mode > test_out.json
-          cat test_out.json
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test-asan test_out.json
+          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
       - name: 🛠️ orc_test w/ TSan
         id: build-orc_test-tsan
         continue-on-error: true
@@ -67,8 +65,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --json_mode > test_out.json
-          cat test_out.json
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test-tsan test_out.json
+          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
       - name: 🛠️ orc_test w/ UBSan
         id: build-orc_test-ubsan
         continue-on-error: true
@@ -79,8 +76,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --json_mode > test_out.json
-          cat test_out.json
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py run-orc_test-ubsan test_out.json
+          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
       - name: ✏️ github json
         uses: jsdaniell/create-json@1.1.2
         continue-on-error: true

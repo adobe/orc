@@ -78,12 +78,12 @@ void log(const std::string& type,
         result.insert("message", message);
         if (title) result.insert("title", *title);
         if (filename) result.insert("filename", *filename);
-        if (auto* array = toml_out()["log"].as_array()) {
+        if (auto* array = toml_out()["_orc_test_log"].as_array()) {
             array->push_back(result);
         } else {
             toml::array new_log;
             new_log.push_back(std::move(result));
-            toml_out().insert("log", std::move(new_log));
+            toml_out().insert("_orc_test_log", std::move(new_log));
         }
     } else {
         if (title) {

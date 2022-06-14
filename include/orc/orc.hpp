@@ -18,7 +18,7 @@
 
 struct odrv_report {
     std::string_view _symbol;
-    const die* _die{nullptr};
+    const die* _list_head{nullptr};
     dw::at _name;
 
     std::string category() const;

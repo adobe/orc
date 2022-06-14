@@ -398,7 +398,7 @@ void register_dies(dies die_vector) {
         // possible violation - make sure everything lines up!
 
         die& head_die = *result.first->second;
-        constexpr auto mutex_count_k = 63; // prime; to help reduce any hash bias
+        constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
         static std::mutex mutexes_s[mutex_count_k];
         std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
 
@@ -531,7 +531,7 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 std::string odrv_report::category() const {
-    return to_string(_die->_tag) + std::string(":") + to_string(_name);
+    return to_string(_list_head->_tag) + std::string(":") + to_string(_name);
 }
 
 /**************************************************************************************************/
@@ -557,12 +557,11 @@ std::size_t fatal_attribute_hash(const die& d) {
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    const die& d = *report._die;
     auto& settings = settings::instance();
     std::string odrv_category(report.category());
     bool do_report{true};
 
-    assert(d._conflict);
+    assert(report._list_head->_conflict);
 
     if (!settings._violation_ignore.empty()) {
         // Report everything except the stuff on the ignore list
@@ -577,7 +576,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     // Construct a map of unique definitions of the conflicting symbol.
 
     std::unordered_map<std::size_t, const die*> conflict_map;
-    for (const die* next_die = &d; next_die; next_die = next_die->_next_die) {
+    for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
         std::size_t hash = fatal_attribute_hash(*next_die);
         if (conflict_map.count(hash)) continue;
         conflict_map[hash] = next_die;

@@ -434,6 +434,8 @@ void run_battery_test(const std::filesystem::path& home) {
         return;
     }
 
+    auto test_name = home.stem().string();
+
     auto compilation_units = derive_compilation_units(home, settings);
     if (compilation_units.empty()) {
         throw std::runtime_error("found no sources to compile");
@@ -441,7 +443,7 @@ void run_battery_test(const std::filesystem::path& home) {
 
     auto expected_odrvs = derive_expected_odrvs(home, settings);
     if (expected_odrvs.empty()) {
-        log::notice("Found no expected ODRVs for this test");
+        log::notice("Found no expected ODRVs for this test", test_name);
     }
 
     auto object_files = compile_compilation_units(home, settings, compilation_units);
@@ -454,7 +456,7 @@ void run_battery_test(const std::filesystem::path& home) {
     toml::table result;
     result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
     result.insert("reported", static_cast<toml::int64_t>(reports.size()));
-    toml_out().insert(home.stem().string(), std::move(result));
+    toml_out().insert(test_name, std::move(result));
 
     // At this point, the reports.size() should match the expected_odrvs.size()
     bool unexpected_result = false;

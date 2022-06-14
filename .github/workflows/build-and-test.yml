@@ -22,7 +22,6 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: ✏️ github json
         uses: jsdaniell/create-json@1.1.2
         continue-on-error: true

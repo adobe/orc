@@ -22,7 +22,6 @@ struct odrv_report {
     dw::at _name;
 
     std::string category() const;
-    pool_string attribute_string(dw::at name) const;
 };
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);

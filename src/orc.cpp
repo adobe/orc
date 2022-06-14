@@ -398,10 +398,9 @@ void register_dies(dies die_vector) {
         // possible violation - make sure everything lines up!
 
         die& head_die = *result.first->second;
-
-        constexpr auto mutex_count_k = 63;
-        static std::mutex mutexi[mutex_count_k]; // Mutexes? Mutexi? Mutexae?
-        std::lock_guard<std::mutex> lock(mutexi[d._hash % mutex_count_k]);
+        constexpr auto mutex_count_k = 63; // prime; to help reduce any hash bias
+        static std::mutex mutexes_s[mutex_count_k];
+        std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
 
         // If we have already found a conflict for this symbol, no need to find others.
         // They'll all get output in the report.
@@ -537,36 +536,17 @@ std::string odrv_report::category() const {
 
 /**************************************************************************************************/
 
-pool_string odrv_report::attribute_string(dw::at name) const {
-    if (!_die->has_attribute(name)) {
-        throw std::runtime_error(std::string("Missing attribute: ") + to_string(name));
-    }
-
-    if (!_die->attribute_has_string(name)) {
-        throw std::runtime_error(std::string("Missing string attribute: ") + to_string(name));
-    }
-
-    return _die->attribute_string(name);
-}
-
-/**************************************************************************************************/
-
 std::size_t fatal_attribute_hash(const die& d) {
-    if (d._path == empool("::[u]::cr_pipe")) {
-        int x(42);
-        (void)x;
-    }
-
-    std::size_t h{0};
+    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
+    // attributes by name to make sure the hashing is consistent regardless of attribute order.
     std::vector<dw::at> names;
-
     for (const auto& attr : d) {
         if (nonfatal_attribute(attr._name)) continue;
         names.push_back(attr._name);
     }
-
     std::sort(names.begin(), names.end());
 
+    std::size_t h{0};
     for (const auto& name : names) {
         h = hash_combine(h, d.attribute(name)._value.hash());
     }
@@ -594,8 +574,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     if (!do_report) return s;
 
-    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
-      << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
+    // Construct a map of unique definitions of the conflicting symbol.
 
     std::unordered_map<std::size_t, const die*> conflict_map;
     for (const die* next_die = &d; next_die; next_die = next_die->_next_die) {
@@ -604,10 +583,16 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         conflict_map[hash] = next_die;
     }
 
+    // Output the report
+
+    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+      << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : conflict_map) {
         s << *entry.second << '\n';
     }
     s << "\n";
+
+    // Administrivia
 
     ++globals::instance()._odrv_count;
 

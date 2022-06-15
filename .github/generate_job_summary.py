@@ -22,7 +22,7 @@ if __name__ == "__main__":
     print("")
 
     print("## Summary of Steps")
-    print("| Run | Result | Notes | Expected | Reported |")
+    print("| Step | Test | Notes | Expected | Reported |")
     print("|---|---|---|---|---|")
 
     all_success = True
@@ -48,7 +48,7 @@ if __name__ == "__main__":
                     expected = outputs[run]["expected"]
                     reported = outputs[run]["reported"]
                     outcome_emoji = ":green_circle:" if expected == reported else ":red_circle:"
-                    print(f"| `{run}` | {outcome_emoji} | | {expected} | {reported} |")
+                    print(f"| | `{run}` | {outcome_emoji} | {expected} | {reported} |")
             else:
                 print(f"| **{key}** | {outcome_emoji} {outcome} | {outputs} | | |")
 

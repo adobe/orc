@@ -622,6 +622,54 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     return s;
 }
+/*
+std::vector<size_t> sort_die_map()
+{
+    // Main thread. Sort is shockingly fast.
+    auto map = global_die_map();
+    std::vector<size_t> paths;
+    paths.reserve(map.size());
+
+    for (const auto& path : map) {
+        paths.push_back(path.first);
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+*/
+/*
+void enforce_odrv_on_path()
+{
+    std::vector<die*> dies;
+    for(die* ptr = d; ptr; ptr = ptr->_next_die) {
+        dies.push_back(ptr);
+    }
+    if (dies.size() <= 1) continue;
+
+    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
+        return (*a) < (*b);
+    });
+    std::string_view symbol = path_to_symbol(d->_path.view());
+
+    dw::at conflict = dw::at::none;
+    for(size_t i=1; i<dies.size(); ++i) {
+        dies[i]->_next_die = nullptr;
+        dies[i-1]->_next_die = dies[i]; // re-link list for reporting
+        conflict = find_die_conflict(*dies[0], *dies[i]);
+        if (conflict != dw::at::none) {
+            break;
+        }
+    }
+    if (conflict != dw::at::none) {
+        dies[0]->_conflict = true;
+        odrv_report report{
+            symbol, dies[0], conflict
+        };
+        result.push_back(report);
+    }
+}
+*/
+
 
 /**************************************************************************************************/
 
@@ -649,56 +697,58 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Main thread. Sort is shockingly fast.
-    auto map = global_die_map();
-    std::vector<size_t> paths;
-    for (const auto& path : map) {
-        paths.push_back(path.first);
-    }
-    std::sort(paths.begin(), paths.end());
-    
-    //for(const auto& p : paths) {
-    //    std::cout << p << map[p]->_path.view() << "\n";
-    //}
-
+ //   std::vector<size_t> paths = sort_die_map();
     std::vector<odrv_report> result;
+    //std::uint64_t record_index = 0;
     
-    for(const auto& hash : paths) {
-        die* d = map[hash];
+//    for(const auto& hash : paths) {
+    for(auto& entry : global_die_map()) {
+        //size_t hash = entry.first;
+        die* d = entry.second;
+        //die* d = map[hash];
 
+        { // <MT>
         std::vector<die*> dies;
         for(die* ptr = d; ptr; ptr = ptr->_next_die) {
             dies.push_back(ptr);
         }
-        if (dies.size() <= 1) continue;
-
-        // Everything below should be on a worker.
-        // BUT assign a task number for sorting the ordrv_report later.
+        assert(!dies.empty());
+        if (dies.size() == 1) continue;
 
         std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
-            return (*a) < (*b);
+            //return (*a) < (*b);
+            return a->_ancestry < b->_ancestry; // note: multiple use of same input file?
         });
-        std::string_view symbol = path_to_symbol(d->_path.view());
 
         dw::at conflict = dw::at::none;
         for(size_t i=1; i<dies.size(); ++i) {
-            dies[i]->_next_die = nullptr;
             dies[i-1]->_next_die = dies[i]; // re-link list for reporting
-            conflict = find_die_conflict(*dies[0], *dies[i]);
-            if (conflict != dw::at::none) {
-                break;
+
+            if (conflict == dw::at::none) {
+                conflict = find_die_conflict(*dies[0], *dies[i]);
             }
         }
+        dies.back()->_next_die = nullptr;
+
         if (conflict != dw::at::none) {
             dies[0]->_conflict = true;
+            std::string_view symbol = path_to_symbol(d->_path.view());
+
             odrv_report report{
                 symbol, dies[0], conflict
+            
             };
+            // Mutex
             result.push_back(report);
         }
+        } // </MT>
     }
+    // work.wait()
 
-    // Sort the ordrv_report on the task number.
+    // Sort the ordrv_report
+    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b) {
+        return a._symbol < b._symbol;
+    });
 
     return result;
 }

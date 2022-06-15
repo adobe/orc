@@ -234,7 +234,7 @@ bool skip_tagged_die(const die& d) {
 
 /**************************************************************************************************/
 
-bool __unused enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
+bool enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
 #if 0
     if (registered._path == "::[arm64]::size_type") {
         int x;
@@ -622,58 +622,57 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     return s;
 }
-/*
-std::vector<size_t> sort_die_map()
-{
-    // Main thread. Sort is shockingly fast.
-    auto map = global_die_map();
-    std::vector<size_t> paths;
-    paths.reserve(map.size());
 
-    for (const auto& path : map) {
-        paths.push_back(path.first);
-    }
-    std::sort(paths.begin(), paths.end());
-    return paths;
-}
-*/
-/*
-void enforce_odrv_on_path()
+/**************************************************************************************************/
+
+void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
 {
     std::vector<die*> dies;
-    for(die* ptr = d; ptr; ptr = ptr->_next_die) {
+    for(die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);
     }
-    if (dies.size() <= 1) continue;
+    assert(!dies.empty());
+    if (dies.size() == 1)
+        return;
 
+    // Theory: if multiple copies of the same source file were compiled,
+    // the ancestry might not be unique. We assume that's an edge case
+    // and the ancestry is unique.
     std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
-        return (*a) < (*b);
+        return a->_ancestry < b->_ancestry;
     });
-    std::string_view symbol = path_to_symbol(d->_path.view());
 
     dw::at conflict = dw::at::none;
     for(size_t i=1; i<dies.size(); ++i) {
-        dies[i]->_next_die = nullptr;
-        dies[i-1]->_next_die = dies[i]; // re-link list for reporting
-        conflict = find_die_conflict(*dies[0], *dies[i]);
-        if (conflict != dw::at::none) {
-            break;
+        // Re-link the die list to match the sorted order.
+        dies[i-1]->_next_die = dies[i];
+
+        if (conflict == dw::at::none) {
+            conflict = find_die_conflict(*dies[0], *dies[i]);
         }
     }
+    dies.back()->_next_die = nullptr;
+
     if (conflict != dw::at::none) {
         dies[0]->_conflict = true;
+        std::string_view symbol = path_to_symbol(base->_path.view());
+
         odrv_report report{
             symbol, dies[0], conflict
+        
         };
-        result.push_back(report);
+
+        static std::mutex result_mutex;
+        std::lock_guard<std::mutex> lock(result_mutex);
+        results.push_back(report);
     }
 }
-*/
-
 
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
+
+    // First stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -697,53 +696,16 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
- //   std::vector<size_t> paths = sort_die_map();
+    // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
-    //std::uint64_t record_index = 0;
-    
-//    for(const auto& hash : paths) {
+
     for(auto& entry : global_die_map()) {
-        //size_t hash = entry.first;
-        die* d = entry.second;
-        //die* d = map[hash];
-
-        { // <MT>
-        std::vector<die*> dies;
-        for(die* ptr = d; ptr; ptr = ptr->_next_die) {
-            dies.push_back(ptr);
-        }
-        assert(!dies.empty());
-        if (dies.size() == 1) continue;
-
-        std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
-            //return (*a) < (*b);
-            return a->_ancestry < b->_ancestry; // note: multiple use of same input file?
+        die* base = entry.second;
+        do_work([base, &result] {
+            enforce_odrv_for_die_list(base, result);
         });
-
-        dw::at conflict = dw::at::none;
-        for(size_t i=1; i<dies.size(); ++i) {
-            dies[i-1]->_next_die = dies[i]; // re-link list for reporting
-
-            if (conflict == dw::at::none) {
-                conflict = find_die_conflict(*dies[0], *dies[i]);
-            }
-        }
-        dies.back()->_next_die = nullptr;
-
-        if (conflict != dw::at::none) {
-            dies[0]->_conflict = true;
-            std::string_view symbol = path_to_symbol(d->_path.view());
-
-            odrv_report report{
-                symbol, dies[0], conflict
-            
-            };
-            // Mutex
-            result.push_back(report);
-        }
-        } // </MT>
     }
-    // work.wait()
+    work().wait();
 
     // Sort the ordrv_report
     std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b) {

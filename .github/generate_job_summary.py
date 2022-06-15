@@ -47,7 +47,7 @@ if __name__ == "__main__":
                         continue
                     expected = outputs[run]["expected"]
                     reported = outputs[run]["reported"]
-                    outcome_emoji = ":green_circle:" if expected == reported else ":red_circle:"
+                    outcome_emoji = ":green_circle: success" if expected == reported else ":red_circle: failure"
                     print(f"| | `{run}` | {outcome_emoji} | {expected} | {reported} |")
             else:
                 print(f"| **{key}** | | {outcome_emoji} {outcome} {outputs} | | |")

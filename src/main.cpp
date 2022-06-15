@@ -489,7 +489,8 @@ int main(int argc, char** argv) try {
     }
 
     for (const auto& report : orc_process(file_list)) {
-        std::cout << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
+        //std::cout << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
+        write(std::cout, report);
     }
 
     return epilogue(false);

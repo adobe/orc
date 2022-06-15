@@ -24,7 +24,8 @@ struct odrv_report {
     std::string category() const;
 };
 
-std::ostream& operator<<(std::ostream& s, const odrv_report& x);
+//std::ostream& operator<<(std::ostream& s, const odrv_report& x);
+std::ostream& write(std::ostream& s, const odrv_report& report);
 
 /**************************************************************************************************/
 

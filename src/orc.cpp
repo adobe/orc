@@ -342,6 +342,13 @@ auto& global_die_map() {
 #endif
 }
 
+/*
+auto& global_die_conflict_set() {
+    using map_type = tbb::concurrent_unordered_map<die*, bool>;
+    static map_type map_s;
+    return map_s;
+}
+*/
 /**************************************************************************************************/
 
 void register_dies(dies die_vector) {
@@ -411,9 +418,13 @@ void register_dies(dies die_vector) {
         // They'll all get output in the report.
         if (!head_die._conflict) {
             head_die._conflict |= enforce_odr(symbol, head_die, d);
+
+            //if (head_die._conflict) {
+            //    global_die_conflict_set().insert(std::make_pair(&d, true));
+            //}
         }
 
-        // append this die to the linked list starting from the head die.
+        // append this die to the end of the linked list (so the head of the list never changes)
         die* tail_die = &head_die;
         while (true) {
             if (!tail_die->_next_die) break;
@@ -560,7 +571,7 @@ std::size_t fatal_attribute_hash(const die& d) {
 
 /**************************************************************************************************/
 
-std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
+std::ostream& write(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     auto& settings = settings::instance();
     std::string odrv_category(report.category());
@@ -580,10 +591,10 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     // Construct a map of unique definitions of the conflicting symbol.
 
-    std::unordered_map<std::size_t, const die*> conflict_map;
+    std::map<std::size_t, const die*> conflict_map;
     for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
         std::size_t hash = fatal_attribute_hash(*next_die);
-        if (conflict_map.count(hash)) continue;
+        //if (conflict_map.count(hash)) continue;
         conflict_map[hash] = next_die;
     }
 
@@ -638,6 +649,27 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     // in case another orc processing pass is desired.
     std::vector<odrv_report> result;
     std::swap(result, unsafe_odrv_records());
+
+    // Alternate. 
+    // Main thread.
+
+    //std::cout << "&&&&&&&&&&&&&&&&&&&&&&&\n";
+
+    /*
+    // First, sort the list of DIE pointers that start the ODRV chain.
+    std::vector<const die*> odrv_head;
+    for(const auto& d : global_die_conflict_set())
+        odrv_head.push_back(d.first);
+
+    std::sort(odrv_head.begin(), odrv_head.end(), [](const die* a, const die* b) {
+        return a->_hash < b->_hash;
+    });
+    */
+
+    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b){
+        return a._symbol < b._symbol;
+    });
+
     return result;
 }
 

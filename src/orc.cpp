@@ -84,25 +84,6 @@ bool sorted_has(const Container& c, const T& x) {
 
 /**************************************************************************************************/
 
-auto& unsafe_odrv_records() {
-    static std::vector<odrv_report> records;
-    return records;
-}
-
-/**************************************************************************************************/
-
-void record_odrv(const std::string_view& symbol, const die& registered, dw::at name) {
-    static std::mutex record_mutex;
-    std::lock_guard<std::mutex> lock(record_mutex);
-    unsafe_odrv_records().push_back(odrv_report{
-        symbol,
-        &registered,
-        name
-    });
-}
-
-/**************************************************************************************************/
-
 bool nonfatal_attribute(dw::at at) {
     static const auto attributes = []{
         std::vector<dw::at> nonfatal_attributes = {
@@ -234,26 +215,6 @@ bool skip_tagged_die(const die& d) {
 
 /**************************************************************************************************/
 
-bool enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
-#if 0
-    if (registered._path == "::[arm64]::size_type") {
-        int x;
-        (void)x;
-    }
-#endif
-
-    auto conflict_name = find_die_conflict(registered, current);
-    auto conflict = conflict_name != dw::at::none;
-
-    if (conflict) {
-        record_odrv(symbol, registered, conflict_name);
-    }
-
-    return conflict;
-}
-
-/**************************************************************************************************/
-
 bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
     // These are a handful of "filters" we use to elide false positives.
 
@@ -342,13 +303,6 @@ auto& global_die_map() {
 #endif
 }
 
-/*
-auto& global_die_conflict_set() {
-    using map_type = tbb::concurrent_unordered_map<die*, bool>;
-    static map_type map_s;
-    return map_s;
-}
-*/
 /**************************************************************************************************/
 
 void register_dies(dies die_vector) {
@@ -407,9 +361,6 @@ void register_dies(dies die_vector) {
             continue;
         }
 
-        // possible violation - make sure everything lines up!
-
-        //die& head_die = *result.first->second;
         constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
         static std::mutex mutexes_s[mutex_count_k];
         std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
@@ -417,24 +368,6 @@ void register_dies(dies die_vector) {
         die& d_in_map = *result.first->second;
         d._next_die = d_in_map._next_die;
         d_in_map._next_die = &d;
-
-        /*
-        // If we have already found a conflict for this symbol, no need to find others.
-        // They'll all get output in the report.
-        if (!head_die._conflict) {
-            head_die._conflict |= enforce_odr(symbol, head_die, d);
-        }*/
-
-        // append this die to the end of the linked list (so the head of the list never changes)
-        /*
-        die* tail_die = &head_die;
-        while (true) {
-            if (!tail_die->_next_die) break;
-            tail_die = tail_die->_next_die;
-        }
-        tail_die->_next_die = &d;
-        */
-
     }
 
     globals::instance()._die_analyzed_count += dies.size();

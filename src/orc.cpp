@@ -234,7 +234,7 @@ bool skip_tagged_die(const die& d) {
 
 /**************************************************************************************************/
 
-bool enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
+bool __unused enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
 #if 0
     if (registered._path == "::[arm64]::size_type") {
         int x;
@@ -409,28 +409,32 @@ void register_dies(dies die_vector) {
 
         // possible violation - make sure everything lines up!
 
-        die& head_die = *result.first->second;
+        //die& head_die = *result.first->second;
         constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
         static std::mutex mutexes_s[mutex_count_k];
         std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
 
+        die& d_in_map = *result.first->second;
+        d._next_die = d_in_map._next_die;
+        d_in_map._next_die = &d;
+
+        /*
         // If we have already found a conflict for this symbol, no need to find others.
         // They'll all get output in the report.
         if (!head_die._conflict) {
             head_die._conflict |= enforce_odr(symbol, head_die, d);
-
-            //if (head_die._conflict) {
-            //    global_die_conflict_set().insert(std::make_pair(&d, true));
-            //}
-        }
+        }*/
 
         // append this die to the end of the linked list (so the head of the list never changes)
+        /*
         die* tail_die = &head_die;
         while (true) {
             if (!tail_die->_next_die) break;
             tail_die = tail_die->_next_die;
         }
         tail_die->_next_die = &d;
+        */
+
     }
 
     globals::instance()._die_analyzed_count += dies.size();
@@ -571,7 +575,7 @@ std::size_t fatal_attribute_hash(const die& d) {
 
 /**************************************************************************************************/
 
-std::ostream& write(std::ostream& s, const odrv_report& report) {
+std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     auto& settings = settings::instance();
     std::string odrv_category(report.category());
@@ -594,7 +598,7 @@ std::ostream& write(std::ostream& s, const odrv_report& report) {
     std::map<std::size_t, const die*> conflict_map;
     for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
         std::size_t hash = fatal_attribute_hash(*next_die);
-        //if (conflict_map.count(hash)) continue;
+        if (conflict_map.count(hash)) continue;
         conflict_map[hash] = next_die;
     }
 
@@ -645,30 +649,56 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Instead of moving the records, we swap with an empty vector to keep the records well-formed
-    // in case another orc processing pass is desired.
+    // Main thread. Sort is shockingly fast.
+    auto map = global_die_map();
+    std::vector<size_t> paths;
+    for (const auto& path : map) {
+        paths.push_back(path.first);
+    }
+    std::sort(paths.begin(), paths.end());
+    
+    //for(const auto& p : paths) {
+    //    std::cout << p << map[p]->_path.view() << "\n";
+    //}
+
     std::vector<odrv_report> result;
-    std::swap(result, unsafe_odrv_records());
+    
+    for(const auto& hash : paths) {
+        die* d = map[hash];
 
-    // Alternate. 
-    // Main thread.
+        std::vector<die*> dies;
+        for(die* ptr = d; ptr; ptr = ptr->_next_die) {
+            dies.push_back(ptr);
+        }
+        if (dies.size() <= 1) continue;
 
-    //std::cout << "&&&&&&&&&&&&&&&&&&&&&&&\n";
+        // Everything below should be on a worker.
+        // BUT assign a task number for sorting the ordrv_report later.
 
-    /*
-    // First, sort the list of DIE pointers that start the ODRV chain.
-    std::vector<const die*> odrv_head;
-    for(const auto& d : global_die_conflict_set())
-        odrv_head.push_back(d.first);
+        std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
+            return (*a) < (*b);
+        });
+        std::string_view symbol = path_to_symbol(d->_path.view());
 
-    std::sort(odrv_head.begin(), odrv_head.end(), [](const die* a, const die* b) {
-        return a->_hash < b->_hash;
-    });
-    */
+        dw::at conflict = dw::at::none;
+        for(size_t i=1; i<dies.size(); ++i) {
+            dies[i]->_next_die = nullptr;
+            dies[i-1]->_next_die = dies[i]; // re-link list for reporting
+            conflict = find_die_conflict(*dies[0], *dies[i]);
+            if (conflict != dw::at::none) {
+                break;
+            }
+        }
+        if (conflict != dw::at::none) {
+            dies[0]->_conflict = true;
+            odrv_report report{
+                symbol, dies[0], conflict
+            };
+            result.push_back(report);
+        }
+    }
 
-    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b){
-        return a._symbol < b._symbol;
-    });
+    // Sort the ordrv_report on the task number.
 
     return result;
 }

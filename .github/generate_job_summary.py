@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     print("## Summary of Steps")
     print("| Run | Result | Notes | Expected | Reported |")
-    print("|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|")
 
     all_success = True
     p = re.compile('(?<!\\\\)\'')
@@ -36,9 +36,10 @@ if __name__ == "__main__":
         outcome_emoji = ":green_circle:" if cur_success else ":red_circle:"
         outputs = value['outputs']
         if outputs == {}:
-            print(f"| **{key}** | {outcome_emoji} {outcome} | _none_ |")
+            print(f"| **{key}** | {outcome_emoji} {outcome} | _none_ | | |")
         else:
             if "orc_test_out" in outputs:
+                print(f"| **{key}** | {outcome_emoji} {outcome} | _details below_ | | |")
                 outputs = p.sub('\"', outputs["orc_test_out"])
                 outputs = json.loads(outputs)
                 for run in outputs:
@@ -49,7 +50,7 @@ if __name__ == "__main__":
                     outcome_emoji = ":green_circle:" if expected == reported else ":red_circle:"
                     print(f"| `{run}` | {outcome_emoji} | | {expected} | {reported} |")
             else:
-                print(f"| **{key}** | {outcome_emoji} {outcome} | {outputs} |")
+                print(f"| **{key}** | {outcome_emoji} {outcome} | {outputs} | | |")
 
     # Keep these for debugging; they can be used to serialize the various
     # environment variables available to us through GitHub Actions. Be

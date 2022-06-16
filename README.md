@@ -168,6 +168,19 @@ definition location: /Volumes/src/orc/extras/struct0/src/a.cpp:3
 
 What line and file the object was declared in. So line 3 of `a.cpp` in this example.
 
+### Output Consistency
+
+For the same version of ORC, and the same input, ORC will always write the same output. Where "the same" is byte 
+identical and a diff tool will show no differences.
+
+Achieving (and likely maintaining) consistent output is surprisingly challenging in a highly multi-threaded application.
+
+Please keep in mind however that this does NOT apply to different versions of ORC. Changes to ORC will almost certainly 
+result in output changes.
+
+There is also no guarantee that a “small” change in the input files will guarantee a “small” change in the ORC output. 
+This behavior is desirable and will likely be an area of future improvement.
+
 # The ORC Test App (`orc_test`)
 
 A unit test application is provided to ensure that ORC is catching what is purports to catch. `orc_test` introduces a miniature "build system" to generate object files from known sources to produce known ODR violations. It then processes the object files using the same engine as the ORC command line tool, and compares the results against an expected ODRV report list.

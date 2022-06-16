@@ -934,6 +934,7 @@ die dwarf::implementation::abbreviation_to_die(std::size_t die_address, std::uin
 
     result._tag = a._tag;
     result._has_children = a._has_children;
+    assert(a._attributes.size() < 256); // we've never seen anything even close to 255, but check to be sure
     result._attributes_size = a._attributes.size();
     result._attributes = alloc_attributes(result._attributes_size);
 

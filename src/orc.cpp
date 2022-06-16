@@ -84,25 +84,6 @@ bool sorted_has(const Container& c, const T& x) {
 
 /**************************************************************************************************/
 
-auto& unsafe_odrv_records() {
-    static std::vector<odrv_report> records;
-    return records;
-}
-
-/**************************************************************************************************/
-
-void record_odrv(const std::string_view& symbol, const die& registered, dw::at name) {
-    static std::mutex record_mutex;
-    std::lock_guard<std::mutex> lock(record_mutex);
-    unsafe_odrv_records().push_back(odrv_report{
-        symbol,
-        &registered,
-        name
-    });
-}
-
-/**************************************************************************************************/
-
 bool nonfatal_attribute(dw::at at) {
     static const auto attributes = []{
         std::vector<dw::at> nonfatal_attributes = {
@@ -230,26 +211,6 @@ bool skip_tagged_die(const die& d) {
     static const auto last = std::end(skip_tags);
 
     return std::find(first, last, d._tag) != last;
-}
-
-/**************************************************************************************************/
-
-bool enforce_odr(const std::string_view& symbol, const die& registered, const die& current) {
-#if 0
-    if (registered._path == "::[arm64]::size_type") {
-        int x;
-        (void)x;
-    }
-#endif
-
-    auto conflict_name = find_die_conflict(registered, current);
-    auto conflict = conflict_name != dw::at::none;
-
-    if (conflict) {
-        record_odrv(symbol, registered, conflict_name);
-    }
-
-    return conflict;
 }
 
 /**************************************************************************************************/
@@ -400,26 +361,13 @@ void register_dies(dies die_vector) {
             continue;
         }
 
-        // possible violation - make sure everything lines up!
-
-        die& head_die = *result.first->second;
         constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
         static std::mutex mutexes_s[mutex_count_k];
         std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
 
-        // If we have already found a conflict for this symbol, no need to find others.
-        // They'll all get output in the report.
-        if (!head_die._conflict) {
-            head_die._conflict |= enforce_odr(symbol, head_die, d);
-        }
-
-        // append this die to the linked list starting from the head die.
-        die* tail_die = &head_die;
-        while (true) {
-            if (!tail_die->_next_die) break;
-            tail_die = tail_die->_next_die;
-        }
-        tail_die->_next_die = &d;
+        die& d_in_map = *result.first->second;
+        d._next_die = d_in_map._next_die;
+        d_in_map._next_die = &d;
     }
 
     globals::instance()._die_analyzed_count += dies.size();
@@ -580,7 +528,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     // Construct a map of unique definitions of the conflicting symbol.
 
-    std::unordered_map<std::size_t, const die*> conflict_map;
+    std::map<std::size_t, const die*> conflict_map;
     for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
         std::size_t hash = fatal_attribute_hash(*next_die);
         if (conflict_map.count(hash)) continue;
@@ -610,7 +558,54 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 /**************************************************************************************************/
 
+void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
+{
+    std::vector<die*> dies;
+    for(die* ptr = base; ptr; ptr = ptr->_next_die) {
+        dies.push_back(ptr);
+    }
+    assert(!dies.empty());
+    if (dies.size() == 1)
+        return;
+
+    // Theory: if multiple copies of the same source file were compiled,
+    // the ancestry might not be unique. We assume that's an edge case
+    // and the ancestry is unique.
+    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
+        return a->_ancestry < b->_ancestry;
+    });
+
+    dw::at conflict = dw::at::none;
+    for(size_t i=1; i<dies.size(); ++i) {
+        // Re-link the die list to match the sorted order.
+        dies[i-1]->_next_die = dies[i];
+
+        if (conflict == dw::at::none) {
+            conflict = find_die_conflict(*dies[0], *dies[i]);
+        }
+    }
+    dies.back()->_next_die = nullptr;
+
+    if (conflict != dw::at::none) {
+        dies[0]->_conflict = true;
+        std::string_view symbol = path_to_symbol(base->_path.view());
+
+        odrv_report report{
+            symbol, dies[0], conflict
+        
+        };
+
+        static std::mutex result_mutex;
+        std::lock_guard<std::mutex> lock(result_mutex);
+        results.push_back(report);
+    }
+}
+
+/**************************************************************************************************/
+
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
+
+    // First stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -634,10 +629,22 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Instead of moving the records, we swap with an empty vector to keep the records well-formed
-    // in case another orc processing pass is desired.
+    // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
-    std::swap(result, unsafe_odrv_records());
+
+    for(auto& entry : global_die_map()) {
+        die* base = entry.second;
+        do_work([base, &result] {
+            enforce_odrv_for_die_list(base, result);
+        });
+    }
+    work().wait();
+
+    // Sort the ordrv_report
+    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b) {
+        return a._symbol < b._symbol;
+    });
+
     return result;
 }
 

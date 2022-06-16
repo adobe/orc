@@ -197,6 +197,20 @@ struct object_ancestry {
         assert((_count + 1) < _ancestors.size());
         _ancestors[_count++] = std::move(ancestor);
     }
+
+    bool operator<(const object_ancestry& rhs) const {
+        if (_count < rhs._count)
+            return true;
+        if (_count > rhs._count)
+            return false;
+        for(size_t i=0; i<_count; ++i) {
+            if (_ancestors[i].view() < rhs._ancestors[i].view())
+                return true;
+            if (_ancestors[i].view() > rhs._ancestors[i].view())
+                return false;
+        }
+        return false;
+    }
 };
 
 /**************************************************************************************************/
@@ -220,6 +234,15 @@ struct die {
     bool _has_children{false};
     bool _type_resolved{false};
     bool _conflict{false};
+
+    bool operator<(const die& rhs) const {
+        if (_path.view() < rhs._path.view())
+            return true;
+        if (_path.view() > rhs._path.view())
+            return false;
+        return _ancestry < rhs._ancestry;
+    }
+            
 
     auto begin() { return _attributes; }
     auto begin() const { return _attributes; }

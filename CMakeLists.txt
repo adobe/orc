@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.14)
 
 include(FetchContent)
 
+set(CMAKE_OSX_ARCHITECTURES arm64;x86_64)
+
 project(orc)
 
 # Detects whether this is a top-level/root/standalone project
@@ -47,9 +49,12 @@ if (NOT TARGET TBB::tbb)
     FetchContent_Declare(
         tbb
         GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-        GIT_TAG        86fe3f04c1b319faecebdc8b642ecc896fbb2c3b # 2021 Aug 31
+        GIT_TAG        3df08fe234f23e732a122809b40eb129ae22733f # 2021 Dec 22
     )
-    set(TBB_TEST FALSE) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
+    set(TBB_TEST OFF) # See https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md
+    # TBB generates `argument unused during compilation: '-mrtm'` when building for Apple Silicon
+    # Turning strict off causes warnings to not be errors for the TBB sources, which works for us.
+    set(TBB_STRICT OFF)
     set(BUILD_SHARED_LIBS OFF) # See https://github.com/oneapi-src/oneTBB/issues/297#issuecomment-772759422
     FetchContent_MakeAvailable(tbb)
 endif()

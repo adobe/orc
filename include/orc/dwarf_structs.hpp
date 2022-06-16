@@ -226,9 +226,9 @@ struct die {
     pool_string _path;
     attribute* _attributes{nullptr};
     die* _next_die{nullptr};
-    std::size_t _attributes_size{0};
     std::size_t _hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
+    std::uint32_t _attributes_size{0};
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};

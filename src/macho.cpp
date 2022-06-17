@@ -7,6 +7,12 @@
 // identity
 #include "orc/macho.hpp"
 
+// stdc++
+#include <map>
+
+// tbb
+#include <tbb/concurrent_map.h>
+
 // application
 #include "orc/dwarf.hpp"
 #include "orc/mach_types.hpp"
@@ -156,6 +162,61 @@ struct mach_header {
 
 /**************************************************************************************************/
 
+auto& obj_registry() {
+    static tbb::concurrent_map<object_ancestry, file_details> result;
+    return result;
+}
+
+/**************************************************************************************************/
+
+dwarf dwarf_from_macho(object_ancestry&& ancestry,
+                       freader&& s,
+                       const file_details& details,
+                       register_dies_callback&& callback) {
+    std::size_t load_command_sz{0};
+
+    if (details._is_64_bit) {
+        auto header = read_pod<mach_header_64>(s);
+        if (details._needs_byteswap) {
+            endian_swap(header.magic);
+            endian_swap(header.cputype);
+            endian_swap(header.cpusubtype);
+            endian_swap(header.filetype);
+            endian_swap(header.ncmds);
+            endian_swap(header.sizeofcmds);
+            endian_swap(header.flags);
+            endian_swap(header.reserved);
+        }
+        load_command_sz = header.ncmds;
+    } else {
+        auto header = read_pod<mach_header>(s);
+        if (details._needs_byteswap) {
+            endian_swap(header.magic);
+            endian_swap(header.cputype);
+            endian_swap(header.cpusubtype);
+            endian_swap(header.filetype);
+            endian_swap(header.ncmds);
+            endian_swap(header.sizeofcmds);
+            endian_swap(header.flags);
+        }
+        load_command_sz = header.ncmds;
+    }
+
+    // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
+    // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
+    // is found? A problem for later...
+    dwarf dwarf(std::move(ancestry), copy(s), details._needs_byteswap, details._arch,
+                std::move(callback));
+
+    for (std::size_t i = 0; i < load_command_sz; ++i) {
+        read_load_command(s, details, dwarf);
+    }
+
+    return dwarf;
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
@@ -168,49 +229,30 @@ void read_macho(object_ancestry&& ancestry,
     callbacks._do_work([_ancestry = std::move(ancestry),
                         _s = std::move(s),
                         _details = std::move(details),
-                        _callbacks = std::move(callbacks)]() mutable {
+                        _callback = std::move(callbacks._register_die)]() mutable {
         ++globals::instance()._object_file_count;
 
-        std::size_t load_command_sz{0};
+        obj_registry()[copy(_ancestry)] = _details;
 
-        if (_details._is_64_bit) {
-            auto header = read_pod<mach_header_64>(_s);
-            if (_details._needs_byteswap) {
-                endian_swap(header.magic);
-                endian_swap(header.cputype);
-                endian_swap(header.cpusubtype);
-                endian_swap(header.filetype);
-                endian_swap(header.ncmds);
-                endian_swap(header.sizeofcmds);
-                endian_swap(header.flags);
-                endian_swap(header.reserved);
-            }
-            load_command_sz = header.ncmds;
-        } else {
-            auto header = read_pod<mach_header>(_s);
-            if (_details._needs_byteswap) {
-                endian_swap(header.magic);
-                endian_swap(header.cputype);
-                endian_swap(header.cpusubtype);
-                endian_swap(header.filetype);
-                endian_swap(header.ncmds);
-                endian_swap(header.sizeofcmds);
-                endian_swap(header.flags);
-            }
-            load_command_sz = header.ncmds;
-        }
+        dwarf dwarf = dwarf_from_macho(std::move(_ancestry), std::move(_s), _details, std::move(_callback));
 
-        // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
-        // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
-        // is found? A problem for later...
-        dwarf dwarf(std::move(_ancestry), _s, std::move(_details), std::move(_callbacks));
-
-        for (std::size_t i = 0; i < load_command_sz; ++i) {
-            read_load_command(_s, _details, dwarf);
-        }
-
-        dwarf.process();
+        dwarf.process_all_dies();
     });
+}
+
+/**************************************************************************************************/
+
+dwarf dwarf_from_macho(object_ancestry&& ancestry, register_dies_callback&& callback) {
+    freader s(ancestry.begin()->allocate_path());
+
+    auto found = obj_registry().find(ancestry);
+    if (found == obj_registry().end()) {
+        throw std::runtime_error("DWARF not processed first");
+    }
+
+    s.seekg(found->second._offset);
+
+    return dwarf_from_macho(std::move(ancestry), std::move(s), found->second, std::move(callback));
 }
 
 /**************************************************************************************************/

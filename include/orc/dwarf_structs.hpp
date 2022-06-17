@@ -169,6 +169,91 @@ inline bool operator!=(const attribute& x, const attribute& y) { return !(x == y
 std::ostream& operator<<(std::ostream& s, const attribute& x);
 
 /**************************************************************************************************/
+// I'm not a fan of this name.
+struct attribute_sequence {
+    using attributes = std::vector<attribute>;
+    using value_type = typename attributes::value_type;
+    using iterator = typename attributes::iterator;
+    using const_iterator = typename attributes::const_iterator;
+
+    bool has(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        return valid;
+    }
+
+    bool has(dw::at name, enum attribute_value::type t) const {
+        auto [valid, iterator] = find(name);
+        return valid ? iterator->has(t) : false;
+    }
+
+    bool has_uint(dw::at name) const {
+        return has(name, attribute_value::type::uint);
+    }
+
+    bool has_string(dw::at name) const {
+        return has(name, attribute_value::type::string);
+    }
+
+    bool has_reference(dw::at name) const {
+        return has(name, attribute_value::type::reference);
+    }
+
+    auto& get(dw::at name) {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    const auto& get(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    auto uint(dw::at name) const {
+        return get(name).uint();
+    }
+
+    auto string(dw::at name) const {
+        return get(name).string();
+    }
+
+    auto reference(dw::at name) const {
+        return get(name).reference();
+    }
+
+    void push_back(const value_type& x) {
+        _attributes.push_back(x);
+    }
+
+    auto empty() const { return _attributes.empty(); }
+
+    auto begin() { return _attributes.begin(); }
+    auto begin() const { return _attributes.begin(); }
+    auto end() { return _attributes.end(); }
+    auto end() const { return _attributes.end(); }
+
+private:
+    std::tuple<bool, iterator> find(dw::at name) {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    std::tuple<bool, const_iterator> find(dw::at name) const {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    std::vector<attribute> _attributes;
+};
+
+std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
+
+/**************************************************************************************************/
 
 enum class arch : std::uint8_t {
     unknown,
@@ -232,7 +317,6 @@ struct die {
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};
-    bool _type_resolved{false};
     bool _conflict{false};
     bool _should_skip{false};
 

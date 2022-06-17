@@ -31,7 +31,9 @@
 #include <tbb/concurrent_unordered_map.h>
 
 // application
+#include "orc/dwarf.hpp"
 #include "orc/features.hpp"
+#include "orc/macho.hpp"
 #include "orc/parse_file.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
@@ -75,12 +77,8 @@ std::string_view path_to_symbol(std::string_view path) {
 }
 
 /**************************************************************************************************/
-//bool type_equivalent(const attribute& x, const attribute& y);
-dw::at find_die_conflict(const die& x, const die& y) {
-#if 1
-    // REVISIT (fbrereto) : distills into a boolean now; derive which attribute conflicted later.
-    return x._fatal_attribute_hash == y._fatal_attribute_hash ? dw::at::none : dw::at::byte_size;
-#else
+bool type_equivalent(const attribute& x, const attribute& y);
+dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
     auto yfirst = y.begin();
     auto ylast = y.end();
 
@@ -109,15 +107,11 @@ dw::at find_die_conflict(const die& x, const die& y) {
         if (xfound == xlast) return name;
     }
 
-    // REVISIT (fbrereto) : There may be some attributes left over in y; should we care?
-    // If they're not nonfatal attributes, we should...
-
     return dw::at::none; // they're "the same"
-#endif
 }
 
 /**************************************************************************************************/
-#if 0
+
 bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
@@ -134,15 +128,17 @@ bool type_equivalent(const attribute& x, const attribute& y) {
         return true;
     }
 
-    if (x.has(attribute_value::type::die) && y.has(attribute_value::type::die) &&
-        find_die_conflict(x.die(), y.die()) == dw::at::none) {
-        return true; // Should this change based on find_die_conflict's result?
+    if (x.has(attribute_value::type::die) && y.has(attribute_value::type::die)) {
+        assert(false); // not sure what to do here...
+        // if (find_die_conflict(x.die(), y.die()) == dw::at::none) {
+        //     return true; // Should this change based on find_die_conflict's result?
+        // }
     }
 
     // Type mismatch.
     return false;
 }
-#endif
+
 /**************************************************************************************************/
 
 void update_progress() {
@@ -365,23 +361,62 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 
 /**************************************************************************************************/
 
+std::string category(dw::tag tag, dw::at name) {
+    return to_string(tag) + std::string(":") + to_string(name);
+}
+
+/**************************************************************************************************/
+
+attribute_sequence fetch_attributes_for_die(const die& d) {
+    auto dwarf = dwarf_from_macho(copy(d._ancestry), register_dies_callback());
+    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
+    assert(die._tag == d._tag);
+    assert(die._arch == d._arch);
+    assert(die._has_children == d._has_children);
+    assert(die._debug_info_offset == d._debug_info_offset);
+    return std::move(attributes);
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
 
 std::string odrv_report::category() const {
-    return to_string(_list_head->_tag) + std::string(":") + to_string(_name);
+    return ::category(_list_head->_tag, _name);
 }
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    auto& settings = settings::instance();
-    std::string odrv_category(report.category());
-    bool do_report{true};
 
     assert(report._list_head->_conflict);
+
+    // Construct a map of unique definitions of the conflicting symbol.
+
+    std::map<std::size_t, const die*> conflict_map;
+    for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
+        std::size_t hash = next_die->_fatal_attribute_hash;
+        if (conflict_map.count(hash)) continue;
+        conflict_map[hash] = next_die;
+    }
+
+    assert(conflict_map.size() > 1);
+
+    // Derive the ODRV category. (REVISIT: optimize?)
+
+    auto front_attributes = fetch_attributes_for_die(*conflict_map.begin()->second);
+    auto back_attributes = fetch_attributes_for_die(*(--conflict_map.end())->second);
+
+    dw::at name = find_attribute_conflict(front_attributes, back_attributes);
+    std::string odrv_category = category(conflict_map.begin()->second->_tag, name);
+
+    // Decide if we should report or ignore.
+
+    auto& settings = settings::instance();
+    bool do_report{true};
 
     if (!settings._violation_ignore.empty()) {
         // Report everything except the stuff on the ignore list
@@ -393,21 +428,13 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     if (!do_report) return s;
 
-    // Construct a map of unique definitions of the conflicting symbol.
-
-    std::map<std::size_t, const die*> conflict_map;
-    for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
-        std::size_t hash = next_die->_fatal_attribute_hash;
-        if (conflict_map.count(hash)) continue;
-        conflict_map[hash] = next_die;
-    }
-
     // Output the report
 
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : conflict_map) {
-        s << *entry.second << '\n';
+        const die& die = *entry.second;
+        s << die << fetch_attributes_for_die(die) << '\n';
     }
     s << "\n";
 
@@ -447,30 +474,30 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
         return a->_ancestry < b->_ancestry;
     });
 
-    dw::at conflict = dw::at::none;
+    bool conflict{false};
     for(size_t i=1; i<dies.size(); ++i) {
         // Re-link the die list to match the sorted order.
         dies[i-1]->_next_die = dies[i];
 
-        if (conflict == dw::at::none) {
-            conflict = find_die_conflict(*dies[0], *dies[i]);
+        if (!conflict) {
+            conflict = dies[0]->_fatal_attribute_hash != dies[1]->_fatal_attribute_hash;
         }
     }
     dies.back()->_next_die = nullptr;
 
-    if (conflict != dw::at::none) {
-        dies[0]->_conflict = true;
-        std::string_view symbol = path_to_symbol(base->_path.view());
+    if (!conflict) return;
 
-        odrv_report report{
-            symbol, dies[0], conflict
-        
-        };
+    dies[0]->_conflict = true;
 
-        static std::mutex result_mutex;
-        std::lock_guard<std::mutex> lock(result_mutex);
-        results.push_back(report);
-    }
+    odrv_report report {
+        path_to_symbol(base->_path.view()),
+        dies[0],
+        dw::at::data_member_location
+    };
+
+    static std::mutex result_mutex;
+    std::lock_guard<std::mutex> lock(result_mutex);
+    results.push_back(report);
 }
 
 /**************************************************************************************************/
@@ -488,7 +515,6 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
             callbacks callbacks = {
                 register_dies,
                 do_work,
-                empool,
             };
 
             parse_file(_input_path.string(),

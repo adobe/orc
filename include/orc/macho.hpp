@@ -21,3 +21,7 @@ void read_macho(object_ancestry&& ancestry,
                 callbacks callbacks);
 
 /**************************************************************************************************/
+
+struct dwarf dwarf_from_macho(object_ancestry&& ancestry, register_dies_callback&& callback);
+
+/**************************************************************************************************/

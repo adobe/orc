@@ -245,7 +245,6 @@ using empool_callback = std::function<pool_string(std::string_view)>;
 struct callbacks {
     register_dies_callback _register_die;
     do_work_callback _do_work;
-    empool_callback _empool;
 };
 
 void parse_file(std::string_view object_name,

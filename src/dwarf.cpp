@@ -188,89 +188,6 @@ struct file_name {
 
 /**************************************************************************************************/
 
-struct attribute_sequence {
-    using attributes = std::vector<attribute>;
-    using value_type = typename attributes::value_type;
-    using iterator = typename attributes::iterator;
-    using const_iterator = typename attributes::const_iterator;
-
-    bool has(dw::at name) const {
-        auto [valid, iterator] = find(name);
-        return valid;
-    }
-
-    bool has(dw::at name, enum attribute_value::type t) const {
-        auto [valid, iterator] = find(name);
-        return valid ? iterator->has(t) : false;
-    }
-
-    bool has_uint(dw::at name) const {
-        return has(name, attribute_value::type::uint);
-    }
-
-    bool has_string(dw::at name) const {
-        return has(name, attribute_value::type::string);
-    }
-
-    bool has_reference(dw::at name) const {
-        return has(name, attribute_value::type::reference);
-    }
-
-    auto& get(dw::at name) {
-        auto [valid, iterator] = find(name);
-        assert(valid);
-        return *iterator;
-    }
-
-    const auto& get(dw::at name) const {
-        auto [valid, iterator] = find(name);
-        assert(valid);
-        return *iterator;
-    }
-
-    auto uint(dw::at name) const {
-        return get(name).uint();
-    }
-
-    auto string(dw::at name) const {
-        return get(name).string();
-    }
-
-    auto reference(dw::at name) const {
-        return get(name).reference();
-    }
-
-    void push_back(const value_type& x) {
-        _attributes.push_back(x);
-    }
-
-    auto empty() const { return _attributes.empty(); }
-
-    auto begin() { return _attributes.begin(); }
-    auto begin() const { return _attributes.begin(); }
-    auto end() { return _attributes.end(); }
-    auto end() const { return _attributes.end(); }
-
-private:
-    std::tuple<bool, iterator> find(dw::at name) {
-        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
-            return attr._name == name;
-        });
-        return std::make_tuple(result != _attributes.end(), result);
-    }
-
-    std::tuple<bool, const_iterator> find(dw::at name) const {
-        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
-            return attr._name == name;
-        });
-        return std::make_tuple(result != _attributes.end(), result);
-    }
-
-    std::vector<attribute> _attributes;
-};
-
-/**************************************************************************************************/
-
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     bool is_declaration = attributes.has_uint(dw::at::declaration) &&
                           attributes.uint(dw::at::declaration) == 1;
@@ -286,12 +203,12 @@ struct cu_header {
     std::uint64_t _debug_abbrev_offset{0}; // 4 (!_is_64_bit) or 8 (_is_64_bit) bytes
     std::uint32_t _address_size{0};
 
-    void read(freader& s, const file_details& details);
+    void read(freader& s, bool needs_byteswap);
 };
 
-void cu_header::read(freader& s, const file_details& details) {
+void cu_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s);
-    if (details._needs_byteswap) {
+    if (needs_byteswap) {
         endian_swap(_length);
     }
     if (_length >= 0xfffffff0) {
@@ -308,7 +225,7 @@ void cu_header::read(freader& s, const file_details& details) {
         _debug_abbrev_offset = read_pod<std::uint32_t>(s);
     }
 
-    if (details._needs_byteswap) {
+    if (needs_byteswap) {
         endian_swap(_version);
         endian_swap(_debug_abbrev_offset);
     }
@@ -332,12 +249,12 @@ struct line_header {
     std::vector<std::string_view> _include_directories;
     std::vector<file_name> _file_names;
 
-    void read(freader& s, const file_details& details);
+    void read(freader& s, bool needs_byteswap);
 };
 
-void line_header::read(freader& s, const file_details& details) {
+void line_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s);
-    if (details._needs_byteswap) {
+    if (needs_byteswap) {
         endian_swap(_length);
     }
     if (_length >= 0xfffffff0) {
@@ -354,7 +271,7 @@ void line_header::read(freader& s, const file_details& details) {
     _line_base = read_pod<std::int8_t>(s);
     _line_range = read_pod<std::uint8_t>(s);
     _opcode_base = read_pod<std::uint8_t>(s);
-    if (details._needs_byteswap) {
+    if (needs_byteswap) {
         endian_swap(_version);
         endian_swap(_header_length);
         // endian_swap(_min_instruction_length);
@@ -455,23 +372,20 @@ void resolve_type_attribute(dies& dies,
     constexpr auto type_k = dw::at::type;
 
     auto& attributes = attribute_sequences[i];
-    auto& d = dies[i];
 
     if (!attributes.has(type_k)) return; // nothing to resolve
-    if (d._type_resolved) return; // already resolved
 
     std::size_t base_type_index = find_base_index(dies, attribute_sequences, i);
     const die& base_type_die = dies[base_type_index];
+    const attribute_sequence& base_type_attributes = attribute_sequences[base_type_index];
 
     // Now that we have the resolved type die, overwrite this die's type to reflect
     // the resolved type.
     attribute& type_attr = attributes.get(type_k);
     type_attr._value.die(base_type_die);
-    if (attributes.has(dw::at::name)) {
-        type_attr._value.string(attributes.string(dw::at::name));
+    if (base_type_attributes.has(dw::at::name)) {
+        type_attr._value.string(base_type_attributes.string(dw::at::name));
     }
-
-    d._type_resolved = true;
 }
 
 /**************************************************************************************************/
@@ -558,21 +472,33 @@ bool skip_die(die& d, const attribute_sequence& attributes) {
 
 /**************************************************************************************************/
 
+enum class process_mode {
+    complete,
+    single,
+};
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
 
 struct dwarf::implementation {
     implementation(object_ancestry&& ancestry,
-                   freader& s,
-                   const file_details& details,
-                   callbacks callbacks)
-        : _ancestry(std::move(ancestry)), _s(s), _details(details),
-          _callbacks(std::move(callbacks)) {}
+                   freader&& s,
+                   bool needs_byteswap,
+                   arch arch,
+                   register_dies_callback callback)
+        : _ancestry(std::move(ancestry)), _s(s), _needs_byteswap(needs_byteswap),
+          _arch(arch), _register_dies(std::move(callback)) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
-    void process();
+    bool register_sections_done();
+
+    void process_all_dies();
+
+    std::tuple<die, attribute_sequence> fetch_one_die(std::size_t debug_info_offset);
 
     template <class T>
     T read();
@@ -603,12 +529,13 @@ struct dwarf::implementation {
     pool_string die_identifier(const die& a,
                                const attribute_sequence& attributes) const;
 
-    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address);
+    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address, process_mode mode);
 
     object_ancestry _ancestry;
-    freader& _s;
-    const file_details _details;
-    callbacks _callbacks;
+    freader _s;
+    bool _needs_byteswap{false};
+    arch _arch{arch::unknown};
+    register_dies_callback _register_dies;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
     std::size_t _cu_address{0};
@@ -617,6 +544,7 @@ struct dwarf::implementation {
     section _debug_info;
     section _debug_line;
     section _debug_str;
+    bool _ready{false};
 };
 
 /**************************************************************************************************/
@@ -624,7 +552,7 @@ struct dwarf::implementation {
 template <class T>
 T dwarf::implementation::read() {
     T result = read_pod<T>(_s);
-    if (_details._needs_byteswap) endian_swap(result);
+    if (_needs_byteswap) endian_swap(result);
     return result;
 }
 
@@ -645,6 +573,10 @@ std::int32_t dwarf::implementation::read_sleb() { return sleb128(_s); }
 void dwarf::implementation::register_section(const std::string& name,
                                              std::size_t offset,
                                              std::size_t size) {
+    // You've called process or fetch once already, and are trying to register more sections.
+    // Instead, the section registration must be complete and cannot be revisited.
+    assert(!_ready);
+
     if (name == "__debug_str") {
         _debug_str = section{ offset, size };
     } else if (name == "__debug_info") {
@@ -676,7 +608,7 @@ void dwarf::implementation::read_abbreviations() {
 void dwarf::implementation::read_lines() {
     temp_seek(_s, _debug_line._offset, [&] {
         line_header header;
-        header.read(_s, _details);
+        header.read(_s, _needs_byteswap);
 
         for (const auto& name : header._file_names) {
             if (name._directory_index > 0) {
@@ -684,9 +616,9 @@ void dwarf::implementation::read_lines() {
                 std::string path(header._include_directories[name._directory_index - 1]);
                 path += '/';
                 path += name._name;
-                _decl_files.push_back(_callbacks._empool(path));
+                _decl_files.push_back(empool(path));
             } else {
-                _decl_files.push_back(_callbacks._empool(name._name));
+                _decl_files.push_back(empool(name._name));
             }
         }
 
@@ -712,7 +644,7 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     // into a map<offset, pool_string>, and looking the offsets up as needed. Re-reading these over
     // and over is a waste of time.
     return temp_seek(_s, _debug_str._offset + offset, [&] {
-        return _callbacks._empool(_s.read_c_string_view());
+        return empool(_s.read_c_string_view());
     });
 }
 
@@ -790,57 +722,57 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         auto convention = result._value.uint();
         assert(convention > 0 && convention <= 0xff);
         switch (convention) {
-            case 0x01: result._value.string(_callbacks._empool("normal")); break;
-            case 0x02: result._value.string(_callbacks._empool("program")); break;
-            case 0x03: result._value.string(_callbacks._empool("nocall")); break;
-            case 0x04: result._value.string(_callbacks._empool("pass by reference")); break;
-            case 0x05: result._value.string(_callbacks._empool("pass by value")); break;
-            case 0x40: result._value.string(_callbacks._empool("lo user")); break;
-            case 0xff: result._value.string(_callbacks._empool("hi user")); break;
+            case 0x01: result._value.string(empool("normal")); break;
+            case 0x02: result._value.string(empool("program")); break;
+            case 0x03: result._value.string(empool("nocall")); break;
+            case 0x04: result._value.string(empool("pass by reference")); break;
+            case 0x05: result._value.string(empool("pass by value")); break;
+            case 0x40: result._value.string(empool("lo user")); break;
+            case 0xff: result._value.string(empool("hi user")); break;
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
         auto virtuality = result._value.uint();
         assert(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
-            case 0: result._value.string(_callbacks._empool("none")); break;
-            case 1: result._value.string(_callbacks._empool("virtual")); break;
-            case 2: result._value.string(_callbacks._empool("pure virtual")); break;
+            case 0: result._value.string(empool("none")); break;
+            case 1: result._value.string(empool("virtual")); break;
+            case 2: result._value.string(empool("pure virtual")); break;
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::visibility) {
         auto visibility = result._value.uint();
         assert(visibility > 0 && visibility <= 3);
         switch (visibility) {
-            case 1: result._value.string(_callbacks._empool("local")); break;
-            case 2: result._value.string(_callbacks._empool("exported")); break;
-            case 3: result._value.string(_callbacks._empool("qualified")); break;
+            case 1: result._value.string(empool("local")); break;
+            case 2: result._value.string(empool("exported")); break;
+            case 3: result._value.string(empool("qualified")); break;
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::apple_property) {
         auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
         switch (property) {
-            case 0x01: result._value.string(_callbacks._empool("readonly")); break;
-            case 0x02: result._value.string(_callbacks._empool("getter")); break;
-            case 0x04: result._value.string(_callbacks._empool("assign")); break;
-            case 0x08: result._value.string(_callbacks._empool("readwrite")); break;
-            case 0x10: result._value.string(_callbacks._empool("retain")); break;
-            case 0x20: result._value.string(_callbacks._empool("copy")); break;
-            case 0x40: result._value.string(_callbacks._empool("nonatomic")); break;
-            case 0x80: result._value.string(_callbacks._empool("setter")); break;
-            case 0x100: result._value.string(_callbacks._empool("atomic")); break;
-            case 0x200: result._value.string(_callbacks._empool("weak")); break;
-            case 0x400: result._value.string(_callbacks._empool("strong")); break;
-            case 0x800: result._value.string(_callbacks._empool("unsafe_unretained")); break;
-            case 0x1000: result._value.string(_callbacks._empool("nullability")); break;
-            case 0x2000: result._value.string(_callbacks._empool("null_resettable")); break;
-            case 0x4000: result._value.string(_callbacks._empool("class")); break;
+            case 0x01: result._value.string(empool("readonly")); break;
+            case 0x02: result._value.string(empool("getter")); break;
+            case 0x04: result._value.string(empool("assign")); break;
+            case 0x08: result._value.string(empool("readwrite")); break;
+            case 0x10: result._value.string(empool("retain")); break;
+            case 0x20: result._value.string(empool("copy")); break;
+            case 0x40: result._value.string(empool("nonatomic")); break;
+            case 0x80: result._value.string(empool("setter")); break;
+            case 0x100: result._value.string(empool("atomic")); break;
+            case 0x200: result._value.string(empool("weak")); break;
+            case 0x400: result._value.string(empool("strong")); break;
+            case 0x800: result._value.string(empool("unsafe_unretained")); break;
+            case 0x1000: result._value.string(empool("nullability")); break;
+            case 0x2000: result._value.string(empool("null_resettable")); break;
+            case 0x4000: result._value.string(empool("class")); break;
             // otherwise, leave the value unchanged.
         }
     } else if (result._form == dw::form::flag || result._form == dw::form::flag_present) {
-        static const auto true_ = _callbacks._empool("true");
-        static const auto false_ = _callbacks._empool("false");
+        static const auto true_ = empool("true");
+        static const auto false_ = empool("false");
         result._value.string(result._value.uint() ? true_ : false_);
     }
 
@@ -861,7 +793,7 @@ pool_string dwarf::implementation::die_identifier(const die& d,
     switch (d._tag) {
         case dw::tag::compile_unit:
         case dw::tag::partial_unit:
-            static pool_string unit_string_s = _callbacks._empool("[u]"); // u for "unit"
+            static pool_string unit_string_s = empool("[u]"); // u for "unit"
             return unit_string_s;
         default:
             // do nothing; we need the name not from the tag, but from one of its attributes
@@ -1035,7 +967,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.uint(read64());
         } break;
         case dw::form::string: {
-            result.string(_callbacks._empool(_s.read_c_string_view()));
+            result.string(empool(_s.read_c_string_view()));
         } break;
         case dw::form::flag: {
             result.uint(read8());
@@ -1058,15 +990,15 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
 /**************************************************************************************************/
 
-std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(std::size_t die_address) {
+std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
     die die;
     attribute_sequence attributes;
 
     die._debug_info_offset = die_address - _debug_info._offset;
-    die._arch = _details._arch;
+    die._arch = _arch;
 
 #if 1 // save for debugging. Useful to grok why a specific die isn't getting processed correctly.
-    if (die._debug_info_offset == 0x00087f2a) {
+    if (die._debug_info_offset == 0x7cf8b) {
         int x;
         (void)x;
     }
@@ -1083,26 +1015,40 @@ std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(s
 
     std::transform(a._attributes.begin(), a._attributes.end(),
                    std::back_inserter(attributes),
-                   [&](const auto& x) { return process_attribute(x, die._debug_info_offset); });
+                   [&](const auto& x) {
+                       // a possible optimization to think about...
+                       // if (mode == process_mode::complete && nonfatal_attribute(x._name)) return x;
+                       return process_attribute(x, die._debug_info_offset);
+                   });
 
-    path_identifier_set(die_identifier(die, attributes));
+    if (mode == process_mode::complete) {
+        path_identifier_set(die_identifier(die, attributes));
 
-    die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+        die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+    } else if (mode == process_mode::single) {
+        // gotta resolve the type attribute without access to the global die list.
+        if (attributes.has(dw::at::type)) {
+            auto& type = attributes.get(dw::at::type);
+            std::size_t die_address = type.reference() + _debug_info._offset;
+            auto [type_die, type_attributes] = abbreviation_to_die(die_address, mode);
+            if (type_attributes.has_string(dw::at::type)) {
+                type._value.string(type_attributes.string(dw::at::type));
+            } else if (type_attributes.has_string(dw::at::name)) {
+                type._value.string(type_attributes.string(dw::at::name));
+            }
+        }
+    }
 
     return std::make_tuple(std::move(die), std::move(attributes));
 }
 
 /**************************************************************************************************/
 
-void dwarf::implementation::process() {
-    if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return;
+bool dwarf::implementation::register_sections_done() {
+    assert(!_ready);
 
-#if 0 // save for debugging, waiting to catch a particular file.
-    if (_ancestry.back().allocate_string() == "ImathBox.cpp.o") {
-        int x;
-        (void)x;
-    }
-#endif
+    // Houston, we have a problem.
+    if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return false;
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
     // together.
@@ -1110,6 +1056,17 @@ void dwarf::implementation::process() {
     read_abbreviations();
 
     read_lines();
+
+    _ready = true;
+
+    return true;
+}
+
+/**************************************************************************************************/
+
+void dwarf::implementation::process_all_dies() {
+    if (!_ready && !register_sections_done()) return;
+    assert(_ready);
 
     auto section_begin = _debug_info._offset;
     auto section_end = section_begin + _debug_info._size;
@@ -1127,14 +1084,14 @@ void dwarf::implementation::process() {
 
         _cu_address = _s.tellg();
 
-        header.read(_s, _details);
+        header.read(_s, _needs_byteswap);
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {
             // we may not need to save these as a vector - registering them below should
             // suffice.
 
-            auto [die, attributes] = abbreviation_to_die(_s.tellg());
+            auto [die, attributes] = abbreviation_to_die(_s.tellg(), process_mode::complete);
 
             // code 0 is reserved; it's a null entry, and signifies the end of siblings.
             if (die._tag == dw::tag::none) {
@@ -1175,33 +1132,56 @@ void dwarf::implementation::process() {
     assert(dies.size() == attribute_sequences.size());
 
     for (std::size_t i{0}; i < dies.size(); ++i) {
-        if (dies[i]._should_skip) continue;
+        auto& die = dies[i];
+
+        if (die._should_skip) continue;
+
+        if (die._debug_info_offset == 0x7cf8b ||
+            die._debug_info_offset == 0x8d4fd) {
+            int x;
+            (void)x;
+        }
 
         resolve_reference_attributes(dies, attribute_sequences[i]);
 
         resolve_type_attribute(dies, attribute_sequences, i);
 
-        dies[i]._fatal_attribute_hash = fatal_attribute_hash(attribute_sequences[i]);
+        die._fatal_attribute_hash = fatal_attribute_hash(attribute_sequences[i]);
     }
 
     dies.shrink_to_fit();
 
-    _callbacks._register_die(std::move(dies));
+    _register_dies(std::move(dies));
+}
+
+/**************************************************************************************************/
+
+std::tuple<die, attribute_sequence> dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
+    if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
+    assert(_ready);
+    auto die_address = _debug_info._offset + debug_info_offset;
+    _s.seekg(die_address);
+    return abbreviation_to_die(die_address, process_mode::single);
 }
 
 /**************************************************************************************************/
 
 dwarf::dwarf(object_ancestry&& ancestry,
-             freader& s,
-             const file_details& details,
-             callbacks callbacks)
-    : _impl(new implementation(std::move(ancestry), s, details, std::move(callbacks)),
+             freader&& s,
+             bool needs_byteswap,
+             arch arch,
+             register_dies_callback callback)
+    : _impl(new implementation(std::move(ancestry), std::move(s), needs_byteswap, arch, std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {
     _impl->register_section(std::move(name), offset, size);
 }
 
-void dwarf::process() { _impl->process(); }
+void dwarf::process_all_dies() { _impl->process_all_dies(); }
+
+std::tuple<die, attribute_sequence> dwarf::fetch_one_die(std::size_t debug_info_offset) {
+    return _impl->fetch_one_die(debug_info_offset);
+}
 
 /**************************************************************************************************/

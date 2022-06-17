@@ -99,7 +99,9 @@ auto mmap_file(const std::filesystem::path& p) {
     void* ptr = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
     if (ptr == MAP_FAILED) return result_type();
-    auto deleter = [_sz = size](char* x){ munmap(x, _sz); };
+    auto deleter = [_sz = size](void* x){
+        munmap(x, _sz);
+    };
     return result_type(static_cast<char*>(ptr), std::move(deleter));
 }
 
@@ -159,7 +161,7 @@ void parse_file(std::string_view object_name,
 
     // append this object name to the ancestry
     object_ancestry new_ancestry = ancestry;
-    new_ancestry.emplace_back(callbacks._empool(object_name));
+    new_ancestry.emplace_back(empool(object_name));
 
     switch (detection._format) {
         case file_details::format::unknown:

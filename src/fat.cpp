@@ -5,7 +5,9 @@
 // of the Adobe license agreement accompanying it.
 
 // identity
-#include "orc/fat.hpp" // application
+#include "orc/fat.hpp"
+
+// application
 #include "orc/mach_types.hpp"
 
 /**************************************************************************************************/

@@ -7,9 +7,6 @@
 // identity
 #include "orc/macho.hpp"
 
-// stdc++
-#include <map>
-
 // tbb
 #include <tbb/concurrent_map.h>
 

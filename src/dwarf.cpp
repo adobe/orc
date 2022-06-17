@@ -769,10 +769,10 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
-            case dw::op::lit0... dw::op::lit31: {
+            case dw::op::lit0 ... dw::op::lit31: { // gcc/clang extension
                 stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
             } break;
-            case dw::op::reg0... dw::op::reg31: {
+            case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
                 stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
             } break;
             case dw::op::const1u: {
@@ -941,9 +941,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
-                       // a possible optimization to think about...
-                       // if (mode == process_mode::complete && nonfatal_attribute(x._name)) return
-                       // x;
+                       // REVISIT (fosterbrereton) Can we skip processing nonfatal attributes?
                        return process_attribute(x, die._debug_info_offset);
                    });
 

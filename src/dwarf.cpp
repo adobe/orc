@@ -769,19 +769,45 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
-            case dw::op::lit0... dw::op::lit31: { stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0)); } break;
-            case dw::op::reg0... dw::op::reg31: { stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0)); } break;
-            case dw::op::const1u: { stack.push_back(read8()); } break;
-            case dw::op::const2u: { stack.push_back(read16()); } break;
-            case dw::op::const4u: { stack.push_back(read32()); } break;
-            case dw::op::const8u: { stack.push_back(read64()); } break;
-            case dw::op::const1s: { stack.push_back(read_pod<std::int8_t>(_s)); } break;
-            case dw::op::const2s: { stack.push_back(read_pod<std::int16_t>(_s)); } break;
-            case dw::op::const4s: { stack.push_back(read_pod<std::int32_t>(_s)); } break;
-            case dw::op::const8s: { stack.push_back(read_pod<std::int64_t>(_s)); } break;
-            case dw::op::constu: { stack.push_back(read_uleb()); } break;
-            case dw::op::consts: { stack.push_back(read_sleb()); } break;
-            case dw::op::regx: { stack.push_back(read_uleb()); } break;
+            case dw::op::lit0... dw::op::lit31: {
+                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+            } break;
+            case dw::op::reg0... dw::op::reg31: {
+                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+            } break;
+            case dw::op::const1u: {
+                stack.push_back(read8());
+            } break;
+            case dw::op::const2u: {
+                stack.push_back(read16());
+            } break;
+            case dw::op::const4u: {
+                stack.push_back(read32());
+            } break;
+            case dw::op::const8u: {
+                stack.push_back(read64());
+            } break;
+            case dw::op::const1s: {
+                stack.push_back(read_pod<std::int8_t>(_s));
+            } break;
+            case dw::op::const2s: {
+                stack.push_back(read_pod<std::int16_t>(_s));
+            } break;
+            case dw::op::const4s: {
+                stack.push_back(read_pod<std::int32_t>(_s));
+            } break;
+            case dw::op::const8s: {
+                stack.push_back(read_pod<std::int64_t>(_s));
+            } break;
+            case dw::op::constu: {
+                stack.push_back(read_uleb());
+            } break;
+            case dw::op::consts: {
+                stack.push_back(read_sleb());
+            } break;
+            case dw::op::regx: {
+                stack.push_back(read_uleb());
+            } break;
             case dw::op::dup: {
                 if (stack.empty()) {
                     passover = true;

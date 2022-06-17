@@ -18,9 +18,8 @@
 struct dwarf {
     dwarf(object_ancestry&& ancestry,
           freader&& s,
-          bool needs_byteswap,
-          arch arch,
-          register_dies_callback callback);
+          file_details&& details,
+          register_dies_callback&& callback);
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
 

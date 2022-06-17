@@ -14,15 +14,15 @@
 #include <fstream>
 #include <list>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <unordered_map>
-#include <set>
 
 // stlab
 #include <stlab/concurrency/default_executor.hpp>
 #include <stlab/concurrency/future.hpp>
-#include <stlab/concurrency/utility.hpp>
 #include <stlab/concurrency/serial_queue.hpp>
+#include <stlab/concurrency/utility.hpp>
 
 // toml++
 #include <toml++/toml.h>
@@ -91,8 +91,10 @@ dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequ
 
         const auto& yattr = *yfound;
 
-        if (name == dw::at::type && type_equivalent(xattr, yattr)) continue;
-        else if (xattr == yattr) continue;
+        if (name == dw::at::type && type_equivalent(xattr, yattr))
+            continue;
+        else if (xattr == yattr)
+            continue;
 
         return name;
     }
@@ -116,14 +118,12 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
 
-    if (x.has(attribute_value::type::reference) &&
-        y.has(attribute_value::type::reference) &&
+    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference) &&
         x.reference() == y.reference()) {
         return true;
     }
 
-    if (x.has(attribute_value::type::string) &&
-        y.has(attribute_value::type::string) &&
+    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string) &&
         x.string_hash() == y.string_hash()) {
         return true;
     }
@@ -148,7 +148,7 @@ void update_progress() {
     std::size_t total = globals::instance()._die_processed_count;
     std::size_t percentage = static_cast<double>(done) / total * 100;
 
-    cout_safe([&](auto& s){
+    cout_safe([&](auto& s) {
         s << '\r' << done << "/" << total << "  " << percentage << "%; ";
         s << globals::instance()._odrv_count << " violation(s) found";
         s << "          "; // 10 spaces of overprint to clear out any previous lingerers
@@ -195,7 +195,7 @@ void register_dies(dies die_vector) {
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
     // pointers we use will stay valid for the lifetime of the application.
-    dies& dies = *with_global_die_collection([&](auto& collection){
+    dies& dies = *with_global_die_collection([&](auto& collection) {
         collection.push_back(std::move(die_vector));
         return --collection.end();
     });
@@ -271,16 +271,16 @@ struct work_counter {
     struct state {
         void increment() {
             {
-            std::lock_guard<std::mutex> lock(_m);
-            ++_n;
+                std::lock_guard<std::mutex> lock(_m);
+                ++_n;
             }
             _c.notify_all();
         }
 
         void decrement() {
             {
-            std::lock_guard<std::mutex> lock(_m);
-            --_n;
+                std::lock_guard<std::mutex> lock(_m);
+                --_n;
             }
             _c.notify_all();
         }
@@ -288,7 +288,7 @@ struct work_counter {
         void wait() {
             std::unique_lock<std::mutex> lock(_m);
             if (_n == 0) return;
-            _c.wait(lock, [&]{ return _n == 0; });
+            _c.wait(lock, [&] { return _n == 0; });
         }
 
         std::mutex _m;
@@ -305,9 +305,12 @@ public:
 
     struct token {
         token(shared_state w) : _w(std::move(w)) { _w->increment(); }
-        token(const token& t) : _w{t._w}  { _w->increment(); }
+        token(const token& t) : _w{t._w} { _w->increment(); }
         token(token&& t) = default;
-        ~token() { if (_w) _w->decrement(); }
+        ~token() {
+            if (_w) _w->decrement();
+        }
+
     private:
         shared_state _w;
     };
@@ -332,8 +335,8 @@ auto& work() {
 
 /**************************************************************************************************/
 
-void do_work(std::function<void()> f){
-    auto doit = [](auto&& f){
+void do_work(std::function<void()> f) {
+    auto doit = [](auto&& f) {
         try {
             f();
         } catch (const std::exception& error) {
@@ -350,9 +353,7 @@ void do_work(std::function<void()> f){
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
-        _doit(_f);
-    });
+    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] { _doit(_f); });
 }
 
 /**************************************************************************************************/
@@ -383,9 +384,7 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 /**************************************************************************************************/
 
-std::string odrv_report::category() const {
-    return ::category(_list_head->_tag, _name);
-}
+std::string odrv_report::category() const { return ::category(_list_head->_tag, _name); }
 
 /**************************************************************************************************/
 
@@ -452,30 +451,27 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 /**************************************************************************************************/
 
-void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
-{
+void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     std::vector<die*> dies;
-    for(die* ptr = base; ptr; ptr = ptr->_next_die) {
+    for (die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);
     }
     assert(!dies.empty());
-    if (dies.size() == 1)
-        return;
+    if (dies.size() == 1) return;
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
     // and the ancestry is unique.
-    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
-        return a->_ancestry < b->_ancestry;
-    });
+    std::sort(dies.begin(), dies.end(),
+              [](const die* a, const die* b) { return a->_ancestry < b->_ancestry; });
 
     bool conflict{false};
-    for(size_t i = 1; i < dies.size(); ++i) {
+    for (size_t i = 1; i < dies.size(); ++i) {
         // Re-link the die list to match the sorted order.
-        dies[i-1]->_next_die = dies[i];
+        dies[i - 1]->_next_die = dies[i];
 
         if (!conflict) {
-            conflict = dies[i-1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
+            conflict = dies[i - 1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
         }
     }
     dies.back()->_next_die = nullptr;
@@ -484,11 +480,7 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
 
     dies[0]->_conflict = true;
 
-    odrv_report report {
-        path_to_symbol(base->_path.view()),
-        dies[0],
-        dw::at::data_member_location
-    };
+    odrv_report report{path_to_symbol(base->_path.view()), dies[0], dw::at::data_member_location};
 
     static std::mutex result_mutex;
     std::lock_guard<std::mutex> lock(result_mutex);
@@ -498,7 +490,6 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
-
     // First stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
@@ -512,10 +503,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
                 do_work,
             };
 
-            parse_file(_input_path.string(),
-                       object_ancestry(),
-                       input,
-                       input.size(),
+            parse_file(_input_path.string(), object_ancestry(), input, input.size(),
                        std::move(callbacks));
         });
     }
@@ -525,18 +513,15 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
 
-    for(auto& entry : global_die_map()) {
+    for (auto& entry : global_die_map()) {
         die* base = entry.second;
-        do_work([base, &result] {
-            enforce_odrv_for_die_list(base, result);
-        });
+        do_work([base, &result] { enforce_odrv_for_die_list(base, result); });
     }
     work().wait();
 
     // Sort the ordrv_report
-    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b) {
-        return a._symbol < b._symbol;
-    });
+    std::sort(result.begin(), result.end(),
+              [](const odrv_report& a, const odrv_report& b) { return a._symbol < b._symbol; });
 
     return result;
 }
@@ -545,9 +530,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
 void orc_reset() {
     global_die_map().clear();
-    with_global_die_collection([](auto& collection){
-        collection.clear();
-    });
+    with_global_die_collection([](auto& collection) { collection.clear(); });
 }
 
 /**************************************************************************************************/

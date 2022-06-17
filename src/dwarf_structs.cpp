@@ -43,9 +43,12 @@ void attribute::read(freader& s) {
 
 std::size_t attribute_value::hash() const {
     // order here matches operator==
-    if (has_string()) return string().hash();
-    else if (has_uint()) return uint();
-    else if (has_sint()) return sint();
+    if (has_string())
+        return string().hash();
+    else if (has_uint())
+        return uint();
+    else if (has_sint())
+        return sint();
     return static_cast<std::size_t>(type());
 }
 
@@ -109,12 +112,12 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const die& x) {
-    for (const auto& ancestor: x._ancestry) {
+    for (const auto& ancestor : x._ancestry) {
         s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
     }
 
     // Save for debugging so we can map what we find with dwarfdump output
-#if 1
+#if 0
     s << "        debug info offset: 0x" << std::hex << x._debug_info_offset << std::dec << '\n';
 #endif
 
@@ -124,7 +127,7 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
 /**************************************************************************************************/
 
 bool nonfatal_attribute(dw::at at) {
-    static const auto attributes = []{
+    static const auto attributes = [] {
         std::vector<dw::at> nonfatal_attributes = {
             dw::at::apple_block,
             dw::at::apple_flags,

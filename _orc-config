@@ -48,7 +48,7 @@ print_symbol_paths = false
 #
 # The default value is `'warning'`.
 
-log_level = 'info'
+log_level = 'warning'
 
 # Output a die-count-based progress update throughout the session.
 #

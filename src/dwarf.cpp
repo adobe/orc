@@ -189,8 +189,8 @@ struct file_name {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
-    bool is_declaration = attributes.has_uint(dw::at::declaration) &&
-                          attributes.uint(dw::at::declaration) == 1;
+    bool is_declaration =
+        attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
     return hash_combine(0, d._arch, d._tag, d._path.hash(), is_declaration);
 };
 
@@ -325,10 +325,10 @@ attribute* alloc_attributes(std::size_t n) {
 /**************************************************************************************************/
 
 std::size_t lookup_die_index(const dies& dies, std::uint32_t offset) {
-    auto found = std::lower_bound(dies.begin(), dies.end(), offset,
-                                  [](const auto& x, const auto& offset){
-        return x._debug_info_offset < offset;
-    });
+    auto found =
+        std::lower_bound(dies.begin(), dies.end(), offset, [](const auto& x, const auto& offset) {
+            return x._debug_info_offset < offset;
+        });
     bool match = found != dies.end() && found->_debug_info_offset == offset;
     assert(match);
     if (!match) throw std::runtime_error("die not found");
@@ -343,7 +343,8 @@ const die& lookup_die(const dies& dies, std::uint32_t offset) {
 
 /**************************************************************************************************/
 
-void resolve_reference_attributes(dies& dies, attribute_sequence& attributes) { // REVISIT (fbrereto): out-args
+void resolve_reference_attributes(dies& dies,
+                                  attribute_sequence& attributes) { // REVISIT (fbrereto): out-args
     for (auto& attr : attributes) {
         if (attr._name == dw::at::type) continue;
         if (!attr.has(attribute_value::type::reference)) continue;
@@ -438,11 +439,10 @@ enum class process_mode {
 struct dwarf::implementation {
     implementation(object_ancestry&& ancestry,
                    freader&& s,
-                   bool needs_byteswap,
-                   arch arch,
-                   register_dies_callback callback)
-        : _ancestry(std::move(ancestry)), _s(s), _needs_byteswap(needs_byteswap),
-          _arch(arch), _register_dies(std::move(callback)) {}
+                   file_details&& details,
+                   register_dies_callback&& callback)
+        : _ancestry(std::move(ancestry)), _s(std::move(s)), _details(std::move(details)),
+          _register_dies(std::move(callback)) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
@@ -473,22 +473,20 @@ struct dwarf::implementation {
     void path_identifier_push();
     void path_identifier_set(pool_string name);
     void path_identifier_pop();
-    std::string qualified_symbol_name(const die& d,
-                                      const attribute_sequence& attributes) const;
+    std::string qualified_symbol_name(const die& d, const attribute_sequence& attributes) const;
 
     attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
     attribute_value evaluate_exprloc(std::uint32_t expression_size);
 
-    pool_string die_identifier(const die& a,
-                               const attribute_sequence& attributes) const;
+    pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
 
-    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address, process_mode mode);
+    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address,
+                                                            process_mode mode);
 
     object_ancestry _ancestry;
     freader _s;
-    bool _needs_byteswap{false};
-    arch _arch{arch::unknown};
+    file_details _details;
     register_dies_callback _register_dies;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
@@ -506,7 +504,7 @@ struct dwarf::implementation {
 template <class T>
 T dwarf::implementation::read() {
     T result = read_pod<T>(_s);
-    if (_needs_byteswap) endian_swap(result);
+    if (_details._needs_byteswap) endian_swap(result);
     return result;
 }
 
@@ -532,13 +530,13 @@ void dwarf::implementation::register_section(const std::string& name,
     assert(!_ready);
 
     if (name == "__debug_str") {
-        _debug_str = section{ offset, size };
+        _debug_str = section{offset, size};
     } else if (name == "__debug_info") {
-        _debug_info = section{ offset, size };
+        _debug_info = section{offset, size};
     } else if (name == "__debug_abbrev") {
-        _debug_abbrev = section{ offset, size };
+        _debug_abbrev = section{offset, size};
     } else if (name == "__debug_line") {
-        _debug_line = section{ offset, size };
+        _debug_line = section{offset, size};
     }
 }
 
@@ -562,7 +560,7 @@ void dwarf::implementation::read_abbreviations() {
 void dwarf::implementation::read_lines() {
     temp_seek(_s, _debug_line._offset, [&] {
         line_header header;
-        header.read(_s, _needs_byteswap);
+        header.read(_s, _details._needs_byteswap);
 
         for (const auto& name : header._file_names) {
             if (name._directory_index > 0) {
@@ -597,9 +595,8 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     // We should be pre-loading all the strings into the string pool, saving their offsets off
     // into a map<offset, pool_string>, and looking the offsets up as needed. Re-reading these over
     // and over is a waste of time.
-    return temp_seek(_s, _debug_str._offset + offset, [&] {
-        return empool(_s.read_c_string_view());
-    });
+    return temp_seek(_s, _debug_str._offset + offset,
+                     [&] { return empool(_s.read_c_string_view()); });
 }
 
 /**************************************************************************************************/
@@ -619,8 +616,8 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 /**************************************************************************************************/
 
-std::string dwarf::implementation::qualified_symbol_name(const die& d,
-                                                         const attribute_sequence& attributes) const {
+std::string dwarf::implementation::qualified_symbol_name(
+    const die& d, const attribute_sequence& attributes) const {
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
     // we are using, so let's use that instead here.
@@ -676,53 +673,109 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         auto convention = result._value.uint();
         assert(convention > 0 && convention <= 0xff);
         switch (convention) {
-            case 0x01: result._value.string(empool("normal")); break;
-            case 0x02: result._value.string(empool("program")); break;
-            case 0x03: result._value.string(empool("nocall")); break;
-            case 0x04: result._value.string(empool("pass by reference")); break;
-            case 0x05: result._value.string(empool("pass by value")); break;
-            case 0x40: result._value.string(empool("lo user")); break;
-            case 0xff: result._value.string(empool("hi user")); break;
-            // otherwise, leave the value unchanged.
+            case 0x01:
+                result._value.string(empool("normal"));
+                break;
+            case 0x02:
+                result._value.string(empool("program"));
+                break;
+            case 0x03:
+                result._value.string(empool("nocall"));
+                break;
+            case 0x04:
+                result._value.string(empool("pass by reference"));
+                break;
+            case 0x05:
+                result._value.string(empool("pass by value"));
+                break;
+            case 0x40:
+                result._value.string(empool("lo user"));
+                break;
+            case 0xff:
+                result._value.string(empool("hi user"));
+                break;
+                // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
         auto virtuality = result._value.uint();
         assert(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
-            case 0: result._value.string(empool("none")); break;
-            case 1: result._value.string(empool("virtual")); break;
-            case 2: result._value.string(empool("pure virtual")); break;
-            // otherwise, leave the value unchanged.
+            case 0:
+                result._value.string(empool("none"));
+                break;
+            case 1:
+                result._value.string(empool("virtual"));
+                break;
+            case 2:
+                result._value.string(empool("pure virtual"));
+                break;
+                // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::visibility) {
         auto visibility = result._value.uint();
         assert(visibility > 0 && visibility <= 3);
         switch (visibility) {
-            case 1: result._value.string(empool("local")); break;
-            case 2: result._value.string(empool("exported")); break;
-            case 3: result._value.string(empool("qualified")); break;
-            // otherwise, leave the value unchanged.
+            case 1:
+                result._value.string(empool("local"));
+                break;
+            case 2:
+                result._value.string(empool("exported"));
+                break;
+            case 3:
+                result._value.string(empool("qualified"));
+                break;
+                // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::apple_property) {
         auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
         switch (property) {
-            case 0x01: result._value.string(empool("readonly")); break;
-            case 0x02: result._value.string(empool("getter")); break;
-            case 0x04: result._value.string(empool("assign")); break;
-            case 0x08: result._value.string(empool("readwrite")); break;
-            case 0x10: result._value.string(empool("retain")); break;
-            case 0x20: result._value.string(empool("copy")); break;
-            case 0x40: result._value.string(empool("nonatomic")); break;
-            case 0x80: result._value.string(empool("setter")); break;
-            case 0x100: result._value.string(empool("atomic")); break;
-            case 0x200: result._value.string(empool("weak")); break;
-            case 0x400: result._value.string(empool("strong")); break;
-            case 0x800: result._value.string(empool("unsafe_unretained")); break;
-            case 0x1000: result._value.string(empool("nullability")); break;
-            case 0x2000: result._value.string(empool("null_resettable")); break;
-            case 0x4000: result._value.string(empool("class")); break;
-            // otherwise, leave the value unchanged.
+            case 0x01:
+                result._value.string(empool("readonly"));
+                break;
+            case 0x02:
+                result._value.string(empool("getter"));
+                break;
+            case 0x04:
+                result._value.string(empool("assign"));
+                break;
+            case 0x08:
+                result._value.string(empool("readwrite"));
+                break;
+            case 0x10:
+                result._value.string(empool("retain"));
+                break;
+            case 0x20:
+                result._value.string(empool("copy"));
+                break;
+            case 0x40:
+                result._value.string(empool("nonatomic"));
+                break;
+            case 0x80:
+                result._value.string(empool("setter"));
+                break;
+            case 0x100:
+                result._value.string(empool("atomic"));
+                break;
+            case 0x200:
+                result._value.string(empool("weak"));
+                break;
+            case 0x400:
+                result._value.string(empool("strong"));
+                break;
+            case 0x800:
+                result._value.string(empool("unsafe_unretained"));
+                break;
+            case 0x1000:
+                result._value.string(empool("nullability"));
+                break;
+            case 0x2000:
+                result._value.string(empool("null_resettable"));
+                break;
+            case 0x4000:
+                result._value.string(empool("class"));
+                break;
+                // otherwise, leave the value unchanged.
         }
     } else if (result._form == dw::form::flag || result._form == dw::form::flag_present) {
         static const auto true_ = empool("true");
@@ -790,10 +843,10 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
-            case dw::op::lit0 ... dw::op::lit31: {
+            case dw::op::lit0... dw::op::lit31: {
                 stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
             } break;
-            case dw::op::reg0 ... dw::op::reg31: {
+            case dw::op::reg0... dw::op::reg31: {
                 stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
             } break;
             case dw::op::const1u: {
@@ -886,9 +939,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.string(read_debug_str(read32()));
         } break;
         case dw::form::exprloc: {
-            read_exactly(_s, read_uleb(), [&](auto expr_size){
-                result = evaluate_exprloc(expr_size);
-            });
+            read_exactly(_s, read_uleb(),
+                         [&](auto expr_size) { result = evaluate_exprloc(expr_size); });
         } break;
         case dw::form::addr: {
             result.uint(read64());
@@ -944,12 +996,13 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
 /**************************************************************************************************/
 
-std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
+std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(
+    std::size_t die_address, process_mode mode) {
     die die;
     attribute_sequence attributes;
 
     die._debug_info_offset = die_address - _debug_info._offset;
-    die._arch = _arch;
+    die._arch = _details._arch;
 
 #if 1 // save for debugging. Useful to grok why a specific die isn't getting processed correctly.
     if (die._debug_info_offset == 0x7cf8b) {
@@ -967,11 +1020,11 @@ std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(s
     die._tag = a._tag;
     die._has_children = a._has_children;
 
-    std::transform(a._attributes.begin(), a._attributes.end(),
-                   std::back_inserter(attributes),
+    std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
                        // a possible optimization to think about...
-                       // if (mode == process_mode::complete && nonfatal_attribute(x._name)) return x;
+                       // if (mode == process_mode::complete && nonfatal_attribute(x._name)) return
+                       // x;
                        return process_attribute(x, die._debug_info_offset);
                    });
 
@@ -1045,7 +1098,8 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 
     // If the symbol is listed in the symbol_ignore list, we're done here.
     std::string_view symbol = d._path.view();
-    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) return true;
+    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7)))
+        return true;
 
     // Unfortunately we have to do this work to see if we're dealing with
     // a self-referential type.
@@ -1054,7 +1108,7 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
         // To determine that, we'll jump to the reference, grab the abbreviation code,
         // and see how many attributes it should have.
         auto reference = attributes.reference(dw::at::type);
-        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::seekdir::beg, [&]{
+        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::seekdir::beg, [&] {
             auto abbrev_code = read_uleb();
             const auto& abbrev = find_abbreviation(abbrev_code);
             return abbrev._attributes.empty();
@@ -1088,7 +1142,7 @@ void dwarf::implementation::process_all_dies() {
 
         _cu_address = _s.tellg();
 
-        header.read(_s, _needs_byteswap);
+        header.read(_s, _details._needs_byteswap);
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {
@@ -1140,8 +1194,7 @@ void dwarf::implementation::process_all_dies() {
 
         if (die._should_skip) continue;
 
-        if (die._debug_info_offset == 0x7cf8b ||
-            die._debug_info_offset == 0x8d4fd) {
+        if (die._debug_info_offset == 0x7cf8b || die._debug_info_offset == 0x8d4fd) {
             int x;
             (void)x;
         }
@@ -1160,7 +1213,8 @@ void dwarf::implementation::process_all_dies() {
 
 /**************************************************************************************************/
 
-std::tuple<die, attribute_sequence> dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
+std::tuple<die, attribute_sequence> dwarf::implementation::fetch_one_die(
+    std::size_t debug_info_offset) {
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
     assert(_ready);
     auto die_address = _debug_info._offset + debug_info_offset;
@@ -1172,10 +1226,10 @@ std::tuple<die, attribute_sequence> dwarf::implementation::fetch_one_die(std::si
 
 dwarf::dwarf(object_ancestry&& ancestry,
              freader&& s,
-             bool needs_byteswap,
-             arch arch,
-             register_dies_callback callback)
-    : _impl(new implementation(std::move(ancestry), std::move(s), needs_byteswap, arch, std::move(callback)),
+             file_details&& details,
+             register_dies_callback&& callback)
+    : _impl(new implementation(
+                std::move(ancestry), std::move(s), std::move(details), std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

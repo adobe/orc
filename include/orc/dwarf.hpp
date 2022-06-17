@@ -15,6 +15,8 @@
 
 /**************************************************************************************************/
 
+using die_pair = std::tuple<die, attribute_sequence>;
+
 struct dwarf {
     dwarf(object_ancestry&& ancestry,
           freader&& s,
@@ -25,7 +27,7 @@ struct dwarf {
 
     void process_all_dies();
 
-    std::tuple<die, attribute_sequence> fetch_one_die(std::size_t debug_info_offset);
+    die_pair fetch_one_die(std::size_t debug_info_offset);
 
 private:
     struct implementation;

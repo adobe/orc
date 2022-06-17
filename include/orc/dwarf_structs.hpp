@@ -322,7 +322,7 @@ struct die {
     arch _arch{arch::unknown};
     bool _has_children{false};
     bool _conflict{false};
-    bool _should_skip{false};
+    bool _skippable{false};
 
     bool operator<(const die& rhs) const {
         if (_path.view() < rhs._path.view())

@@ -203,16 +203,7 @@ void register_dies(dies die_vector) {
     globals::instance()._die_processed_count += dies.size();
 
     for (auto& d : dies) {
-        // save for debugging. Useful to watch for a specific symbol.
-#if 0
-        if (d._path == "::[u]::_ZNK14example_vtable6object3apiEv") {
-            int x;
-            (void)x;
-        }
-#endif
-
-        if (d._should_skip) continue;
-
+        if (d._skippable) continue;
 #if 0
         if (settings::instance()._print_symbol_paths) {
             // This is all horribly broken, especially now that we're calling this from multiple threads.

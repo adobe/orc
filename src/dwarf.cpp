@@ -452,7 +452,7 @@ struct dwarf::implementation {
 
     bool skip_die(die& d, const attribute_sequence& attributes);
 
-    std::tuple<die, attribute_sequence> fetch_one_die(std::size_t debug_info_offset);
+    die_pair fetch_one_die(std::size_t debug_info_offset);
 
     template <class T>
     T read();
@@ -481,8 +481,7 @@ struct dwarf::implementation {
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
 
-    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address,
-                                                            process_mode mode);
+    die_pair abbreviation_to_die(std::size_t die_address, process_mode mode);
 
     object_ancestry _ancestry;
     freader _s;
@@ -996,8 +995,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
 /**************************************************************************************************/
 
-std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(
-    std::size_t die_address, process_mode mode) {
+die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
     die die;
     attribute_sequence attributes;
 
@@ -1178,9 +1176,9 @@ void dwarf::implementation::process_all_dies() {
                 path_identifier_push();
             }
 
+            die._skippable = skip_die(die, attributes);
             die._ancestry = _ancestry;
             die._hash = die_hash(die, attributes); // precompute the hash we'll use for the die map.
-            die._should_skip = skip_die(die, attributes);
 
             dies.emplace_back(std::move(die));
             attribute_sequences.emplace_back(std::move(attributes));
@@ -1191,19 +1189,14 @@ void dwarf::implementation::process_all_dies() {
 
     for (std::size_t i{0}; i < dies.size(); ++i) {
         auto& die = dies[i];
+        auto& attributes = attribute_sequences[i];
 
-        if (die._should_skip) continue;
-
-        if (die._debug_info_offset == 0x7cf8b || die._debug_info_offset == 0x8d4fd) {
-            int x;
-            (void)x;
-        }
+        if (die._skippable) continue;
 
         resolve_reference_attributes(dies, attribute_sequences[i]);
-
         resolve_type_attribute(dies, attribute_sequences, i);
 
-        die._fatal_attribute_hash = fatal_attribute_hash(attribute_sequences[i]);
+        die._fatal_attribute_hash = fatal_attribute_hash(attributes);
     }
 
     dies.shrink_to_fit();
@@ -1213,8 +1206,7 @@ void dwarf::implementation::process_all_dies() {
 
 /**************************************************************************************************/
 
-std::tuple<die, attribute_sequence> dwarf::implementation::fetch_one_die(
-    std::size_t debug_info_offset) {
+die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
     assert(_ready);
     auto die_address = _debug_info._offset + debug_info_offset;
@@ -1238,7 +1230,7 @@ void dwarf::register_section(std::string name, std::size_t offset, std::size_t s
 
 void dwarf::process_all_dies() { _impl->process_all_dies(); }
 
-std::tuple<die, attribute_sequence> dwarf::fetch_one_die(std::size_t debug_info_offset) {
+die_pair dwarf::fetch_one_die(std::size_t debug_info_offset) {
     return _impl->fetch_one_die(debug_info_offset);
 }
 

@@ -454,11 +454,6 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
 {
-    if (base->_hash == 6295459837195399299) {
-        int x;
-        (void)x;
-    }
-
     std::vector<die*> dies;
     for(die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);
@@ -475,12 +470,12 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
     });
 
     bool conflict{false};
-    for(size_t i=1; i<dies.size(); ++i) {
+    for(size_t i = 1; i < dies.size(); ++i) {
         // Re-link the die list to match the sorted order.
         dies[i-1]->_next_die = dies[i];
 
         if (!conflict) {
-            conflict = dies[0]->_fatal_attribute_hash != dies[1]->_fatal_attribute_hash;
+            conflict = dies[i-1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
         }
     }
     dies.back()->_next_die = nullptr;

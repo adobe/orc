@@ -210,6 +210,10 @@ struct attribute_sequence {
         return *iterator;
     }
 
+    auto hash(dw::at name) const {
+        return get(name)._value.hash();
+    }
+
     auto uint(dw::at name) const {
         return get(name).uint();
     }

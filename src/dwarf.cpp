@@ -400,15 +400,9 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
     }
     std::sort(names.begin(), names.end());
 
-    auto find_attr = [&](dw::at a){
-        return *std::find_if(attributes.begin(), attributes.end(), [&](const auto& x){
-            return x._name == a;
-        });
-    };
-
     std::size_t h{0};
     for (const auto& name : names) {
-        h = hash_combine(h, find_attr(name)._value.hash());
+        h = hash_combine(h, attributes.hash(name));
     }
     return h;
 }
@@ -426,48 +420,6 @@ bool skip_tagged_die(const die& d) {
     static const auto last = std::end(skip_tags);
 
     return std::find(first, last, d._tag) != last;
-}
-
-/**************************************************************************************************/
-
-bool skip_die(die& d, const attribute_sequence& attributes) {
-    // These are a handful of "filters" we use to elide false positives.
-
-    // These are the tags we don't deal with (yet, if ever.)
-    if (skip_tagged_die(d)) return true;
-
-    // According to DWARF 3.3.1, a subprogram tag that is missing the external
-    // flag means the function is invisible outside its compilation unit. As
-    // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !attributes.has_uint(dw::at::external)) return true;
-
-    // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
-    // them.
-    if (d._path.empty()) return true;
-
-    // Symbols with __ in them are reserved, so are not user-defined. No need to register
-    // them.
-    if (d._path.view().find("::__") != std::string::npos) return true;
-
-    // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.view().find("lambda") != std::string::npos) return true;
-
-    // we don't handle any die that's ObjC-based.
-    if (attributes.has(dw::at::apple_runtime_class)) return true;
-
-    // If the symbol is listed in the symbol_ignore list, we're done here.
-    std::string_view symbol = d._path.view();
-    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) return true;
-
-    // Unfortunately we have to do this work to see if we're dealing with
-    // a self-referential type.
-    // if (d.has_attribute(dw::at::type)) {
-    //     const auto& type = d.attribute(dw::at::type);
-    //     // if this is a self-referential type, it's die will have no attributes.
-    //     if (type.die()._attributes_size == 0) return true;
-    // }
-
-    return false;
 }
 
 /**************************************************************************************************/
@@ -497,6 +449,8 @@ struct dwarf::implementation {
     bool register_sections_done();
 
     void process_all_dies();
+
+    bool skip_die(die& d, const attribute_sequence& attributes);
 
     std::tuple<die, attribute_sequence> fetch_one_die(std::size_t debug_info_offset);
 
@@ -1060,6 +1014,56 @@ bool dwarf::implementation::register_sections_done() {
     _ready = true;
 
     return true;
+}
+
+/**************************************************************************************************/
+
+bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
+    // These are a handful of "filters" we use to elide false positives.
+
+    // These are the tags we don't deal with (yet, if ever.)
+    if (skip_tagged_die(d)) return true;
+
+    // According to DWARF 3.3.1, a subprogram tag that is missing the external
+    // flag means the function is invisible outside its compilation unit. As
+    // such, it cannot contribute to an ODRV.
+    if (d._tag == dw::tag::subprogram && !attributes.has_uint(dw::at::external)) return true;
+
+    // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
+    // them.
+    if (d._path.empty()) return true;
+
+    // Symbols with __ in them are reserved, so are not user-defined. No need to register
+    // them.
+    if (d._path.view().find("::__") != std::string::npos) return true;
+
+    // lambdas are ephemeral and can't cause (hopefully) an ODRV
+    if (d._path.view().find("lambda") != std::string::npos) return true;
+
+    // we don't handle any die that's ObjC-based.
+    if (attributes.has(dw::at::apple_runtime_class)) return true;
+
+    // If the symbol is listed in the symbol_ignore list, we're done here.
+    std::string_view symbol = d._path.view();
+    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) return true;
+
+    // Unfortunately we have to do this work to see if we're dealing with
+    // a self-referential type.
+    if (attributes.has_reference(dw::at::type)) {
+        // if this is a self-referential type, it's die will have no attributes.
+        // To determine that, we'll jump to the reference, grab the abbreviation code,
+        // and see how many attributes it should have.
+        auto reference = attributes.reference(dw::at::type);
+        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::seekdir::beg, [&]{
+            auto abbrev_code = read_uleb();
+            const auto& abbrev = find_abbreviation(abbrev_code);
+            return abbrev._attributes.empty();
+        });
+
+        if (empty) return true;
+    }
+
+    return false;
 }
 
 /**************************************************************************************************/

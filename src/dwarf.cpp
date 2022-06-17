@@ -303,26 +303,6 @@ void line_header::read(freader& s, bool needs_byteswap) {
 }
 
 /**************************************************************************************************/
-#if 0
-attribute* alloc_attributes(std::size_t n) {
-#if ORC_FEATURE(LEAKY_MEMORY)
-    thread_local auto& pool_s = *(new std::list<std::unique_ptr<attribute[]>>);
-#else
-    thread_local std::list<std::unique_ptr<attribute[]>> pool_s;
-#endif // ORC_FEATURE(LEAKY_MEMORY)
-    constexpr auto block_size_k{32 * 1024 * 1024};
-    constexpr auto max_attributes_k{block_size_k / sizeof(attribute)};
-    thread_local std::size_t n_s{max_attributes_k};
-    if ((n_s + n) >= max_attributes_k) {
-        pool_s.push_back(std::make_unique<attribute[]>(max_attributes_k));
-        n_s = 0;
-    }
-    attribute* result = &pool_s.back().get()[n_s];
-    n_s += n;
-    return result;
-}
-#endif
-/**************************************************************************************************/
 
 std::size_t lookup_die_index(const dies& dies, std::uint32_t offset) {
     auto found =
@@ -656,6 +636,7 @@ std::string dwarf::implementation::qualified_symbol_name(
 // current read position in debug_info.
 attribute dwarf::implementation::process_attribute(const attribute& attr,
                                                    std::size_t cur_die_offset) {
+    // clang-format off
     attribute result = attr;
 
     result._value = process_form(attr, cur_die_offset);
@@ -672,109 +653,53 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         auto convention = result._value.uint();
         assert(convention > 0 && convention <= 0xff);
         switch (convention) {
-            case 0x01:
-                result._value.string(empool("normal"));
-                break;
-            case 0x02:
-                result._value.string(empool("program"));
-                break;
-            case 0x03:
-                result._value.string(empool("nocall"));
-                break;
-            case 0x04:
-                result._value.string(empool("pass by reference"));
-                break;
-            case 0x05:
-                result._value.string(empool("pass by value"));
-                break;
-            case 0x40:
-                result._value.string(empool("lo user"));
-                break;
-            case 0xff:
-                result._value.string(empool("hi user"));
-                break;
-                // otherwise, leave the value unchanged.
+            case 0x01: result._value.string(empool("normal")); break;
+            case 0x02: result._value.string(empool("program")); break;
+            case 0x03: result._value.string(empool("nocall")); break;
+            case 0x04: result._value.string(empool("pass by reference")); break;
+            case 0x05: result._value.string(empool("pass by value")); break;
+            case 0x40: result._value.string(empool("lo user")); break;
+            case 0xff: result._value.string(empool("hi user")); break;
+            // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
         auto virtuality = result._value.uint();
         assert(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
-            case 0:
-                result._value.string(empool("none"));
-                break;
-            case 1:
-                result._value.string(empool("virtual"));
-                break;
-            case 2:
-                result._value.string(empool("pure virtual"));
-                break;
-                // otherwise, leave the value unchanged.
+            case 0: result._value.string(empool("none")); break;
+            case 1: result._value.string(empool("virtual")); break;
+            case 2: result._value.string(empool("pure virtual")); break;
+            // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::visibility) {
         auto visibility = result._value.uint();
         assert(visibility > 0 && visibility <= 3);
         switch (visibility) {
-            case 1:
-                result._value.string(empool("local"));
-                break;
-            case 2:
-                result._value.string(empool("exported"));
-                break;
-            case 3:
-                result._value.string(empool("qualified"));
-                break;
-                // otherwise, leave the value unchanged.
+            case 1: result._value.string(empool("local")); break;
+            case 2: result._value.string(empool("exported")); break;
+            case 3: result._value.string(empool("qualified")); break;
+            // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::apple_property) {
         auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
         switch (property) {
-            case 0x01:
-                result._value.string(empool("readonly"));
-                break;
-            case 0x02:
-                result._value.string(empool("getter"));
-                break;
-            case 0x04:
-                result._value.string(empool("assign"));
-                break;
-            case 0x08:
-                result._value.string(empool("readwrite"));
-                break;
-            case 0x10:
-                result._value.string(empool("retain"));
-                break;
-            case 0x20:
-                result._value.string(empool("copy"));
-                break;
-            case 0x40:
-                result._value.string(empool("nonatomic"));
-                break;
-            case 0x80:
-                result._value.string(empool("setter"));
-                break;
-            case 0x100:
-                result._value.string(empool("atomic"));
-                break;
-            case 0x200:
-                result._value.string(empool("weak"));
-                break;
-            case 0x400:
-                result._value.string(empool("strong"));
-                break;
-            case 0x800:
-                result._value.string(empool("unsafe_unretained"));
-                break;
-            case 0x1000:
-                result._value.string(empool("nullability"));
-                break;
-            case 0x2000:
-                result._value.string(empool("null_resettable"));
-                break;
-            case 0x4000:
-                result._value.string(empool("class"));
-                break;
-                // otherwise, leave the value unchanged.
+            case 0x01: result._value.string(empool("readonly")); break;
+            case 0x02: result._value.string(empool("getter")); break;
+            case 0x04: result._value.string(empool("assign")); break;
+            case 0x08: result._value.string(empool("readwrite")); break;
+            case 0x10: result._value.string(empool("retain")); break;
+            case 0x20: result._value.string(empool("copy")); break;
+            case 0x40: result._value.string(empool("nonatomic")); break;
+            case 0x80: result._value.string(empool("setter")); break;
+            case 0x100: result._value.string(empool("atomic")); break;
+            case 0x200: result._value.string(empool("weak")); break;
+            case 0x400: result._value.string(empool("strong")); break;
+            case 0x800: result._value.string(empool("unsafe_unretained")); break;
+            case 0x1000: result._value.string(empool("nullability")); break;
+            case 0x2000: result._value.string(empool("null_resettable")); break;
+            case 0x4000: result._value.string(empool("class")); break;
+            // otherwise, leave the value unchanged.
         }
     } else if (result._form == dw::form::flag || result._form == dw::form::flag_present) {
         static const auto true_ = empool("true");
@@ -783,6 +708,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     }
 
     return result;
+    // clang-format on
 }
 
 /**************************************************************************************************/
@@ -839,48 +765,23 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // but is supported by both GCC and clang. It makes the below *far* more readable, but if
     // we need to pull it out, we can.
 
+    // clang-format off
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
-            case dw::op::lit0... dw::op::lit31: {
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
-            } break;
-            case dw::op::reg0... dw::op::reg31: {
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
-            } break;
-            case dw::op::const1u: {
-                stack.push_back(read8());
-            } break;
-            case dw::op::const2u: {
-                stack.push_back(read16());
-            } break;
-            case dw::op::const4u: {
-                stack.push_back(read32());
-            } break;
-            case dw::op::const8u: {
-                stack.push_back(read64());
-            } break;
-            case dw::op::const1s: {
-                stack.push_back(read_pod<std::int8_t>(_s));
-            } break;
-            case dw::op::const2s: {
-                stack.push_back(read_pod<std::int16_t>(_s));
-            } break;
-            case dw::op::const4s: {
-                stack.push_back(read_pod<std::int32_t>(_s));
-            } break;
-            case dw::op::const8s: {
-                stack.push_back(read_pod<std::int64_t>(_s));
-            } break;
-            case dw::op::constu: {
-                stack.push_back(read_uleb());
-            } break;
-            case dw::op::consts: {
-                stack.push_back(read_sleb());
-            } break;
-            case dw::op::regx: {
-                stack.push_back(read_uleb());
-            } break;
+            case dw::op::lit0... dw::op::lit31: { stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0)); } break;
+            case dw::op::reg0... dw::op::reg31: { stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0)); } break;
+            case dw::op::const1u: { stack.push_back(read8()); } break;
+            case dw::op::const2u: { stack.push_back(read16()); } break;
+            case dw::op::const4u: { stack.push_back(read32()); } break;
+            case dw::op::const8u: { stack.push_back(read64()); } break;
+            case dw::op::const1s: { stack.push_back(read_pod<std::int8_t>(_s)); } break;
+            case dw::op::const2s: { stack.push_back(read_pod<std::int16_t>(_s)); } break;
+            case dw::op::const4s: { stack.push_back(read_pod<std::int32_t>(_s)); } break;
+            case dw::op::const8s: { stack.push_back(read_pod<std::int64_t>(_s)); } break;
+            case dw::op::constu: { stack.push_back(read_uleb()); } break;
+            case dw::op::consts: { stack.push_back(read_sleb()); } break;
+            case dw::op::regx: { stack.push_back(read_uleb()); } break;
             case dw::op::dup: {
                 if (stack.empty()) {
                     passover = true;
@@ -893,6 +794,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             } break;
         }
     }
+    // clang-format on
 
     attribute_value result;
 
@@ -1001,13 +903,6 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     die._debug_info_offset = die_address - _debug_info._offset;
     die._arch = _details._arch;
-
-#if 1 // save for debugging. Useful to grok why a specific die isn't getting processed correctly.
-    if (die._debug_info_offset == 0x7cf8b) {
-        int x;
-        (void)x;
-    }
-#endif
 
     std::size_t abbrev_code = read_uleb();
 

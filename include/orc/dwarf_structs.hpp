@@ -319,6 +319,7 @@ struct die {
     std::size_t _fatal_attribute_hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
+    std::uint8_t _attributes_size{0};
     arch _arch{arch::unknown};
     bool _has_children{false};
     bool _conflict{false};

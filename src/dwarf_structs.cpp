@@ -87,12 +87,12 @@ std::ostream& operator<<(std::ostream& s, const attribute& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const die& x) {
-    std::string def_loc;
-    std::vector<attribute> attributes(x._attributes, x._attributes + x._attributes_size);
-
     for (const auto& ancestor: x._ancestry) {
         s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
     }
+
+#if 0
+    std::vector<attribute> attributes(x._attributes, x._attributes + x._attributes_size);
 
     auto erase_attr = [](auto& attributes, auto key){
         auto found = std::find_if(attributes.begin(), attributes.end(), [&](auto& x){
@@ -104,7 +104,6 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
     };
 
     bool first = true;
-
     if (x.attribute_has_string(dw::at::decl_file)) {
         s << "        definition location: " << x.attribute_string(dw::at::decl_file);
         erase_attr(attributes, dw::at::decl_file);
@@ -117,14 +116,66 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
         first = false;
     }
 
-
     for (const auto& attr : attributes) {
         if (!first) s << '\n';
         s << attr;
         first = false;
     }
+#endif
 
     return s;
+}
+
+/**************************************************************************************************/
+
+bool nonfatal_attribute(dw::at at) {
+    static const auto attributes = []{
+        std::vector<dw::at> nonfatal_attributes = {
+            dw::at::apple_block,
+            dw::at::apple_flags,
+            dw::at::apple_isa,
+            dw::at::apple_major_runtime_vers,
+            dw::at::apple_objc_complete_type,
+            dw::at::apple_objc_direct,
+            dw::at::apple_omit_frame_ptr,
+            dw::at::apple_optimized,
+            dw::at::apple_property,
+            dw::at::apple_property_attribute,
+            dw::at::apple_property_getter,
+            dw::at::apple_property_name,
+            dw::at::apple_property_setter,
+            dw::at::apple_runtime_class,
+            dw::at::apple_sdk,
+            dw::at::call_column,
+            dw::at::call_file,
+            dw::at::call_line,
+            dw::at::call_origin,
+            dw::at::call_return_pc,
+            dw::at::containing_type,
+            dw::at::decl_column,
+            dw::at::decl_file,
+            dw::at::decl_line,
+            dw::at::frame_base,
+            // According to section 2.17 of the DWARF spec, if high_pc is a constant (e.g., form
+            // data4) then its value is the size of the function. Likewise, its existence implies
+            // the function it describes is a contiguous block of code in the object file. Since we
+            // assume this attribute is of constant form, this is the size of the function. If two
+            // or more functions with the same name have different high_pc values, their sizes are
+            // different, which means their definitions are going to be different, and that's an
+            // ODRV.
+            // dw::at::high_pc,
+            dw::at::location,
+            dw::at::low_pc,
+            dw::at::name,
+            dw::at::prototyped,
+        };
+
+        std::sort(nonfatal_attributes.begin(), nonfatal_attributes.end());
+
+        return nonfatal_attributes;
+    }();
+
+    return sorted_has(attributes, at);
 }
 
 /**************************************************************************************************/

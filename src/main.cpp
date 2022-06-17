@@ -388,7 +388,7 @@ auto epilogue(bool exception) {
               << "info:   " << g._odrv_count << " ODRVs reported\n"
               << "info:   " << g._object_file_count << " compilation units processed\n"
               << "info:   " << g._die_processed_count << " dies processed\n"
-              << "info:   " << g._die_registered_count << " dies registered\n";
+              << "info:   " << g._unique_symbol_count << " unique symbols registered\n";
         });
     }
 

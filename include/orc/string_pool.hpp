@@ -46,6 +46,8 @@ struct pool_string {
 
     bool empty() const { return _data == nullptr; }
 
+    explicit operator bool() const { return empty(); }
+
     std::string_view view() const {
         // a string_view is empty iff _data is a nullptr
         if (!_data) return default_view;

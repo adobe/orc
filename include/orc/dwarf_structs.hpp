@@ -155,6 +155,7 @@ struct attribute {
 
     auto reference() const { return _value.reference(); }
     const auto& string() const { return _value.string(); }
+    auto uint() const { return _value.uint(); }
     auto string_hash() const { return _value.string_hash(); }
     const auto& die() const { return _value.die(); }
 };
@@ -224,16 +225,16 @@ struct die {
     // here, please consider alignment issues.
     object_ancestry _ancestry;
     pool_string _path;
-    attribute* _attributes{nullptr};
     die* _next_die{nullptr};
-    std::size_t _attributes_size{0};
     std::size_t _hash{0};
+    std::size_t _fatal_attribute_hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};
     bool _type_resolved{false};
     bool _conflict{false};
+    bool _should_skip{false};
 
     bool operator<(const die& rhs) const {
         if (_path.view() < rhs._path.view())
@@ -242,58 +243,22 @@ struct die {
             return false;
         return _ancestry < rhs._ancestry;
     }
-            
-
-    auto begin() { return _attributes; }
-    auto begin() const { return _attributes; }
-    auto end() { return _attributes + _attributes_size; }
-    auto end() const { return _attributes + _attributes_size; }
-
-    bool has_attribute(dw::at at) const {
-        for (const auto& a : *this)
-            if (a._name == at) return true;
-        return false;
-    }
-
-    const auto& attribute(dw::at at) const {
-        for (const auto& a : *this)
-            if (a._name == at) return a;
-        throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
-    }
-
-    auto& attribute(dw::at at) {
-        for (auto& a : *this)
-            if (a._name == at) return a;
-        throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
-    }
-
-    bool attribute_has_type(dw::at at, enum attribute_value::type type) const {
-        for (const auto& a : *this)
-            if (a._name == at) return a.has(type);
-        return false;
-    }
-
-    bool attribute_has_uint(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::uint);
-    }
-    bool attribute_has_string(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::string);
-    }
-    bool attribute_has_reference(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::reference);
-    }
-    bool attribute_has_die(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::die);
-    }
-
-    auto attribute_uint(dw::at at) const { return attribute(at)._value.uint(); }
-    const auto& attribute_string(dw::at at) const { return attribute(at)._value.string(); }
-    auto attribute_reference(dw::at at) const { return attribute(at)._value.reference(); }
-    const auto& attribute_die(dw::at at) const { return attribute(at)._value.die(); }
 };
 
 std::ostream& operator<<(std::ostream& s, const die& x);
 
 using dies = std::vector<die>;
+
+/**************************************************************************************************/
+
+bool nonfatal_attribute(dw::at at);
+
+/**************************************************************************************************/
+
+template <class Container, class T>
+bool sorted_has(const Container& c, const T& x) {
+    auto found = std::lower_bound(c.begin(), c.end(), x);
+    return found != c.end() && *found == x;
+}
 
 /**************************************************************************************************/

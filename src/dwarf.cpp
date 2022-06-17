@@ -188,9 +188,92 @@ struct file_name {
 
 /**************************************************************************************************/
 
-std::size_t die_hash(const die& d) {
-    bool is_declaration = d.has_attribute(dw::at::declaration) &&
-                          d.attribute_uint(dw::at::declaration) == 1;
+struct attribute_sequence {
+    using attributes = std::vector<attribute>;
+    using value_type = typename attributes::value_type;
+    using iterator = typename attributes::iterator;
+    using const_iterator = typename attributes::const_iterator;
+
+    bool has(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        return valid;
+    }
+
+    bool has(dw::at name, enum attribute_value::type t) const {
+        auto [valid, iterator] = find(name);
+        return valid ? iterator->has(t) : false;
+    }
+
+    bool has_uint(dw::at name) const {
+        return has(name, attribute_value::type::uint);
+    }
+
+    bool has_string(dw::at name) const {
+        return has(name, attribute_value::type::string);
+    }
+
+    bool has_reference(dw::at name) const {
+        return has(name, attribute_value::type::reference);
+    }
+
+    auto& get(dw::at name) {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    const auto& get(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    auto uint(dw::at name) const {
+        return get(name).uint();
+    }
+
+    auto string(dw::at name) const {
+        return get(name).string();
+    }
+
+    auto reference(dw::at name) const {
+        return get(name).reference();
+    }
+
+    void push_back(const value_type& x) {
+        _attributes.push_back(x);
+    }
+
+    auto empty() const { return _attributes.empty(); }
+
+    auto begin() { return _attributes.begin(); }
+    auto begin() const { return _attributes.begin(); }
+    auto end() { return _attributes.end(); }
+    auto end() const { return _attributes.end(); }
+
+private:
+    std::tuple<bool, iterator> find(dw::at name) {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    std::tuple<bool, const_iterator> find(dw::at name) const {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    std::vector<attribute> _attributes;
+};
+
+/**************************************************************************************************/
+
+std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
+    bool is_declaration = attributes.has_uint(dw::at::declaration) &&
+                          attributes.uint(dw::at::declaration) == 1;
     return hash_combine(0, d._arch, d._tag, d._path.hash(), is_declaration);
 };
 
@@ -303,7 +386,7 @@ void line_header::read(freader& s, const file_details& details) {
 }
 
 /**************************************************************************************************/
-
+#if 0
 attribute* alloc_attributes(std::size_t n) {
 #if ORC_FEATURE(LEAKY_MEMORY)
     thread_local auto& pool_s = *(new std::list<std::unique_ptr<attribute[]>>);
@@ -321,10 +404,10 @@ attribute* alloc_attributes(std::size_t n) {
     n_s += n;
     return result;
 }
-
+#endif
 /**************************************************************************************************/
 
-const die& lookup_die(const dies& dies, std::uint32_t offset) {
+std::size_t lookup_die_index(const dies& dies, std::uint32_t offset) {
     auto found = std::lower_bound(dies.begin(), dies.end(), offset,
                                   [](const auto& x, const auto& offset){
         return x._debug_info_offset < offset;
@@ -332,13 +415,19 @@ const die& lookup_die(const dies& dies, std::uint32_t offset) {
     bool match = found != dies.end() && found->_debug_info_offset == offset;
     assert(match);
     if (!match) throw std::runtime_error("die not found");
-    return *found;
+    return std::distance(dies.begin(), found);
 }
 
 /**************************************************************************************************/
 
-void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
-    for (auto& attr : d) {
+const die& lookup_die(const dies& dies, std::uint32_t offset) {
+    return dies[lookup_die_index(dies, offset)];
+}
+
+/**************************************************************************************************/
+
+void resolve_reference_attributes(dies& dies, attribute_sequence& attributes) { // REVISIT (fbrereto): out-args
+    for (auto& attr : attributes) {
         if (attr._name == dw::at::type) continue;
         if (!attr.has(attribute_value::type::reference)) continue;
         const die& resolved = lookup_die(dies, attr.reference());
@@ -349,75 +438,124 @@ void resolve_reference_attributes(const dies& dies, die& d) { // REVISIT (fbrere
 
 /**************************************************************************************************/
 
-const die& find_base_reference(const dies& dies, const die& d, dw::at attribute) {
-    if (!d.has_attribute(attribute)) return d;
-    return find_base_reference(dies, lookup_die(dies, d.attribute_reference(attribute)), attribute);
+std::size_t find_base_index(const dies& dies,
+                            const std::vector<attribute_sequence>& attribute_sequences,
+                            std::size_t i) {
+    auto& attributes = attribute_sequences[i];
+    if (!attributes.has_reference(dw::at::type)) return i;
+    i = lookup_die_index(dies, attributes.reference(dw::at::type));
+    return find_base_index(dies, attribute_sequences, i);
 }
 
 /**************************************************************************************************/
 
-void resolve_type_attribute(const dies& dies, die& d) { // REVISIT (fbrereto): d is an out-arg
+void resolve_type_attribute(dies& dies,
+                            std::vector<attribute_sequence>& attribute_sequences,
+                            std::size_t i) { // REVISIT (fbrereto): out-args
     constexpr auto type_k = dw::at::type;
 
-    if (!d.has_attribute(type_k)) return; // nothing to resolve
+    auto& attributes = attribute_sequences[i];
+    auto& d = dies[i];
+
+    if (!attributes.has(type_k)) return; // nothing to resolve
     if (d._type_resolved) return; // already resolved
 
-    const die& base_type_die = find_base_reference(dies, d, type_k);
+    std::size_t base_type_index = find_base_index(dies, attribute_sequences, i);
+    const die& base_type_die = dies[base_type_index];
 
     // Now that we have the resolved type die, overwrite this die's type to reflect
     // the resolved type.
-    attribute& type_attr = d.attribute(type_k);
+    attribute& type_attr = attributes.get(type_k);
     type_attr._value.die(base_type_die);
-    if (base_type_die.has_attribute(dw::at::name)) {
-        type_attr._value.string(base_type_die.attribute_string(dw::at::name));
+    if (attributes.has(dw::at::name)) {
+        type_attr._value.string(attributes.string(dw::at::name));
     }
 
     d._type_resolved = true;
 }
 
 /**************************************************************************************************/
-#if 0
-bool resolve_specification_attribute(const dies& dies, die& d, const empool_callback& empool) { // REVISIT (fbrereto): d is an out-arg
-    // Section 2.13.2 (Declarations Completing Non-Defining Declarations) of the DWARF spec
-    // indicate that DIEs with a specification attribute do not need to duplicate the
-    // information present in the specification die. However, it _also_ says that not all
-    // attributes in the specification die will apply to _this_ die. So we have to pick
-    // and choose them. Nice. Here we make the expensive choice to copy over the attributes
-    // we care about from the specification die to this one. REVISIT (fosterbrereton) this
-    // is also sub-optimal, as it throws away the previous attribute memory block that gets
-    // allocated to make room for these other attributes.
-    if (!d.attribute_has_die(dw::at::specification)) return false;
 
-    const auto& spec_die = d.attribute_die(dw::at::specification);
-    const dw::at attributes_to_copy_over[] = {
-        dw::at::accessibility,
-        dw::at::linkage_name,
+std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
+    // attributes by name to make sure the hashing is consistent regardless of attribute order.
+    std::vector<dw::at> names;
+    for (const auto& attr : attributes) {
+        if (nonfatal_attribute(attr._name)) continue;
+        names.push_back(attr._name);
+    }
+    std::sort(names.begin(), names.end());
+
+    auto find_attr = [&](dw::at a){
+        return *std::find_if(attributes.begin(), attributes.end(), [&](const auto& x){
+            return x._name == a;
+        });
     };
 
-    // replace with a std::accumulate when my head stops spinning from the problem at hand.
-    std::size_t additional{0};
-    for (const auto& attribute : attributes_to_copy_over) {
-        additional += spec_die.has_attribute(attribute);
+    std::size_t h{0};
+    for (const auto& name : names) {
+        h = hash_combine(h, find_attr(name)._value.hash());
     }
-
-    if (additional == 0) return false;
-
-    std::size_t old_attr_count = d._attributes_size;
-    attribute* old_attr = d._attributes;
-
-    d._attributes_size += additional;
-    d._attributes = alloc_attributes(d._attributes_size);
-
-    attribute* next_attr = std::copy(old_attr, old_attr + old_attr_count, d._attributes);
-
-    for (const auto& attribute : attributes_to_copy_over) {
-        if (!spec_die.has_attribute(attribute)) continue;
-        *next_attr++ = spec_die.attribute(attribute);
-    }
-
-    return true;
+    return h;
 }
-#endif
+
+/**************************************************************************************************/
+
+bool skip_tagged_die(const die& d) {
+    static const dw::tag skip_tags[] = {
+        dw::tag::compile_unit,
+        dw::tag::partial_unit,
+        dw::tag::variable,
+        dw::tag::formal_parameter,
+    };
+    static const auto first = std::begin(skip_tags);
+    static const auto last = std::end(skip_tags);
+
+    return std::find(first, last, d._tag) != last;
+}
+
+/**************************************************************************************************/
+
+bool skip_die(die& d, const attribute_sequence& attributes) {
+    // These are a handful of "filters" we use to elide false positives.
+
+    // These are the tags we don't deal with (yet, if ever.)
+    if (skip_tagged_die(d)) return true;
+
+    // According to DWARF 3.3.1, a subprogram tag that is missing the external
+    // flag means the function is invisible outside its compilation unit. As
+    // such, it cannot contribute to an ODRV.
+    if (d._tag == dw::tag::subprogram && !attributes.has_uint(dw::at::external)) return true;
+
+    // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
+    // them.
+    if (d._path.empty()) return true;
+
+    // Symbols with __ in them are reserved, so are not user-defined. No need to register
+    // them.
+    if (d._path.view().find("::__") != std::string::npos) return true;
+
+    // lambdas are ephemeral and can't cause (hopefully) an ODRV
+    if (d._path.view().find("lambda") != std::string::npos) return true;
+
+    // we don't handle any die that's ObjC-based.
+    if (attributes.has(dw::at::apple_runtime_class)) return true;
+
+    // If the symbol is listed in the symbol_ignore list, we're done here.
+    std::string_view symbol = d._path.view();
+    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) return true;
+
+    // Unfortunately we have to do this work to see if we're dealing with
+    // a self-referential type.
+    // if (d.has_attribute(dw::at::type)) {
+    //     const auto& type = d.attribute(dw::at::type);
+    //     // if this is a self-referential type, it's die will have no attributes.
+    //     if (type.die()._attributes_size == 0) return true;
+    // }
+
+    return false;
+}
+
 /**************************************************************************************************/
 
 } // namespace
@@ -455,15 +593,17 @@ struct dwarf::implementation {
     void path_identifier_push();
     void path_identifier_set(pool_string name);
     void path_identifier_pop();
-    std::string qualified_symbol_name(const die& d) const;
+    std::string qualified_symbol_name(const die& d,
+                                      const attribute_sequence& attributes) const;
 
     attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
     attribute_value evaluate_exprloc(std::uint32_t expression_size);
 
-    pool_string die_identifier(const die& a) const;
+    pool_string die_identifier(const die& a,
+                               const attribute_sequence& attributes) const;
 
-    die abbreviation_to_die(std::size_t die_address, std::uint32_t abbrev_code);
+    std::tuple<die, attribute_sequence> abbreviation_to_die(std::size_t die_address);
 
     object_ancestry _ancestry;
     freader& _s;
@@ -593,7 +733,8 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 /**************************************************************************************************/
 
-std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
+std::string dwarf::implementation::qualified_symbol_name(const die& d,
+                                                         const attribute_sequence& attributes) const {
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
     // we are using, so let's use that instead here.
@@ -606,8 +747,8 @@ std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
     };
 
     for (const auto& at : qualified_attributes) {
-        if (d.attribute_has_string(at)) {
-            return "::[u]::" + d.attribute_string(at).allocate_string();
+        if (attributes.has_string(at)) {
+            return "::[u]::" + attributes.string(at).allocate_string();
         }
     }
 
@@ -708,7 +849,8 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
 
 /**************************************************************************************************/
 
-pool_string dwarf::implementation::die_identifier(const die& d) const {
+pool_string dwarf::implementation::die_identifier(const die& d,
+                                                  const attribute_sequence& attributes) const {
     // To get a good name for this die, first we look at the tag types
     // to see if there's something worth calling it. These tags may not
     // be the best high-level names to give to some of these types, but
@@ -719,13 +861,14 @@ pool_string dwarf::implementation::die_identifier(const die& d) const {
     switch (d._tag) {
         case dw::tag::compile_unit:
         case dw::tag::partial_unit:
-            return _callbacks._empool("[u]"); // u for "unit"
+            static pool_string unit_string_s = _callbacks._empool("[u]"); // u for "unit"
+            return unit_string_s;
         default:
             // do nothing; we need the name not from the tag, but from one of its attributes
             break;
     }
 
-    if (d._attributes_size == 0) {
+    if (attributes.empty()) {
         return pool_string();
     }
 
@@ -736,7 +879,7 @@ pool_string dwarf::implementation::die_identifier(const die& d) const {
         dw::at::abstract_origin, dw::at::specification,
     };
     for (const auto& at : string_attributes)
-        if (d.attribute_has_string(at)) return d.attribute_string(at);
+        if (attributes.has_string(at)) return attributes.string(at);
 
     // If it's not named, it's an anonymous/unnamed die. So far we're skipping over these (and
     // all their descendants, if they have any) for registration purposes.
@@ -915,37 +1058,38 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
 /**************************************************************************************************/
 
-die dwarf::implementation::abbreviation_to_die(std::size_t die_address, std::uint32_t abbrev_code) {
-    die result;
+std::tuple<die, attribute_sequence> dwarf::implementation::abbreviation_to_die(std::size_t die_address) {
+    die die;
+    attribute_sequence attributes;
 
-    result._debug_info_offset = die_address - _debug_info._offset;
-    result._arch = _details._arch;
+    die._debug_info_offset = die_address - _debug_info._offset;
+    die._arch = _details._arch;
 
-#if 0 // save for debugging. Useful to grok why a specific die isn't getting processed correctly.
-    if (result._debug_info_offset == 0x0000e993) {
+#if 1 // save for debugging. Useful to grok why a specific die isn't getting processed correctly.
+    if (die._debug_info_offset == 0x00087f2a) {
         int x;
         (void)x;
     }
 #endif
 
-    if (abbrev_code == 0) return result;
+    std::size_t abbrev_code = read_uleb();
+
+    if (abbrev_code == 0) return std::make_tuple(std::move(die), std::move(attributes));
 
     auto& a = find_abbreviation(abbrev_code);
 
-    result._tag = a._tag;
-    result._has_children = a._has_children;
-    result._attributes_size = a._attributes.size();
-    result._attributes = alloc_attributes(result._attributes_size);
+    die._tag = a._tag;
+    die._has_children = a._has_children;
 
     std::transform(a._attributes.begin(), a._attributes.end(),
-                   result.begin(),
-                   [&](const auto& x) { return process_attribute(x, result._debug_info_offset); });
+                   std::back_inserter(attributes),
+                   [&](const auto& x) { return process_attribute(x, die._debug_info_offset); });
 
-    path_identifier_set(die_identifier(result));
+    path_identifier_set(die_identifier(die, attributes));
 
-    result._path = empool(std::string_view(qualified_symbol_name(result)));
+    die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
 
-    return result;
+    return std::make_tuple(std::move(die), std::move(attributes));
 }
 
 /**************************************************************************************************/
@@ -976,6 +1120,7 @@ void dwarf::implementation::process() {
     path_identifier_push();
 
     dies dies;
+    std::vector<attribute_sequence> attribute_sequences;
 
     while (_s.tellg() < section_end) {
         cu_header header;
@@ -989,7 +1134,7 @@ void dwarf::implementation::process() {
             // we may not need to save these as a vector - registering them below should
             // suffice.
 
-            auto die = abbreviation_to_die(_s.tellg(), read_uleb());
+            auto [die, attributes] = abbreviation_to_die(_s.tellg());
 
             // code 0 is reserved; it's a null entry, and signifies the end of siblings.
             if (die._tag == dw::tag::none) {
@@ -1001,7 +1146,7 @@ void dwarf::implementation::process() {
 
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
-                _decl_files.insert(_decl_files.begin(), die.attribute_string(dw::at::name));
+                _decl_files.insert(_decl_files.begin(), attributes.string(dw::at::name));
 
                 // We've seen cases in the wild where compilation units are empty, have no children,
                 // but do not have a null abbreviation code signalling their "end". In this case,
@@ -1019,41 +1164,27 @@ void dwarf::implementation::process() {
             }
 
             die._ancestry = _ancestry;
-            die._hash = die_hash(die); // precompute the hash we'll use for the die map.
+            die._hash = die_hash(die, attributes); // precompute the hash we'll use for the die map.
+            die._should_skip = skip_die(die, attributes);
 
-            dies.push_back(std::move(die));
+            dies.emplace_back(std::move(die));
+            attribute_sequences.emplace_back(std::move(attributes));
         }
     }
 
-    // Now that we have all the dies for this translation unit, do some post-processing to get more
-    // details out and reported to the surface.
+    assert(dies.size() == attribute_sequences.size());
+
+    for (std::size_t i{0}; i < dies.size(); ++i) {
+        if (dies[i]._should_skip) continue;
+
+        resolve_reference_attributes(dies, attribute_sequences[i]);
+
+        resolve_type_attribute(dies, attribute_sequences, i);
+
+        dies[i]._fatal_attribute_hash = fatal_attribute_hash(attribute_sequences[i]);
+    }
 
     dies.shrink_to_fit();
-
-    for (auto& d : dies) {
-        resolve_reference_attributes(dies, d);
-
-        resolve_type_attribute(dies, d);
-#if 0
-        bool modified = resolve_specification_attribute(dies, d, _callbacks._empool);
-
-        if (modified) {
-            //
-            // Redo some finalization of the DIE
-            //
-            path_identifier_set(die_identifier(d));
-
-            d._path = empool(std::string_view(qualified_symbol_name(d)));
-
-            // recompute the die hash
-            // REVISIT (fosterbrereton) : There are a number of values that,
-            // when changed, require a re-hash of the die (arch, tag, and path). The setting of those values
-            // so either be tucked within an API of the die (so it can rehash the value
-            // on its own) or done at the end of these resolve_*
-            d._hash = die_hash(d); // precompute the hash we'll use for the die map.
-        }
-#endif
-    }
 
     _callbacks._register_die(std::move(dies));
 }

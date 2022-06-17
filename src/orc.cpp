@@ -75,68 +75,12 @@ std::string_view path_to_symbol(std::string_view path) {
 }
 
 /**************************************************************************************************/
-
-template <class Container, class T>
-bool sorted_has(const Container& c, const T& x) {
-    auto found = std::lower_bound(c.begin(), c.end(), x);
-    return found != c.end() && *found == x;
-}
-
-/**************************************************************************************************/
-
-bool nonfatal_attribute(dw::at at) {
-    static const auto attributes = []{
-        std::vector<dw::at> nonfatal_attributes = {
-            dw::at::apple_block,
-            dw::at::apple_flags,
-            dw::at::apple_isa,
-            dw::at::apple_major_runtime_vers,
-            dw::at::apple_objc_complete_type,
-            dw::at::apple_objc_direct,
-            dw::at::apple_omit_frame_ptr,
-            dw::at::apple_optimized,
-            dw::at::apple_property,
-            dw::at::apple_property_attribute,
-            dw::at::apple_property_getter,
-            dw::at::apple_property_name,
-            dw::at::apple_property_setter,
-            dw::at::apple_runtime_class,
-            dw::at::apple_sdk,
-            dw::at::call_column,
-            dw::at::call_file,
-            dw::at::call_line,
-            dw::at::call_origin,
-            dw::at::call_return_pc,
-            dw::at::containing_type,
-            dw::at::decl_column,
-            dw::at::decl_file,
-            dw::at::decl_line,
-            dw::at::frame_base,
-            // According to section 2.17 of the DWARF spec, if high_pc is a constant (e.g., form
-            // data4) then its value is the size of the function. Likewise, its existence implies
-            // the function it describes is a contiguous block of code in the object file. Since we
-            // assume this attribute is of constant form, this is the size of the function. If two
-            // or more functions with the same name have different high_pc values, their sizes are
-            // different, which means their definitions are going to be different, and that's an
-            // ODRV.
-            // dw::at::high_pc,
-            dw::at::location,
-            dw::at::low_pc,
-            dw::at::name,
-            dw::at::prototyped,
-        };
-
-        std::sort(nonfatal_attributes.begin(), nonfatal_attributes.end());
-
-        return nonfatal_attributes;
-    }();
-
-    return sorted_has(attributes, at);
-}
-
-/**************************************************************************************************/
-bool type_equivalent(const attribute& x, const attribute& y);
+//bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_die_conflict(const die& x, const die& y) {
+#if 1
+    // REVISIT (fbrereto) : distills into a boolean now; derive which attribute conflicted later.
+    return x._fatal_attribute_hash == y._fatal_attribute_hash ? dw::at::none : dw::at::byte_size;
+#else
     auto yfirst = y.begin();
     auto ylast = y.end();
 
@@ -169,10 +113,11 @@ dw::at find_die_conflict(const die& x, const die& y) {
     // If they're not nonfatal attributes, we should...
 
     return dw::at::none; // they're "the same"
+#endif
 }
 
 /**************************************************************************************************/
-
+#if 0
 bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
@@ -197,63 +142,7 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // Type mismatch.
     return false;
 }
-
-/**************************************************************************************************/
-
-bool skip_tagged_die(const die& d) {
-    static const dw::tag skip_tags[] = {
-        dw::tag::compile_unit,
-        dw::tag::partial_unit,
-        dw::tag::variable,
-        dw::tag::formal_parameter,
-    };
-    static const auto first = std::begin(skip_tags);
-    static const auto last = std::end(skip_tags);
-
-    return std::find(first, last, d._tag) != last;
-}
-
-/**************************************************************************************************/
-
-bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
-    // These are a handful of "filters" we use to elide false positives.
-
-    // These are the tags we don't deal with (yet, if ever.)
-    if (skip_tagged_die(d)) return true;
-
-    // According to DWARF 3.3.1, a subprogram tag that is missing the external
-    // flag means the function is invisible outside its compilation unit. As
-    // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !d.has_attribute(dw::at::external)) return true;
-
-    // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
-    // them.
-    if (d._path.empty()) return true;
-
-    // Symbols with __ in them are reserved, so are not user-defined. No need to register
-    // them.
-    if (d._path.view().find("::__") != std::string::npos) return true;
-
-    // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.view().find("lambda") != std::string::npos) return true;
-
-    // we don't handle any die that's ObjC-based.
-    if (d.has_attribute(dw::at::apple_runtime_class)) return true;
-
-    // If the symbol is listed in the symbol_ignore list, we're done here.
-    if (sorted_has(settings::instance()._symbol_ignore, symbol)) return true;
-
-    // Unfortunately we have to do this work to see if we're dealing with
-    // a self-referential type.
-    if (d.has_attribute(dw::at::type)) {
-        const auto& type = d.attribute(dw::at::type);
-        // if this is a self-referential type, it's die will have no attributes.
-        if (type.die()._attributes_size == 0) return true;
-    }
-
-    return false;
-}
-
+#endif
 /**************************************************************************************************/
 
 void update_progress() {
@@ -326,11 +215,10 @@ void register_dies(dies die_vector) {
         }
 #endif
 
-        auto symbol = path_to_symbol(d._path.view());
-        auto should_skip = skip_die(dies, d, symbol);
+        if (d._should_skip) continue;
 
-        if (settings::instance()._print_symbol_paths) {
 #if 0
+        if (settings::instance()._print_symbol_paths) {
             // This is all horribly broken, especially now that we're calling this from multiple threads.
             static pool_string last_object_file_s;
 
@@ -345,10 +233,8 @@ void register_dies(dies die_vector) {
                 s.fill('0');
                 s << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
             });
-#endif
         }
-
-        if (should_skip) continue;
+#endif
 
         //
         // At this point we know we're going to register the die. Hereafter belongs
@@ -357,7 +243,7 @@ void register_dies(dies die_vector) {
 
         auto result = global_die_map().insert(std::make_pair(d._hash, &d));
         if (result.second) {
-            ++globals::instance()._die_registered_count;
+            ++globals::instance()._unique_symbol_count;
             continue;
         }
 
@@ -489,25 +375,6 @@ std::string odrv_report::category() const {
 
 /**************************************************************************************************/
 
-std::size_t fatal_attribute_hash(const die& d) {
-    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
-    // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    std::vector<dw::at> names;
-    for (const auto& attr : d) {
-        if (nonfatal_attribute(attr._name)) continue;
-        names.push_back(attr._name);
-    }
-    std::sort(names.begin(), names.end());
-
-    std::size_t h{0};
-    for (const auto& name : names) {
-        h = hash_combine(h, d.attribute(name)._value.hash());
-    }
-    return h;
-}
-
-/**************************************************************************************************/
-
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     auto& settings = settings::instance();
@@ -530,7 +397,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     std::map<std::size_t, const die*> conflict_map;
     for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
-        std::size_t hash = fatal_attribute_hash(*next_die);
+        std::size_t hash = next_die->_fatal_attribute_hash;
         if (conflict_map.count(hash)) continue;
         conflict_map[hash] = next_die;
     }
@@ -560,6 +427,11 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
 {
+    if (base->_hash == 6295459837195399299) {
+        int x;
+        (void)x;
+    }
+
     std::vector<die*> dies;
     for(die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);

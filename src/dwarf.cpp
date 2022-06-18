@@ -926,6 +926,11 @@ bool dwarf::implementation::register_sections_done() {
     // Houston, we have a problem.
     if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return false;
 
+    // the declaration files are 1-indexed. The 0th index is reserved for the compilation unit /
+    // partial unit name. We need to prime this here because in single process mode we don't get
+    // the name of the compilation unit unless we explicitly ask for it.
+    _decl_files.push_back(_ancestry.back());
+
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
     // together.
 
@@ -1028,7 +1033,11 @@ void dwarf::implementation::process_all_dies() {
 
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
-                _decl_files.insert(_decl_files.begin(), attributes.string(dw::at::name));
+                // REVISIT (fosterbrereton): If the name is a relative path, there may be a
+                // DW_AT_comp_dir attribute that specifies the path it is relative from.
+                // Is it worth making this path absolute?
+
+                _decl_files[0] = attributes.string(dw::at::name);
 
                 // We've seen cases in the wild where compilation units are empty, have no children,
                 // but do not have a null abbreviation code signalling their "end". In this case,

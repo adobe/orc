@@ -149,7 +149,7 @@ struct attribute {
     dw::form _form{0};
     attribute_value _value;
 
-    void read(freader& s); // definition in dwarf.cpp
+    void read(freader& s);
 
     auto has(enum attribute_value::type t) const { return _value.has(t); }
 
@@ -171,10 +171,10 @@ std::ostream& operator<<(std::ostream& s, const attribute& x);
 /**************************************************************************************************/
 // I'm not a fan of this name.
 struct attribute_sequence {
-    using attributes = std::vector<attribute>;
-    using value_type = typename attributes::value_type;
-    using iterator = typename attributes::iterator;
-    using const_iterator = typename attributes::const_iterator;
+    using attributes_type = std::vector<attribute>;
+    using value_type = typename attributes_type::value_type;
+    using iterator = typename attributes_type::iterator;
+    using const_iterator = typename attributes_type::const_iterator;
 
     bool has(dw::at name) const {
         auto [valid, iterator] = find(name);
@@ -252,7 +252,7 @@ private:
         return std::make_tuple(result != _attributes.end(), result);
     }
 
-    std::vector<attribute> _attributes;
+    attributes_type _attributes;
 };
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
@@ -319,7 +319,6 @@ struct die {
     std::size_t _fatal_attribute_hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
-    std::uint8_t _attributes_size{0};
     arch _arch{arch::unknown};
     bool _has_children{false};
     bool _conflict{false};

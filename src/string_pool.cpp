@@ -93,23 +93,20 @@ pool_string empool(std::string_view src) {
         auto operator()(size_t key) const { return key; }
     };
 
-    thread_local std::unordered_multimap<size_t, const char*, pool_key_to_hash> keys;
+    thread_local std::unordered_map<size_t, const char*> keys;
     thread_local pool the_pool;
 
     // Is the string interned already?
     const size_t h = std::hash<std::string_view>{}(src);
 
-    const auto range = keys.equal_range(h);
-    for (auto it = range.first; it != range.second; ++it) {
-        pool_string ps(it->second);
-        if (ps.view() == src) {
-            return ps;
-        }
+    auto found = keys.find(h);
+    if (found != keys.end()) {
+        return pool_string(found->second);
     }
 
     // Not already interned; empool it and add to the 'keys'
     const char* ptr = the_pool.empool(src);
-    keys.insert({{h, ptr}});
+    keys[h] = ptr;
     return pool_string(ptr);
 }
 

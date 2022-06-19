@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <vector>
+#include <map>
 
 // application
 #include <orc/dwarf_structs.hpp>
@@ -17,11 +18,17 @@
 /**************************************************************************************************/
 
 struct odrv_report {
+    odrv_report(std::string_view symbol, const die* list_head) : _symbol(symbol), _list_head(list_head) {}
+
     std::string_view _symbol;
     const die* _list_head{nullptr};
-    dw::at _name;
 
     std::string category() const;
+
+    const auto& conflict_map() const { return _conflict_map; }
+
+private:
+    mutable std::map<std::size_t, const die*> _conflict_map;
 };
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);

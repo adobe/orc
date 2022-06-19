@@ -176,6 +176,10 @@ struct attribute_sequence {
     using iterator = typename attributes_type::iterator;
     using const_iterator = typename attributes_type::const_iterator;
 
+    void reserve(std::size_t size) {
+        _attributes.reserve(size);
+    }
+
     bool has(dw::at name) const {
         auto [valid, iterator] = find(name);
         return valid;
@@ -347,6 +351,21 @@ template <class Container, class T>
 bool sorted_has(const Container& c, const T& x) {
     auto found = std::lower_bound(c.begin(), c.end(), x);
     return found != c.end() && *found == x;
+}
+
+/**************************************************************************************************/
+// Quick and dirty type to print an integer value as a padded, fixed-width hex value.
+// e.g., std::cout << hex_print(my_int) << '\n';
+struct hex_print {
+    explicit hex_print(std::size_t x) : _x{x} {}
+    std::size_t _x;
+};
+
+inline std::ostream& operator<<(std::ostream& s, const hex_print& x) {
+    s << "0x";
+    s.width(8);
+    s.fill('0');
+    return s << std::hex << x._x << std::dec;
 }
 
 /**************************************************************************************************/

@@ -394,9 +394,10 @@ struct dwarf::implementation {
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
 
+    die_pair offset_to_die_pair(std::size_t offset);
     attribute_sequence offset_to_attribute_sequence(std::size_t offset);
 
-    void resolve_reference_attribute(attribute& attribute);
+    pool_string resolve_type(attribute type);
 
     die_pair abbreviation_to_die(std::size_t die_address, process_mode mode);
 
@@ -408,6 +409,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _path;
     std::size_t _cu_address{0};
     std::vector<pool_string> _decl_files;
+    std::unordered_map<std::size_t, pool_string> _type_cache;
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
@@ -860,29 +862,52 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
 /**************************************************************************************************/
 
-attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size_t offset) {
+die_pair dwarf::implementation::offset_to_die_pair(std::size_t offset) {
     return temp_seek(_s, offset + _debug_info._offset, [&](){
-        auto [type_die, type_attributes] = abbreviation_to_die(_s.tellg(), process_mode::single);
-        return std::move(type_attributes);
+        return abbreviation_to_die(_s.tellg(), process_mode::single);
     });
 }
 
 /**************************************************************************************************/
 
-void dwarf::implementation::resolve_reference_attribute(attribute& attribute) { // REVISIT (fbrereto): out-args
-    if (!attribute.has(attribute_value::type::reference)) return;
-    
-    attribute_sequence type_attributes = offset_to_attribute_sequence(attribute.reference());
-    if (type_attributes.has_string(dw::at::type)) {
-        attribute._value.string(type_attributes.string(dw::at::type));
-    } else if (type_attributes.has_reference(dw::at::type)) {
-        resolve_reference_attribute(type_attributes.get(dw::at::type));
-        if (type_attributes.has_string(dw::at::type)) {
-            attribute._value.string(type_attributes.string(dw::at::type));
-        }
-    } else if (type_attributes.has_string(dw::at::name)) {
-        attribute._value.string(type_attributes.string(dw::at::name));
+attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size_t offset) {
+    return std::get<1>(offset_to_die_pair(offset));
+}
+
+/**************************************************************************************************/
+
+pool_string dwarf::implementation::resolve_type(attribute type) {
+    std::size_t reference = type.reference();
+    auto found = _type_cache.find(reference);
+    if (found != _type_cache.end()) {
+        //std::cout << "memoized " << hex_print(reference) << ": " << found->second << '\n';
+        return found->second;
     }
+
+    auto recurse = [&](auto& attributes){
+        if (!attributes.has(dw::at::type)) return pool_string();
+        return resolve_type(attributes.get(dw::at::type));
+    };
+
+    pool_string result;
+    die die;
+    attribute_sequence attributes;
+    std::tie(die, attributes) = offset_to_die_pair(reference);
+
+    if (die._tag == dw::tag::const_type) {
+        result = empool("const " + recurse(attributes).allocate_string());
+    } else if (die._tag == dw::tag::pointer_type) {
+        result = empool(recurse(attributes).allocate_string() + "*");
+    } else if (attributes.has_string(dw::at::type)) {
+        result = type.string();
+    } else if (attributes.has_reference(dw::at::type)) {
+        result = recurse(attributes);
+    } else if (attributes.has_string(dw::at::name)) {
+        result = attributes.string(dw::at::name);
+    }
+
+    //std::cout << "cached " << hex_print(reference) << ": " << result << '\n';
+    return _type_cache[reference] = result;
 }
 
 /**************************************************************************************************/
@@ -902,6 +927,8 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     die._tag = a._tag;
     die._has_children = a._has_children;
+
+    attributes.reserve(a._attributes.size());
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
@@ -1055,7 +1082,7 @@ void dwarf::implementation::process_all_dies() {
             }
 
             if (attributes.has(dw::at::type)) {
-                resolve_reference_attribute(attributes.get(dw::at::type));
+                attributes.get(dw::at::type)._value.string(resolve_type(attributes.get(dw::at::type)));
             }
 
             die._skippable = skip_die(die, attributes);
@@ -1079,7 +1106,13 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
     assert(_ready);
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);
-    return abbreviation_to_die(die_address, process_mode::single);
+    _cu_address = _debug_info._offset; // not sure if this is correct in all cases
+    auto result = abbreviation_to_die(die_address, process_mode::single);
+    auto& attributes = std::get<1>(result);
+    if (attributes.has(dw::at::type)) {
+        attributes.get(dw::at::type)._value.string(resolve_type(attributes.get(dw::at::type)));
+    }
+    return result;
 }
 
 /**************************************************************************************************/

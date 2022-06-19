@@ -118,7 +118,7 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
 
     // Save for debugging so we can map what we find with dwarfdump output
 #if 0
-    s << "        debug info offset: 0x" << std::hex << x._debug_info_offset << std::dec << '\n';
+    s << "        debug_info offset: " << hex_print(x._debug_info_offset) << '\n';
 #endif
 
     return s;

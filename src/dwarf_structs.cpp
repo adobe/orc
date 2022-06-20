@@ -112,7 +112,7 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const die& x) {
-    for (const auto& ancestor : x._ancestry) {
+    for (const auto& ancestor : *x._ancestry) {
         s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
     }
 

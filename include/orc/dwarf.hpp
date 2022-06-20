@@ -18,7 +18,7 @@
 using die_pair = std::tuple<die, attribute_sequence>;
 
 struct dwarf {
-    dwarf(object_ancestry&& ancestry,
+    dwarf(const object_ancestry& ancestry,
           freader&& s,
           file_details&& details,
           register_dies_callback&& callback);

@@ -166,7 +166,7 @@ auto& obj_registry() {
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(object_ancestry&& ancestry,
+dwarf dwarf_from_macho(const object_ancestry& ancestry,
                        freader&& s,
                        file_details&& details,
                        register_dies_callback&& callback) {
@@ -202,7 +202,7 @@ dwarf dwarf_from_macho(object_ancestry&& ancestry,
     // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
     // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
     // is found? A problem for later...
-    dwarf dwarf(std::move(ancestry), copy(s), copy(details), std::move(callback));
+    dwarf dwarf(ancestry, copy(s), copy(details), std::move(callback));
 
     for (std::size_t i = 0; i < load_command_sz; ++i) {
         read_load_command(s, details, dwarf);
@@ -227,9 +227,9 @@ void read_macho(object_ancestry&& ancestry,
                         _callback = std::move(callbacks._register_die)]() mutable {
         ++globals::instance()._object_file_count;
 
-        obj_registry()[copy(_ancestry)] = _details;
+        auto result = obj_registry().insert({copy(_ancestry), _details});
 
-        dwarf dwarf = dwarf_from_macho(std::move(_ancestry), std::move(_s), std::move(_details),
+        dwarf dwarf = dwarf_from_macho(result.first->first, std::move(_s), std::move(_details),
                                        std::move(_callback));
 
         dwarf.process_all_dies();
@@ -238,7 +238,7 @@ void read_macho(object_ancestry&& ancestry,
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(object_ancestry&& ancestry, register_dies_callback&& callback) {
+dwarf dwarf_from_macho(const object_ancestry& ancestry, register_dies_callback&& callback) {
     freader s(ancestry.begin()->allocate_path());
 
     auto found = obj_registry().find(ancestry);
@@ -248,7 +248,7 @@ dwarf dwarf_from_macho(object_ancestry&& ancestry, register_dies_callback&& call
 
     s.seekg(found->second._offset);
 
-    return dwarf_from_macho(std::move(ancestry), std::move(s), copy(found->second),
+    return dwarf_from_macho(ancestry, std::move(s), copy(found->second),
                             std::move(callback));
 }
 

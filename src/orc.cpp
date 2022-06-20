@@ -354,7 +354,7 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
-    auto dwarf = dwarf_from_macho(copy(d._ancestry), register_dies_callback());
+    auto dwarf = dwarf_from_macho(*d._ancestry, register_dies_callback());
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
     assert(die._tag == d._tag);
     assert(die._arch == d._arch);

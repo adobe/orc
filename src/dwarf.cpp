@@ -350,12 +350,12 @@ enum class process_mode {
 /**************************************************************************************************/
 
 struct dwarf::implementation {
-    implementation(object_ancestry&& ancestry,
+    implementation(const object_ancestry& ancestry,
                    freader&& s,
                    file_details&& details,
                    register_dies_callback&& callback)
-        : _ancestry(std::move(ancestry)), _s(std::move(s)), _details(std::move(details)),
-          _register_dies(std::move(callback)) {}
+        : _s(std::move(s)), _details(std::move(details)),
+          _register_dies(std::move(callback)), _ancestry(&ancestry) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
@@ -401,15 +401,16 @@ struct dwarf::implementation {
 
     die_pair abbreviation_to_die(std::size_t die_address, process_mode mode);
 
-    object_ancestry _ancestry;
     freader _s;
     file_details _details;
     register_dies_callback _register_dies;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
-    std::size_t _cu_address{0};
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
+    std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    std::size_t _cu_address{0};
+    const object_ancestry* _ancestry{nullptr}; // pointer to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
@@ -510,11 +511,17 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
 /**************************************************************************************************/
 
 pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
-    // We should be pre-loading all the strings into the string pool, saving their offsets off
-    // into a map<offset, pool_string>, and looking the offsets up as needed. Re-reading these over
-    // and over is a waste of time.
-    return temp_seek(_s, _debug_str._offset + offset,
-                     [&] { return empool(_s.read_c_string_view()); });
+    // I tried an implementation that loaded the whole debug_str section into the string pool on
+    // the first debug string read. The big problem with that technique is that the single die
+    // processing mode becomes very expensive, as it only needs a handful of debug strings but
+    // ends up loading all of them. Perhaps we could pivot the technique based on the process mode?
+    auto found = _debug_str_cache.find(offset);
+    if (found != _debug_str_cache.end()) {
+        return found->second;
+    }
+
+    return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
+                            [&] { return empool(_s.read_c_string_view()); });
 }
 
 /**************************************************************************************************/
@@ -956,7 +963,7 @@ bool dwarf::implementation::register_sections_done() {
     // the declaration files are 1-indexed. The 0th index is reserved for the compilation unit /
     // partial unit name. We need to prime this here because in single process mode we don't get
     // the name of the compilation unit unless we explicitly ask for it.
-    _decl_files.push_back(_ancestry.back());
+    _decl_files.push_back(_ancestry->back());
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
     // together.
@@ -1117,12 +1124,12 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
 
 /**************************************************************************************************/
 
-dwarf::dwarf(object_ancestry&& ancestry,
+dwarf::dwarf(const object_ancestry& ancestry,
              freader&& s,
              file_details&& details,
              register_dies_callback&& callback)
     : _impl(new implementation(
-                std::move(ancestry), std::move(s), std::move(details), std::move(callback)),
+                ancestry, std::move(s), std::move(details), std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

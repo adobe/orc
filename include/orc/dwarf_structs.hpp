@@ -282,7 +282,13 @@ struct object_ancestry {
 
     auto begin() const { return _ancestors.begin(); }
     auto end() const { return begin() + _count; }
+
     auto& back() {
+        assert(_count);
+        return _ancestors[_count];
+    }
+
+    const auto& back() const {
         assert(_count);
         return _ancestors[_count];
     }
@@ -316,9 +322,9 @@ struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    object_ancestry _ancestry;
     pool_string _path;
     die* _next_die{nullptr};
+    const object_ancestry* _ancestry{nullptr}; // points to the obj_registry in macho.cpp
     std::size_t _hash{0};
     std::size_t _fatal_attribute_hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info

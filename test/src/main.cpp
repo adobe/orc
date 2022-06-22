@@ -390,9 +390,8 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
 
     const std::string& linkage_name = demangle(odrv.linkage_name().c_str());
     if (!linkage_name.empty()) {
-        dwarf dwarf = dwarf_from_macho(*report._list_head->_ancestry, register_dies_callback());
-        die_pair pair = dwarf.fetch_one_die(report._list_head->_debug_info_offset);
-        const char* report_linkage_name = demangle(std::get<1>(pair).string(dw::at::linkage_name).view().begin());
+        const auto& die_pair = report.conflict_map().begin()->second;
+        const char* report_linkage_name = demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
         if (linkage_name != report_linkage_name)
             return false;
     }

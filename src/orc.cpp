@@ -369,7 +369,8 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 /**************************************************************************************************/
 
-std::string odrv_report::category() const {
+odrv_report::odrv_report(std::string_view symbol, const die* list_head) :
+    _symbol(symbol), _list_head(list_head) {
     assert(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
@@ -378,19 +379,26 @@ std::string odrv_report::category() const {
         for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
             std::size_t hash = next_die->_fatal_attribute_hash;
             if (_conflict_map.count(hash)) continue;
-            _conflict_map[hash] = next_die;
+            conflict_details details;
+            details._die = next_die;
+            details._attributes = fetch_attributes_for_die(*details._die);
+            _conflict_map[hash] = std::move(details);
         }
     }
 
     assert(_conflict_map.size() > 1);
 
-    // Derive the ODRV category. (REVISIT: optimize?)
+    // Derive the ODRV category.
 
-    auto front_attributes = fetch_attributes_for_die(*_conflict_map.begin()->second);
-    auto back_attributes = fetch_attributes_for_die(*(--_conflict_map.end())->second);
+    auto& front = _conflict_map.begin()->second;
+    auto& back = (--_conflict_map.end())->second;
+    _name = find_attribute_conflict(front._attributes, back._attributes);
+}
 
-    dw::at name = find_attribute_conflict(front_attributes, back_attributes);
-    return to_string(_conflict_map.begin()->second->_tag) + std::string(":") + to_string(name);
+/**************************************************************************************************/
+
+std::string odrv_report::category() const {
+    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") + to_string(_name);
 }
 
 /**************************************************************************************************/
@@ -419,8 +427,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : report.conflict_map()) {
-        const die& die = *entry.second;
-        s << die << fetch_attributes_for_die(die) << '\n';
+        s << (*entry.second._die) << entry.second._attributes << '\n';
     }
     s << "\n";
 

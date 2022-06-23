@@ -451,7 +451,7 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     // the ancestry might not be unique. We assume that's an edge case
     // and the ancestry is unique.
     std::sort(dies.begin(), dies.end(),
-              [](const die* a, const die* b) { return a->_ancestry < b->_ancestry; });
+              [](const die* a, const die* b) { return *a->_ancestry < *b->_ancestry; });
 
     bool conflict{false};
     for (size_t i = 1; i < dies.size(); ++i) {

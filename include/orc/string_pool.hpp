@@ -63,7 +63,7 @@ struct pool_string {
         return std::filesystem::path(view()); 
     }
 
-    size_t hash() const {
+    std::size_t hash() const {
         if (!_data) return 0;
         return get_hash(_data);
     }

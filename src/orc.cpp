@@ -128,13 +128,6 @@ bool type_equivalent(const attribute& x, const attribute& y) {
         return true;
     }
 
-    if (x.has(attribute_value::type::die) && y.has(attribute_value::type::die)) {
-        assert(false); // not sure what to do here...
-        // if (find_die_conflict(x.die(), y.die()) == dw::at::none) {
-        //     return true; // Should this change based on find_die_conflict's result?
-        // }
-    }
-
     // Type mismatch.
     return false;
 }
@@ -369,8 +362,8 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 /**************************************************************************************************/
 
-odrv_report::odrv_report(std::string_view symbol, const die* list_head) :
-    _symbol(symbol), _list_head(list_head) {
+odrv_report::odrv_report(std::string_view symbol, const die* list_head)
+    : _symbol(symbol), _list_head(list_head) {
     assert(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
@@ -398,7 +391,8 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head) :
 /**************************************************************************************************/
 
 std::string odrv_report::category() const {
-    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") + to_string(_name);
+    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") +
+           to_string(_name);
 }
 
 /**************************************************************************************************/

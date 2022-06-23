@@ -354,8 +354,8 @@ struct dwarf::implementation {
                    freader&& s,
                    file_details&& details,
                    register_dies_callback&& callback)
-        : _s(std::move(s)), _details(std::move(details)),
-          _register_dies(std::move(callback)), _ancestry(&ancestry) {}
+        : _s(std::move(s)), _details(std::move(details)), _register_dies(std::move(callback)),
+          _ancestry(&ancestry) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
@@ -521,7 +521,7 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     }
 
     return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
-                            [&] { return empool(_s.read_c_string_view()); });
+                                                [&] { return empool(_s.read_c_string_view()); });
 }
 
 /**************************************************************************************************/
@@ -870,9 +870,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::offset_to_die_pair(std::size_t offset) {
-    return temp_seek(_s, offset + _debug_info._offset, [&](){
-        return abbreviation_to_die(_s.tellg(), process_mode::single);
-    });
+    return temp_seek(_s, offset + _debug_info._offset,
+                     [&]() { return abbreviation_to_die(_s.tellg(), process_mode::single); });
 }
 
 /**************************************************************************************************/
@@ -887,11 +886,11 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
     std::size_t reference = type.reference();
     auto found = _type_cache.find(reference);
     if (found != _type_cache.end()) {
-        //std::cout << "memoized " << hex_print(reference) << ": " << found->second << '\n';
+        // std::cout << "memoized " << hex_print(reference) << ": " << found->second << '\n';
         return found->second;
     }
 
-    auto recurse = [&](auto& attributes){
+    auto recurse = [&](auto& attributes) {
         if (!attributes.has(dw::at::type)) return pool_string();
         return resolve_type(attributes.get(dw::at::type));
     };
@@ -913,7 +912,7 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
         result = attributes.string(dw::at::name);
     }
 
-    //std::cout << "cached " << hex_print(reference) << ": " << result << '\n';
+    // std::cout << "cached " << hex_print(reference) << ": " << result << '\n';
     return _type_cache[reference] = result;
 }
 
@@ -1089,7 +1088,8 @@ void dwarf::implementation::process_all_dies() {
             }
 
             if (attributes.has(dw::at::type)) {
-                attributes.get(dw::at::type)._value.string(resolve_type(attributes.get(dw::at::type)));
+                attributes.get(dw::at::type)
+                    ._value.string(resolve_type(attributes.get(dw::at::type)));
             }
 
             die._skippable = skip_die(die, attributes);
@@ -1110,7 +1110,6 @@ void dwarf::implementation::process_all_dies() {
 
 die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
-    assert(_ready);
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);
     _cu_address = _debug_info._offset; // not sure if this is correct in all cases
@@ -1128,8 +1127,7 @@ dwarf::dwarf(const object_ancestry& ancestry,
              freader&& s,
              file_details&& details,
              register_dies_callback&& callback)
-    : _impl(new implementation(
-                ancestry, std::move(s), std::move(details), std::move(callback)),
+    : _impl(new implementation(ancestry, std::move(s), std::move(details), std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

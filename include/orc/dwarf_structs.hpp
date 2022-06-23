@@ -214,19 +214,19 @@ struct attribute_sequence {
         return *iterator;
     }
 
-    auto hash(dw::at name) const {
+    std::size_t hash(dw::at name) const {
         return get(name)._value.hash();
     }
 
-    auto uint(dw::at name) const {
+    std::uint64_t uint(dw::at name) const {
         return get(name).uint();
     }
 
-    auto string(dw::at name) const {
+    pool_string string(dw::at name) const {
         return get(name).string();
     }
 
-    auto reference(dw::at name) const {
+    std::uint64_t reference(dw::at name) const {
         return get(name).reference();
     }
 
@@ -234,7 +234,7 @@ struct attribute_sequence {
         _attributes.push_back(x);
     }
 
-    auto empty() const { return _attributes.empty(); }
+    bool empty() const { return _attributes.empty(); }
 
     auto begin() { return _attributes.begin(); }
     auto begin() const { return _attributes.begin(); }

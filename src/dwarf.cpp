@@ -15,6 +15,7 @@
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
+#include "orc/object_file_registry.hpp"
 #include "orc/settings.hpp"
 
 /**************************************************************************************************/
@@ -350,12 +351,12 @@ enum class process_mode {
 /**************************************************************************************************/
 
 struct dwarf::implementation {
-    implementation(const object_ancestry& ancestry,
+    implementation(std::uint32_t ofd_index,
                    freader&& s,
                    file_details&& details,
                    register_dies_callback&& callback)
         : _s(std::move(s)), _details(std::move(details)), _register_dies(std::move(callback)),
-          _ancestry(&ancestry) {}
+          _ofd_index(ofd_index) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
@@ -410,7 +411,7 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     std::size_t _cu_address{0};
-    const object_ancestry* _ancestry{nullptr}; // pointer to the obj_registry in macho.cpp
+    std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
@@ -962,7 +963,7 @@ bool dwarf::implementation::register_sections_done() {
     // the declaration files are 1-indexed. The 0th index is reserved for the compilation unit /
     // partial unit name. We need to prime this here because in single process mode we don't get
     // the name of the compilation unit unless we explicitly ask for it.
-    _decl_files.push_back(_ancestry->back());
+    _decl_files.push_back(object_file_ancestry(_ofd_index)._ancestors[0]);
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
     // together.
@@ -1093,7 +1094,7 @@ void dwarf::implementation::process_all_dies() {
             }
 
             die._skippable = skip_die(die, attributes);
-            die._ancestry = _ancestry;
+            die._ofd_index = _ofd_index;
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
 
@@ -1123,11 +1124,11 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
 
 /**************************************************************************************************/
 
-dwarf::dwarf(const object_ancestry& ancestry,
+dwarf::dwarf(std::uint32_t ofd_index,
              freader&& s,
              file_details&& details,
              register_dies_callback&& callback)
-    : _impl(new implementation(ancestry, std::move(s), std::move(details), std::move(callback)),
+    : _impl(new implementation(ofd_index, std::move(s), std::move(details), std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

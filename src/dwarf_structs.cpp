@@ -12,6 +12,7 @@
 
 // application
 #include "orc/parse_file.hpp"
+#include "orc/object_file_registry.hpp"
 
 /**************************************************************************************************/
 
@@ -112,7 +113,7 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const die& x) {
-    for (const auto& ancestor : *x._ancestry) {
+    for (const auto& ancestor : object_file_ancestry(x._ofd_index)) {
         s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
     }
 
@@ -122,6 +123,16 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
 #endif
 
     return s;
+}
+
+/**************************************************************************************************/
+
+bool operator<(const die& x, const die& y) {
+    if (x._path.view() < y._path.view())
+        return true;
+    if (x._path.view() > y._path.view())
+        return false;
+    return object_file_ancestry(x._ofd_index) < object_file_ancestry(y._ofd_index);
 }
 
 /**************************************************************************************************/

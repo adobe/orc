@@ -324,9 +324,9 @@ struct die {
     // here, please consider alignment issues.
     pool_string _path;
     die* _next_die{nullptr};
-    const object_ancestry* _ancestry{nullptr}; // points to the obj_registry in macho.cpp
     std::size_t _hash{0};
     std::size_t _fatal_attribute_hash{0};
+    std::uint32_t _ofd_index{0}; // object file descriptor index
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
@@ -334,13 +334,7 @@ struct die {
     bool _conflict{false};
     bool _skippable{false};
 
-    bool operator<(const die& rhs) const {
-        if (_path.view() < rhs._path.view())
-            return true;
-        if (_path.view() > rhs._path.view())
-            return false;
-        return _ancestry < rhs._ancestry;
-    }
+    friend bool operator<(const die& x, const die& y);
 };
 
 std::ostream& operator<<(std::ostream& s, const die& x);

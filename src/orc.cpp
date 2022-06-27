@@ -34,6 +34,7 @@
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
+#include "orc/object_file_registry.hpp"
 #include "orc/parse_file.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
@@ -347,7 +348,8 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
-    auto dwarf = dwarf_from_macho(*d._ancestry, register_dies_callback());
+    auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
+
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
     assert(die._tag == d._tag);
     assert(die._arch == d._arch);
@@ -451,7 +453,9 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     // the ancestry might not be unique. We assume that's an edge case
     // and the ancestry is unique.
     std::sort(dies.begin(), dies.end(),
-              [](const die* a, const die* b) { return *a->_ancestry < *b->_ancestry; });
+              [](const die* a, const die* b) {
+                  return object_file_ancestry(a->_ofd_index) < object_file_ancestry(b->_ofd_index);
+              });
 
     bool conflict{false};
     for (size_t i = 1; i < dies.size(); ++i) {

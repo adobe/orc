@@ -26,7 +26,7 @@ struct orc_test_settings {
     bool _json_mode{false};
 };
 
-auto& settings() {
+auto& test_settings() {
     static orc_test_settings result;
     return result;
 }
@@ -34,7 +34,7 @@ auto& settings() {
 /**************************************************************************************************/
 
 std::ostream& console() {
-    if (settings()._json_mode) {
+    if (test_settings()._json_mode) {
         static std::stringstream s;
         return s;
     }
@@ -43,7 +43,7 @@ std::ostream& console() {
 }
 
 std::ostream& console_error() {
-    if (settings()._json_mode) {
+    if (test_settings()._json_mode) {
         static std::stringstream s;
         return s;
     }
@@ -72,7 +72,7 @@ void log(const std::string& type,
          const std::string& message,
          std::optional<std::string> title = std::nullopt,
          std::optional<std::string> filename = std::nullopt) {
-    if (settings()._json_mode) {
+    if (test_settings()._json_mode) {
         toml::table result;
         result.insert("type", type);
         result.insert("message", message);
@@ -538,12 +538,14 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("test battery path is missing or not a directory");
     }
 
-    settings()._json_mode = argc > 2 && std::string(argv[2]) == "--json_mode";
+    test_settings()._json_mode = argc > 2 && std::string(argv[2]) == "--json_mode";
 
     traverse_directory_tree(battery_path);
 
-    if (settings()._json_mode) {
-        std::cout << toml::json_formatter{ toml_out() } << '\n';
+    if (test_settings()._json_mode) {
+        cout_safe([&](auto& s){
+            s << toml::json_formatter{ toml_out() } << '\n';
+        });
     }
 
     return EXIT_SUCCESS;

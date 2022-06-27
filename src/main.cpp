@@ -42,25 +42,6 @@ namespace {
 
 /**************************************************************************************************/
 
-auto& ostream_safe_mutex() {
-    static std::mutex m;
-    return m;
-}
-
-template <class F>
-void ostream_safe(std::ostream& s, F&& f) {
-    std::lock_guard<std::mutex> lock{ostream_safe_mutex()};
-    std::forward<F>(f)(s);
-    if (globals::instance()._fp.is_open()) {
-        std::forward<F>(f)(globals::instance()._fp);
-    }
-}
-
-template <class F>
-void cout_safe(F&& f) {
-    ostream_safe(std::cout, std::forward<F>(f));
-}
-
 /**************************************************************************************************/
 
 template <class Container, class T>
@@ -91,7 +72,6 @@ std::string exec(const char* cmd) {
 /**************************************************************************************************/
 
 void process_orc_config_file(const char* bin_path_string) {
-    // The calls to std::cout in this routine don't need to be threadsafe (too early)
 
     std::filesystem::path pwd(std::filesystem::current_path());
     std::filesystem::path bin_path(pwd / bin_path_string);
@@ -144,7 +124,9 @@ void process_orc_config_file(const char* bin_path_string) {
                     globals::instance()._fp.open(fn);
                 }
                 catch (const std::exception& e) {
-                    std::cout << "warning: Could not open output file: " << settings["output_file"] << "\n";
+                    cout_safe([&](auto& s){
+                        s << "warning: Could not open output file: " << settings["output_file"] << "\n";
+                    });
                 }
             }
 
@@ -161,7 +143,9 @@ void process_orc_config_file(const char* bin_path_string) {
                 } else {
                     // not a known value. Switch to verbose!
                     app_settings._log_level = settings::log_level::verbose;
-                    std::cout << "warning: Unknown log level (using verbose)\n";
+                    cout_safe([&](auto& s){
+                        s << "warning: Unknown log level (using verbose)\n";
+                    });
                 }
             }
 
@@ -185,21 +169,29 @@ void process_orc_config_file(const char* bin_path_string) {
             if (!app_settings._violation_report.empty() &&
                 !app_settings._violation_ignore.empty()) {
                 if (log_level_at_least(settings::log_level::warning)) {
-                    std::cout << "warning: Both `violation_report` and `violation_ignore` lists found\n";
-                    std::cout << "warning: `violation_report` will be ignored in favor of `violation_ignore`\n";
+                    cout_safe([&](auto& s){
+                        s << "warning: Both `violation_report` and `violation_ignore` lists found\n";
+                        s << "warning: `violation_report` will be ignored in favor of `violation_ignore`\n";
+                    });
                 }
             }
                 
 
             if (log_level_at_least(settings::log_level::info)) {
-                std::cout << "info: ORC config file: " << config_path.string() << "\n";
+                cout_safe([&](auto& s){
+                   s << "info: ORC config file: " << config_path.string() << "\n";
+                });
             }
         } catch (const toml::parse_error& err) {
-            std::cerr << "Parsing failed:\n" << err << "\n";
+            cerr_safe([&](auto& s) {
+                s << "Parsing failed:\n" << err << "\n";
+            });
             throw std::runtime_error("configuration parsing error");
         }
     } else {
-        std::cout << "ORC config file: not found\n";
+        cerr_safe([&](auto& s){
+           s << "ORC config file: not found\n";
+        });
     }
 }
 
@@ -255,15 +247,16 @@ struct cmdline_results {
 /**************************************************************************************************/
 
 auto process_command_line(int argc, char** argv) {
-    // The calls to std::cout in this routine don't need to be threadsafe (too early)
 
     cmdline_results result;
 
     if (log_level_at_least(settings::log_level::verbose)) {
-        std::cout << "verbose: arguments:\n";
-        for (std::size_t i{0}; i < argc; ++i) {
-            std::cout << "  " << argv[i] << '\n';
-        }
+        cout_safe([&](auto& s){
+            s << "verbose: arguments:\n";
+            for (std::size_t i{0}; i < argc; ++i) {
+                s << "  " << argv[i] << '\n';
+            }
+        });
     }
 
     if (settings::instance()._standalone_mode) {
@@ -289,12 +282,16 @@ auto process_command_line(int argc, char** argv) {
                     if (filename.ends_with(".a")) {
                         result._libtool_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            std::cout << "verbose: mode: libtool (by filename)\n";
+                            cout_safe([&](auto& s){ 
+                                s << "verbose: mode: libtool (by filename)\n";
+                            });
                         }
                     } else {
                         result._ld_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            std::cout << "verbose: mode: ld (by filename)\n";
+                            cout_safe([&](auto& s){
+                                s << "verbose: mode: ld (by filename)\n";
+                            });
                         }
                     }
                 }
@@ -308,13 +305,17 @@ auto process_command_line(int argc, char** argv) {
                 result._libtool_mode = true;
                 assert(!result._ld_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    std::cout << "verbose: mode: libtool (static)\n";
+                    cout_safe([&](auto& s){
+                        s << "verbose: mode: libtool (static)\n";
+                    });
                 }
             } else if (arg == "-target") {
                 result._ld_mode = true;
                 assert(!result._libtool_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    std::cout << "verbose: mode: ld (target)\n";
+                    cout_safe([&](auto& s){
+                        s << "verbose: mode: ld (target)\n";
+                    });
                 }
             } else if (arg == "-lc++") {
                 // ignore the C++ standard library
@@ -369,7 +370,6 @@ auto process_command_line(int argc, char** argv) {
 /**************************************************************************************************/
 
 auto epilogue(bool exception) {
-    // The calls to std::cout in this routine don't need to be threadsafe (too late)
 
     const auto& g = globals::instance();
 
@@ -413,7 +413,6 @@ auto interrupt_callback_handler(int signum) {
 /**************************************************************************************************/
 
 void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdline) {
-    // The calls to std::cout in this routine don't need to be threadsafe (too early)
 
     if (!settings::instance()._forward_to_linker) return;
 
@@ -435,7 +434,9 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
         executable_path /= "libtool";
     } else {
         if (log_level_at_least(settings::log_level::warning)) {
-            std::cout << "warning: libtool/ld mode could not be derived; forwarding to linker disabled\n";
+            cout_safe([&](auto& s){
+                s << "warning: libtool/ld mode could not be derived; forwarding to linker disabled\n";
+            });
         }
 
         return;
@@ -444,7 +445,9 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
     if (!exists(executable_path)) {
         throw std::runtime_error("Could not forward to linker: " + executable_path.string());
     } else if (log_level_at_least(settings::log_level::verbose)) {
-        std::cout << "verbose: forwarding to " + executable_path.string() + "\n";
+        cout_safe([&](auto& s){
+            s << "verbose: forwarding to " + executable_path.string() + "\n";
+        });
     }
 
     std::string arguments = executable_path.string();
@@ -456,7 +459,9 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
     // REVISIT: (fbrereto) We may need to capture/forward stderr here as well.
     // Also, if the execution of the linker ended in a failure, we need to bubble
     // that up immediately, and preempt ORC processing.
-    std::cout << exec(arguments.c_str());
+    cout_safe([&](auto& s){
+        s << exec(arguments.c_str());
+    });
 }
 
 /**************************************************************************************************/
@@ -475,8 +480,9 @@ int main(int argc, char** argv) try {
 
     if (settings::instance()._print_object_file_list) {
         for (const auto& input_path : file_list) {
-            // no need to block on this cout; it's too early
-            std::cout << input_path.string() << '\n';
+            cout_safe([&](auto& s){
+                s << input_path.string() << '\n';
+            });
         }
 
         return EXIT_SUCCESS;
@@ -489,15 +495,21 @@ int main(int argc, char** argv) try {
     }
 
     for (const auto& report : orc_process(file_list)) {
-        std::cout << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
+        cout_safe([&](auto& s){
+            s << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
+        });
     }
 
     return epilogue(false);
 } catch (const std::exception& error) {
-    std::cerr << "Fatal error: " << error.what() << '\n';
+    cerr_safe([&](auto& s) {
+        s << "Fatal error: " << error.what() << '\n';
+    });
     return epilogue(true);
 } catch (...) {
-    std::cerr << "Fatal error: unknown\n";
+    cerr_safe([&](auto& s) {
+        s << "Fatal error: unknown\n";
+    });
     return epilogue(false);
 }
 

@@ -24,6 +24,7 @@
 #include "orc/fat.hpp"
 #include "orc/mach_types.hpp"
 #include "orc/macho.hpp"
+#include "orc/orc.hpp"
 
 /**************************************************************************************************/
 
@@ -81,7 +82,9 @@ file_details detect_file(freader& s) {
             } else if (cputype == CPU_TYPE_ARM64_32) {
                 result._arch = arch::arm64;
             } else {
-                std::cerr << "WARN: Unknown Mach-O cputype\n";
+                cerr_safe([&](auto& s) {
+                    s << "WARN: Unknown Mach-O cputype\n";
+                });
             }
         }
 

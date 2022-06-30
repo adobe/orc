@@ -130,7 +130,6 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
             read_lc_segment_64(s, details, dwarf);
             break;
         default:
-            // std::cerr << "Unhandled load command: " << command.cmd << '\n';
             s.seekg(command.cmdsize, std::ios::cur);
     }
 }

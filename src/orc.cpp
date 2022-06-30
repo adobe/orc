@@ -43,28 +43,14 @@
 
 /**************************************************************************************************/
 
-namespace {
-
-/**************************************************************************************************/
-
-auto& ostream_safe_mutex() {
+std::mutex& ostream_safe_mutex() {
     static std::mutex m;
     return m;
 }
 
-template <class F>
-void ostream_safe(std::ostream& s, F&& f) {
-    std::lock_guard<std::mutex> lock{ostream_safe_mutex()};
-    std::forward<F>(f)(s);
-    if (globals::instance()._fp.is_open()) {
-        std::forward<F>(f)(globals::instance()._fp);
-    }
-}
+/**************************************************************************************************/
 
-template <class F>
-void cout_safe(F&& f) {
-    ostream_safe(std::cout, std::forward<F>(f));
-}
+namespace {
 
 /**************************************************************************************************/
 
@@ -325,9 +311,13 @@ void do_work(std::function<void()> f) {
         try {
             f();
         } catch (const std::exception& error) {
-            std::cerr << error.what() << '\n';
+            cerr_safe([&](auto& s) {
+                s << error.what() << '\n';
+            });
         } catch (...) {
-            std::cerr << "unknown exception caught" << '\n';
+            cerr_safe([&](auto& s) {
+                s << "unknown exception caught" << '\n';
+            });
         }
     };
 

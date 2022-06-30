@@ -6,22 +6,29 @@
 
 #pragma once
 
-// stdc++
-#include <iostream>
-
 // application
+#include "orc/dwarf_structs.hpp"
 #include "orc/parse_file.hpp"
 
 /**************************************************************************************************/
 
-void read_macho(object_ancestry&& ancestry,
-                freader s,
-                std::istream::pos_type end_pos,
-                file_details details,
-                callbacks callbacks);
+struct object_file_descriptor {
+    object_ancestry _ancestry;
+    file_details _details;
+};
 
 /**************************************************************************************************/
 
-struct dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback);
+std::size_t object_file_register(object_ancestry&& ancestry, file_details&& details);
+
+const object_file_descriptor& object_file_fetch(std::size_t index);
+
+inline const object_ancestry& object_file_ancestry(std::size_t index) {
+    return object_file_fetch(index)._ancestry;
+}
+
+inline const file_details& object_file_details(std::size_t index) {
+    return object_file_fetch(index)._details;
+}
 
 /**************************************************************************************************/

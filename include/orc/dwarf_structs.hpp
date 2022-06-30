@@ -149,12 +149,13 @@ struct attribute {
     dw::form _form{0};
     attribute_value _value;
 
-    void read(freader& s); // definition in dwarf.cpp
+    void read(freader& s);
 
     auto has(enum attribute_value::type t) const { return _value.has(t); }
 
     auto reference() const { return _value.reference(); }
     const auto& string() const { return _value.string(); }
+    auto uint() const { return _value.uint(); }
     auto string_hash() const { return _value.string_hash(); }
     const auto& die() const { return _value.die(); }
 };
@@ -166,6 +167,99 @@ inline bool operator==(const attribute& x, const attribute& y) {
 inline bool operator!=(const attribute& x, const attribute& y) { return !(x == y); }
 
 std::ostream& operator<<(std::ostream& s, const attribute& x);
+
+/**************************************************************************************************/
+// I'm not a fan of this name.
+struct attribute_sequence {
+    using attributes_type = std::vector<attribute>;
+    using value_type = typename attributes_type::value_type;
+    using iterator = typename attributes_type::iterator;
+    using const_iterator = typename attributes_type::const_iterator;
+
+    void reserve(std::size_t size) {
+        _attributes.reserve(size);
+    }
+
+    bool has(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        return valid;
+    }
+
+    bool has(dw::at name, enum attribute_value::type t) const {
+        auto [valid, iterator] = find(name);
+        return valid ? iterator->has(t) : false;
+    }
+
+    bool has_uint(dw::at name) const {
+        return has(name, attribute_value::type::uint);
+    }
+
+    bool has_string(dw::at name) const {
+        return has(name, attribute_value::type::string);
+    }
+
+    bool has_reference(dw::at name) const {
+        return has(name, attribute_value::type::reference);
+    }
+
+    auto& get(dw::at name) {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    const auto& get(dw::at name) const {
+        auto [valid, iterator] = find(name);
+        assert(valid);
+        return *iterator;
+    }
+
+    std::size_t hash(dw::at name) const {
+        return get(name)._value.hash();
+    }
+
+    std::uint64_t uint(dw::at name) const {
+        return get(name).uint();
+    }
+
+    pool_string string(dw::at name) const {
+        return get(name).string();
+    }
+
+    std::uint64_t reference(dw::at name) const {
+        return get(name).reference();
+    }
+
+    void push_back(const value_type& x) {
+        _attributes.push_back(x);
+    }
+
+    bool empty() const { return _attributes.empty(); }
+
+    auto begin() { return _attributes.begin(); }
+    auto begin() const { return _attributes.begin(); }
+    auto end() { return _attributes.end(); }
+    auto end() const { return _attributes.end(); }
+
+private:
+    std::tuple<bool, iterator> find(dw::at name) {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    std::tuple<bool, const_iterator> find(dw::at name) const {
+        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
+            return attr._name == name;
+        });
+        return std::make_tuple(result != _attributes.end(), result);
+    }
+
+    attributes_type _attributes;
+};
+
+std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
 /**************************************************************************************************/
 
@@ -188,7 +282,13 @@ struct object_ancestry {
 
     auto begin() const { return _ancestors.begin(); }
     auto end() const { return begin() + _count; }
+
     auto& back() {
+        assert(_count);
+        return _ancestors[_count];
+    }
+
+    const auto& back() const {
         assert(_count);
         return _ancestors[_count];
     }
@@ -222,78 +322,50 @@ struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    object_ancestry _ancestry;
     pool_string _path;
-    attribute* _attributes{nullptr};
     die* _next_die{nullptr};
     std::size_t _hash{0};
+    std::size_t _fatal_attribute_hash{0};
+    std::uint32_t _ofd_index{0}; // object file descriptor index
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
-    std::uint8_t _attributes_size{0};
     arch _arch{arch::unknown};
     bool _has_children{false};
-    bool _type_resolved{false};
     bool _conflict{false};
+    bool _skippable{false};
 
-    bool operator<(const die& rhs) const {
-        if (_path.view() < rhs._path.view())
-            return true;
-        if (_path.view() > rhs._path.view())
-            return false;
-        return _ancestry < rhs._ancestry;
-    }
-            
-
-    auto begin() { return _attributes; }
-    auto begin() const { return _attributes; }
-    auto end() { return _attributes + _attributes_size; }
-    auto end() const { return _attributes + _attributes_size; }
-
-    bool has_attribute(dw::at at) const {
-        for (const auto& a : *this)
-            if (a._name == at) return true;
-        return false;
-    }
-
-    const auto& attribute(dw::at at) const {
-        for (const auto& a : *this)
-            if (a._name == at) return a;
-        throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
-    }
-
-    auto& attribute(dw::at at) {
-        for (auto& a : *this)
-            if (a._name == at) return a;
-        throw std::runtime_error(std::string("missing attribute: ") + to_string(at));
-    }
-
-    bool attribute_has_type(dw::at at, enum attribute_value::type type) const {
-        for (const auto& a : *this)
-            if (a._name == at) return a.has(type);
-        return false;
-    }
-
-    bool attribute_has_uint(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::uint);
-    }
-    bool attribute_has_string(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::string);
-    }
-    bool attribute_has_reference(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::reference);
-    }
-    bool attribute_has_die(dw::at at) const {
-        return attribute_has_type(at, attribute_value::type::die);
-    }
-
-    auto attribute_uint(dw::at at) const { return attribute(at)._value.uint(); }
-    const auto& attribute_string(dw::at at) const { return attribute(at)._value.string(); }
-    auto attribute_reference(dw::at at) const { return attribute(at)._value.reference(); }
-    const auto& attribute_die(dw::at at) const { return attribute(at)._value.die(); }
+    friend bool operator<(const die& x, const die& y);
 };
 
 std::ostream& operator<<(std::ostream& s, const die& x);
 
 using dies = std::vector<die>;
+
+/**************************************************************************************************/
+
+bool nonfatal_attribute(dw::at at);
+
+/**************************************************************************************************/
+
+template <class Container, class T>
+bool sorted_has(const Container& c, const T& x) {
+    auto found = std::lower_bound(c.begin(), c.end(), x);
+    return found != c.end() && *found == x;
+}
+
+/**************************************************************************************************/
+// Quick and dirty type to print an integer value as a padded, fixed-width hex value.
+// e.g., std::cout << hex_print(my_int) << '\n';
+struct hex_print {
+    explicit hex_print(std::size_t x) : _x{x} {}
+    std::size_t _x;
+};
+
+inline std::ostream& operator<<(std::ostream& s, const hex_print& x) {
+    s << "0x";
+    s.width(8);
+    s.fill('0');
+    return s << std::hex << x._x << std::dec;
+}
 
 /**************************************************************************************************/

@@ -14,6 +14,8 @@
 #include <toml++/toml.h>
 
 // orc
+#include <orc/dwarf.hpp>
+#include <orc/macho.hpp>
 #include <orc/orc.hpp>
 
 /**************************************************************************************************/
@@ -386,10 +388,11 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
         return false;
     }
 
-    const std::string& linkage_name = odrv.linkage_name();
+    const std::string& linkage_name = demangle(odrv.linkage_name().c_str());
     if (!linkage_name.empty()) {
-        const pool_string report_linkage_name = report._list_head->attribute_string(dw::at::linkage_name);
-        if (linkage_name != report_linkage_name.view())
+        const auto& die_pair = report.conflict_map().begin()->second;
+        const char* report_linkage_name = demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
+        if (linkage_name != report_linkage_name)
             return false;
     }
     return true;

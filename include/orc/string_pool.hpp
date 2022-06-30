@@ -46,6 +46,8 @@ struct pool_string {
 
     bool empty() const { return _data == nullptr; }
 
+    explicit operator bool() const { return empty(); }
+
     std::string_view view() const {
         // a string_view is empty iff _data is a nullptr
         if (!_data) return default_view;
@@ -61,7 +63,7 @@ struct pool_string {
         return std::filesystem::path(view()); 
     }
 
-    size_t hash() const {
+    std::size_t hash() const {
         if (!_data) return 0;
         return get_hash(_data);
     }

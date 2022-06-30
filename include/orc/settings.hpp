@@ -46,7 +46,7 @@ struct globals {
 
     std::atomic_size_t _object_file_count{0};
     std::atomic_size_t _odrv_count{0};
-    std::atomic_size_t _die_registered_count{0};
+    std::atomic_size_t _unique_symbol_count{0};
     std::atomic_size_t _die_processed_count{0};
     std::atomic_size_t _die_analyzed_count{0};
     std::ofstream _fp;

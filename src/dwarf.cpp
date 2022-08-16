@@ -9,13 +9,13 @@
 
 // stdc++
 #include <list>
-#include <unordered_map>
-#include <vector>
 
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
 #include "orc/settings.hpp"
+#include "orc/string.hpp"
+#include "orc/vector.hpp"
 
 /**************************************************************************************************/
 
@@ -159,7 +159,7 @@ struct abbrev {
     std::uint32_t _code{0};
     dw::tag _tag{0};
     bool _has_children{false};
-    std::vector<attribute> _attributes;
+    orc::vector<attribute> _attributes;
 
     void read(freader& s);
 };
@@ -245,9 +245,9 @@ struct line_header {
     std::int32_t _line_base{0};
     std::uint32_t _line_range{0};
     std::uint32_t _opcode_base{0};
-    std::vector<std::uint32_t> _standard_opcode_lengths;
-    std::vector<std::string_view> _include_directories;
-    std::vector<file_name> _file_names;
+    orc::vector<std::uint32_t> _standard_opcode_lengths;
+    orc::vector<std::string_view> _include_directories;
+    orc::vector<file_name> _file_names;
 
     void read(freader& s, const file_details& details);
 };
@@ -455,7 +455,7 @@ struct dwarf::implementation {
     void path_identifier_push();
     void path_identifier_set(pool_string name);
     void path_identifier_pop();
-    std::string qualified_symbol_name(const die& d) const;
+    orc::string qualified_symbol_name(const die& d) const;
 
     attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
@@ -469,10 +469,10 @@ struct dwarf::implementation {
     freader& _s;
     const file_details _details;
     callbacks _callbacks;
-    std::vector<abbrev> _abbreviations;
-    std::vector<pool_string> _path;
+    orc::vector<abbrev> _abbreviations;
+    orc::vector<pool_string> _path;
     std::size_t _cu_address{0};
-    std::vector<pool_string> _decl_files;
+    orc::vector<pool_string> _decl_files;
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
@@ -593,7 +593,7 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 /**************************************************************************************************/
 
-std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
+orc::string dwarf::implementation::qualified_symbol_name(const die& d) const {
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
     // we are using, so let's use that instead here.
@@ -607,7 +607,7 @@ std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
 
     for (const auto& at : qualified_attributes) {
         if (d.attribute_has_string(at)) {
-            return "::[u]::" + d.attribute_string(at).allocate_string();
+            return orc::string("::[u]::") + d.attribute_string(at).allocate_string();
         }
     }
 
@@ -617,13 +617,13 @@ std::string dwarf::implementation::qualified_symbol_name(const die& d) const {
     // for the whole path so we can skip over this die at registration time.
     for (const auto& identifier : _path) {
         if (identifier.empty()) {
-            return std::string();
+            return orc::string();
         }
     }
 
-    std::string result;
+    orc::string result;
     for (const auto& identifier : _path) {
-        result += "::" + identifier.allocate_string();
+        result += orc::string("::") + identifier.allocate_string();
     }
     return result;
 }
@@ -746,7 +746,7 @@ pool_string dwarf::implementation::die_identifier(const die& d) const {
 /**************************************************************************************************/
 
 attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression_size) {
-    std::vector<std::int32_t> stack;
+    orc::vector<std::int32_t> stack;
     const auto end = _s.tellg() + expression_size;
 
     // There are some exprlocs that cannot be deciphered, probably because we don't have as much

@@ -382,13 +382,24 @@ auto epilogue(bool exception) {
         // });
     }
 
-    if (log_level_at_least(settings::log_level::info)) {
-        cout_safe([&](auto& s){
-            s << "info: ORC complete.\n"
-              << "info:   " << g._odrv_count << " ODRVs reported\n"
-              << "info:   " << g._object_file_count << " compilation units processed\n"
-              << "info:   " << g._die_processed_count << " dies processed\n"
-              << "info:   " << g._die_registered_count << " dies registered\n";
+    if (log_level_at_least(settings::log_level::warning)) {
+        cout_safe([&](auto& s) {
+#if ORC_FEATURE(ALLOCATOR_METRICS)
+            auto alloc_total = orc::allocator_base::total();
+            auto alloc_hits = orc::allocator_base::hits();
+            auto hit_pct = static_cast<double>(alloc_hits) / alloc_total * 100.;
+#endif // ORC_FEATURE(ALLOCATOR_METRICS)
+
+            s << "ORC complete.\n"
+              << "  " << g._odrv_count << " ODRVs reported\n"
+              << "  " << g._object_file_count << " compilation units processed\n"
+              << "  " << g._die_processed_count << " dies processed\n"
+              << "  " << g._die_registered_count << " dies registered\n"
+#if ORC_FEATURE(ALLOCATOR_METRICS)
+              << "  " << alloc_hits << " / " << alloc_total
+              << " (" << std::setprecision(4) << hit_pct << "%) memory cache hits/total\n"
+#endif // ORC_FEATURE(ALLOCATOR_METRICS)
+            ;
         });
     }
 

@@ -31,6 +31,7 @@
 #include <tbb/concurrent_unordered_map.h>
 
 // application
+#include "orc/allocator.hpp"
 #include "orc/features.hpp"
 #include "orc/parse_file.hpp"
 #include "orc/settings.hpp"
@@ -278,7 +279,14 @@ auto with_global_die_collection(F&& f) {
 /**************************************************************************************************/
 
 auto& global_die_map() {
+#if ORC_FEATURE(ALLOCATOR)
+    using map_type = tbb::concurrent_unordered_map<std::size_t, die*,
+                                                   std::hash<size_t>,
+                                                   std::equal_to<size_t>,
+                                                   orc::allocator<std::pair<size_t const, die*>>>;
+#else // ORC_FEATURE(ALLOCATOR)
     using map_type = tbb::concurrent_unordered_map<std::size_t, die*>;
+#endif
 
 #if ORC_FEATURE(LEAKY_MEMORY)
     static map_type* map_s = new map_type;

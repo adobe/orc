@@ -8,19 +8,18 @@
 #include "orc/string_pool.hpp"
 
 // stdc++
+#include <cassert>
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <unordered_set>
-#include <vector>
-#include <cassert>
 #include <unordered_map>
+#include <vector>
 
 // application
+#include "orc/allocator.hpp"
 #include "orc/features.hpp"
 
 /*static*/ std::string_view pool_string::default_view("");
-
 
 /**************************************************************************************************/
 
@@ -94,9 +93,17 @@ pool_string empool(std::string_view src) {
         auto operator()(size_t key) const { return key;}
     };
 
+#if ORC_FEATURE(ALLOCATOR)
+    thread_local std::unordered_map<size_t, const char*,
+                                    std::hash<size_t>,
+                                    std::equal_to<size_t>,
+                                    orc::allocator<std::pair<size_t const, const char*>>> keys;
+#else
     thread_local std::unordered_multimap<size_t, const char*, pool_key_to_hash> keys;
+#endif // ORC_FEATURE(ALLOCATOR)
+
     thread_local pool the_pool;
-    
+
     // Is the string interned already?
     const size_t h = std::hash<std::string_view>{}(src);
     

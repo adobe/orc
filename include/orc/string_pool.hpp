@@ -12,6 +12,9 @@
 #include <string_view>
 #include <filesystem>
 
+// application
+#include "orc/string.hpp"
+
 /**************************************************************************************************/
 
 struct pool_string;
@@ -53,8 +56,8 @@ struct pool_string {
         return std::string_view(_data, size);
     }
     
-    std::string allocate_string() const { 
-        return std::string(view()); 
+    orc::string allocate_string() const { 
+        return orc::string(view()); 
     }
     
     std::filesystem::path allocate_path() const { 

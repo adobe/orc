@@ -12,6 +12,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <thread>
 
 // application
 
@@ -67,27 +68,23 @@ void* allocator_base::alloc(size_t size) {
     auto& size_map = alloc_size_map();
     auto iter = size_map.find(size);
 
-    if (iter == size_map.end()) {
-        // ensure an alloc_info has been associated with this size
-        auto inserted = size_map.insert(std::make_pair(size, alloc_info()));
-        assert(inserted.second);
-        iter = std::move(inserted.first);
-    }
+    // nothing available to recycle, so allocate space
+    if (iter == size_map.end()) return malloc(size);
 
     alloc_info& info = iter->second;
 
-    if (!info._recycled_pointers.empty()) {
-        // use a recycled pointer from the _recycled_pointers vector
-        void* result = info._recycled_pointers.back();
-        info._recycled_pointers.pop_back();
+    // nothing available to recycle, so allocate space
+    if (info._recycled_pointers.empty()) return malloc(size);
+
 #if ORC_FEATURE(ALLOCATOR_METRICS)
-        ++hit_count_g;
+    ++hit_count_g;
 #endif // ORC_FEATURE(ALLOCATOR_METRICS)
-        return result;
-    } else {
-        // nothing available to recycle, so allocate one
-        return malloc(size);
-    }
+
+    // use a recycled pointer from the _recycled_pointers vector
+    void* result = info._recycled_pointers.back();
+    info._recycled_pointers.pop_back();
+
+    return result;
 }
 
 /**************************************************************************************************/
@@ -97,6 +94,14 @@ void allocator_base::dealloc(void* p, size_t size) {
 
     auto& size_map = alloc_size_map();
     auto iter = size_map.find(size);
+
+    if (iter == size_map.end()) {
+        // ensure an alloc_info has been associated with this size
+        auto inserted = size_map.insert(std::make_pair(size, alloc_info()));
+        assert(inserted.second);
+        iter = std::move(inserted.first);
+    }
+
     assert(iter != size_map.end());
 
     iter->second._recycled_pointers.push_back(p);

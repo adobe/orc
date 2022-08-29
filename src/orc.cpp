@@ -347,8 +347,8 @@ void register_dies(dies die_vector) {
         // work exclusive to DIEs getting registered/odr-enforced.
         //
 
-        size_t h = die_hash(d);
-        auto result = global_die_map().insert(std::make_pair(h, &d));
+        size_t hash = die_hash(d);
+        auto result = global_die_map().insert(std::make_pair(hash, &d));
         if (result.second) {
             ++globals::instance()._die_registered_count;
             continue;
@@ -356,7 +356,7 @@ void register_dies(dies die_vector) {
 
         constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
         static std::mutex mutexes_s[mutex_count_k];
-        std::lock_guard<std::mutex> lock(mutexes_s[h % mutex_count_k]);
+        std::lock_guard<std::mutex> lock(mutexes_s[hash % mutex_count_k]);
 
         die& d_in_map = *result.first->second;
         d._next_die = d_in_map._next_die;

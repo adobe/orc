@@ -1015,8 +1015,6 @@ void dwarf::implementation::process() {
             }
 
             die._ancestry = _ancestry;
-            //die._hash = die_hash(die); // precompute the hash we'll use for the die map.
-
             dies.push_back(std::move(die));
         }
     }

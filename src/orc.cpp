@@ -311,13 +311,9 @@ void do_work(std::function<void()> f) {
         try {
             f();
         } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) {
-                s << error.what() << '\n';
-            });
+            cerr_safe([&](auto& s) { s << error.what() << '\n'; });
         } catch (...) {
-            cerr_safe([&](auto& s) {
-                s << "unknown exception caught" << '\n';
-            });
+            cerr_safe([&](auto& s) { s << "unknown exception caught" << '\n'; });
         }
     };
 
@@ -431,21 +427,20 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 /**************************************************************************************************/
 
-void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
+die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     std::vector<die*> dies;
     for (die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);
     }
     assert(!dies.empty());
-    if (dies.size() == 1) return;
+    if (dies.size() == 1) return base;
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
     // and the ancestry is unique.
-    std::sort(dies.begin(), dies.end(),
-              [](const die* a, const die* b) {
-                  return object_file_ancestry(a->_ofd_index) < object_file_ancestry(b->_ofd_index);
-              });
+    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b) {
+        return object_file_ancestry(a->_ofd_index) < object_file_ancestry(b->_ofd_index);
+    });
 
     bool conflict{false};
     for (size_t i = 1; i < dies.size(); ++i) {
@@ -458,7 +453,7 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     }
     dies.back()->_next_die = nullptr;
 
-    if (!conflict) return;
+    if (!conflict) return dies.front();
 
     dies[0]->_conflict = true;
 
@@ -467,6 +462,20 @@ void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     static std::mutex result_mutex;
     std::lock_guard<std::mutex> lock(result_mutex);
     results.push_back(report);
+
+    return dies.front();
+}
+
+/**************************************************************************************************/
+
+auto unique_symbol_die_count() {
+    std::size_t count{0};
+    for (const auto& entry : global_die_map()) {
+        for (const die* ptr = entry.second; ptr; ptr = ptr->_next_die) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 /**************************************************************************************************/
@@ -492,13 +501,17 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
+    globals::instance()._unique_symbol_die_count = unique_symbol_die_count();
+
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
 
     for (auto& entry : global_die_map()) {
-        die* base = entry.second;
-        do_work([base, &result] { enforce_odrv_for_die_list(base, result); });
+        do_work([&entry, &result]() mutable {
+            entry.second = enforce_odrv_for_die_list(entry.second, result);
+        });
     }
+
     work().wait();
 
     // Sort the ordrv_report

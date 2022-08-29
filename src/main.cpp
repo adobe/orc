@@ -368,7 +368,6 @@ auto process_command_line(int argc, char** argv) {
 /**************************************************************************************************/
 
 auto epilogue(bool exception) {
-
     const auto& g = globals::instance();
 
     // If we were showing progress this session, take all the stored up ODRVs and output them
@@ -386,7 +385,9 @@ auto epilogue(bool exception) {
               << "  " << g._odrv_count << " ODRVs reported\n"
               << "  " << g._object_file_count << " compilation units processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
-              << "  " << g._unique_symbol_count << " unique symbols registered\n";
+              << "  " << g._unique_symbol_count << " unique symbols registered\n"
+              << "  " << g._unique_symbol_die_count << " unique symbol dies\n"
+              ;
         });
     }
 
@@ -411,7 +412,6 @@ auto interrupt_callback_handler(int signum) {
 /**************************************************************************************************/
 
 void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdline) {
-
     if (!settings::instance()._forward_to_linker) return;
 
     std::filesystem::path executable_path =

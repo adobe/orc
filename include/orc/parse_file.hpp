@@ -15,43 +15,8 @@
 
 // application
 #include "orc/dwarf_structs.hpp"
+#include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
-
-/**************************************************************************************************/
-// This is an extension of the famous boost hash_combine routine, extending it to take a variable
-// number of input items to hash and then combine together. It's a pack compression of the following
-// kind of expansion:
-//
-// template <class N0, class N1, ..., class NM>
-// inline std::size_t hash_combine(std::size_t seed,
-//                                 const N0& n0,
-//                                 const N1& n1,
-//                                 ...
-//                                 const NM& nm) {
-//     auto h0 = seed ^ std::hash<N0>{}(n0) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-//     auto h1 = h0   ^ std::hash<N1>{}(n1) + 0x9e3779b9 + (h0   << 6) + (h0   >> 2);
-//     ...
-//     auto hm_1 = ... // the hash from the (NM-1)-th step
-//     auto hm = hm_1 ^ std::hash<NM>{}(nm) + 0x9e3779b9 + (hm_1 << 6) + (hm_1 >> 2);
-//     return hm;
-// }
-
-template <class T>
-inline std::size_t hash_combine(std::size_t seed, const T& x) {
-    // This is the terminating hash_combine call when there's only one item left to hash into the
-    // seed. It also serves as the combiner the other routine variant uses to generate its new
-    // seed.
-    return seed ^ std::hash<T>{}(x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-template <class T, class... Args>
-inline std::size_t hash_combine(std::size_t seed, const T& x, Args&&... args) {
-    // This routine reduces the argument count by 1 by hashing `x` into the seed, and calling
-    // hash_combine on the remaining arguments and the new seed. Eventually Args will disintegrate
-    // into a single parameter, at which point the compiler will call the above routine, not this
-    // one (which has more than two args), and the compile-time recursion will stop.
-    return hash_combine(hash_combine(seed, x), std::forward<Args>(args)...);
-}
 
 /**************************************************************************************************/
 // very minimal file reader. Uses mmap to bring the file into memory, and subsequently unmaps it

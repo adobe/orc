@@ -18,13 +18,21 @@
 
 // application
 #include "orc/features.hpp"
+#include "orc/hash.hpp"
 
 /*static*/ std::string_view pool_string::default_view("");
-
 
 /**************************************************************************************************/
 
 namespace {
+
+/**************************************************************************************************/
+
+std::size_t string_view_hash(std::string_view s) {
+    return orc::murmur3_64(s.data(), s.length());
+}
+
+/**************************************************************************************************/
 
 // Data is backed and not aligned.
 // Before the _data pointer:
@@ -48,7 +56,7 @@ struct pool {
             _ponds.push_back(std::make_unique<char[]>(_n));
             _p = _ponds.back().get();
         }
-        size_t h = std::hash<std::string_view>{}(incoming);
+        const std::size_t h = string_view_hash(incoming);
         // Memory isn't aligned - need to memcpy to pack the data
         std::memcpy(_p, &sz, sizeof(uint32_t));
         std::memcpy(_p + sizeof(uint32_t), &h, sizeof(size_t));
@@ -97,7 +105,7 @@ pool_string empool(std::string_view src) {
     thread_local pool the_pool;
 
     // Is the string interned already?
-    const size_t h = std::hash<std::string_view>{}(src);
+    const std::size_t h = string_view_hash(src);
 
     auto found = keys.find(h);
     if (found != keys.end()) {

@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <functional>
 
 // application
 #include "orc/dwarf_constants.hpp"

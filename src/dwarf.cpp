@@ -188,11 +188,6 @@ struct file_name {
 
 /**************************************************************************************************/
 
-std::size_t die_hash(const die& d) {
-    bool is_declaration = d.has_attribute(dw::at::declaration) &&
-                          d.attribute_uint(dw::at::declaration) == 1;
-    return hash_combine(0, d._arch, d._tag, d._path.hash(), is_declaration);
-};
 
 /**************************************************************************************************/
 
@@ -1020,7 +1015,7 @@ void dwarf::implementation::process() {
             }
 
             die._ancestry = _ancestry;
-            die._hash = die_hash(die); // precompute the hash we'll use for the die map.
+            //die._hash = die_hash(die); // precompute the hash we'll use for the die map.
 
             dies.push_back(std::move(die));
         }

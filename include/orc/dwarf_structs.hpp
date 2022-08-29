@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <functional>
 
 // application
 #include "orc/dwarf_constants.hpp"
@@ -226,7 +227,6 @@ struct die {
     pool_string _path;
     attribute* _attributes{nullptr};
     die* _next_die{nullptr};
-    std::size_t _hash{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
     std::uint8_t _attributes_size{0};

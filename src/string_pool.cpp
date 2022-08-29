@@ -16,8 +16,13 @@
 #include <cassert>
 #include <unordered_map>
 
+// tbb
+#include <tbb/concurrent_unordered_map.h>
+
 // application
 #include "orc/features.hpp"
+
+#define SINGLE_POOL() 1
 
 /*static*/ std::string_view pool_string::default_view("");
 
@@ -94,6 +99,20 @@ pool_string empool(std::string_view src) {
         auto operator()(size_t key) const { return key;}
     };
 
+#if SINGLE_POOL()
+    static tbb::concurrent_unordered_map<size_t, const char*, pool_key_to_hash> keys;
+
+    const size_t h = std::hash<std::string_view>{}(src);
+    const auto it = keys.find(h);
+    if (it != keys.end()) {
+        return pool_string(it->second);
+    }
+
+    static pool the_pool;
+    static std::mutex poolMutex;
+    std::lock_guard<std::mutex> poolGuard(poolMutex);
+    
+#else
     thread_local std::unordered_multimap<size_t, const char*, pool_key_to_hash> keys;
     thread_local pool the_pool;
     
@@ -101,13 +120,16 @@ pool_string empool(std::string_view src) {
     const size_t h = std::hash<std::string_view>{}(src);
     
     const auto range = keys.equal_range(h);
+    int c = 0;
     for(auto it = range.first; it != range.second; ++it) {
+        c++;
         pool_string ps(it->second);
         if (ps.view() == src) {
             return ps;
         }
     }
-    
+    assert(c <= 1);
+#endif
     // Not already interned; empool it and add to the 'keys' 
     const char* ptr = the_pool.empool(src);
     keys.insert({{h, ptr}});

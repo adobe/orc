@@ -5,7 +5,9 @@
 // of the Adobe license agreement accompanying it.
 
 // identity
-#include "orc/fat.hpp"// application
+#include "orc/fat.hpp"
+
+// application
 #include "orc/mach_types.hpp"
 
 /**************************************************************************************************/
@@ -40,11 +42,16 @@ struct fat_arch_64 {
 
 const char* cputype_to_string(cpu_type_t cputype) {
     switch (cputype) {
-        case CPU_TYPE_X86: return "arch.x86";
-        case CPU_TYPE_ARM: return "arch.arm";
-        case CPU_TYPE_X86_64: return "arch.x86_64";
-        case CPU_TYPE_ARM64: return "arch.arm64";
-        case CPU_TYPE_ARM64_32: return "arch.arm64_32";
+        case CPU_TYPE_X86:
+            return "arch.x86";
+        case CPU_TYPE_ARM:
+            return "arch.arm";
+        case CPU_TYPE_X86_64:
+            return "arch.x86_64";
+        case CPU_TYPE_ARM64:
+            return "arch.arm64";
+        case CPU_TYPE_ARM64_32:
+            return "arch.arm64_32";
     }
 
     return "arch.unknown";
@@ -75,7 +82,7 @@ void read_fat(object_ancestry&& ancestry,
         std::size_t offset{0};
         std::size_t size{0};
         cpu_type_t cputype{0};
-    
+
         if (is_64_bit) {
             auto arch = read_pod<fat_arch_64>(s);
             if (details._needs_byteswap) {
@@ -103,11 +110,8 @@ void read_fat(object_ancestry&& ancestry,
         }
 
         temp_seek(s, offset, [&] {
-            parse_file(cputype_to_string(cputype),
-                       ancestry,
-                       s,
-                       s.tellg() + static_cast<std::streamoff>(size),
-                       callbacks);
+            parse_file(cputype_to_string(cputype), ancestry, s,
+                       s.tellg() + static_cast<std::streamoff>(size), callbacks);
         });
     }
 }

@@ -46,11 +46,12 @@ struct pool_string {
 
     bool empty() const { return _data == nullptr; }
 
+    explicit operator bool() const { return empty(); }
+
     std::string_view view() const {
         // a string_view is empty iff _data is a nullptr
         if (!_data) return default_view;
-        std::uint32_t size = get_size(_data);
-        return std::string_view(_data, size);
+        return std::string_view(_data, get_size(_data));
     }
     
     std::string allocate_string() const { 
@@ -61,9 +62,14 @@ struct pool_string {
         return std::filesystem::path(view()); 
     }
 
-    size_t hash() const {
+    std::size_t hash() const {
         if (!_data) return 0;
         return get_hash(_data);
+    }
+
+    std::size_t size() const {
+        if (!_data) return 0;
+        return get_size(_data);
     }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {

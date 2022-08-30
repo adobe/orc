@@ -14,15 +14,15 @@
 #include <fstream>
 #include <list>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <unordered_map>
-#include <set>
 
 // stlab
 #include <stlab/concurrency/default_executor.hpp>
 #include <stlab/concurrency/future.hpp>
-#include <stlab/concurrency/utility.hpp>
 #include <stlab/concurrency/serial_queue.hpp>
+#include <stlab/concurrency/utility.hpp>
 
 // toml++
 #include <toml++/toml.h>
@@ -31,7 +31,10 @@
 #include <tbb/concurrent_unordered_map.h>
 
 // application
+#include "orc/dwarf.hpp"
 #include "orc/features.hpp"
+#include "orc/macho.hpp"
+#include "orc/object_file_registry.hpp"
 #include "orc/parse_file.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
@@ -61,68 +64,8 @@ std::string_view path_to_symbol(std::string_view path) {
 }
 
 /**************************************************************************************************/
-
-template <class Container, class T>
-bool sorted_has(const Container& c, const T& x) {
-    auto found = std::lower_bound(c.begin(), c.end(), x);
-    return found != c.end() && *found == x;
-}
-
-/**************************************************************************************************/
-
-bool nonfatal_attribute(dw::at at) {
-    static const auto attributes = []{
-        std::vector<dw::at> nonfatal_attributes = {
-            dw::at::apple_block,
-            dw::at::apple_flags,
-            dw::at::apple_isa,
-            dw::at::apple_major_runtime_vers,
-            dw::at::apple_objc_complete_type,
-            dw::at::apple_objc_direct,
-            dw::at::apple_omit_frame_ptr,
-            dw::at::apple_optimized,
-            dw::at::apple_property,
-            dw::at::apple_property_attribute,
-            dw::at::apple_property_getter,
-            dw::at::apple_property_name,
-            dw::at::apple_property_setter,
-            dw::at::apple_runtime_class,
-            dw::at::apple_sdk,
-            dw::at::call_column,
-            dw::at::call_file,
-            dw::at::call_line,
-            dw::at::call_origin,
-            dw::at::call_return_pc,
-            dw::at::containing_type,
-            dw::at::decl_column,
-            dw::at::decl_file,
-            dw::at::decl_line,
-            dw::at::frame_base,
-            // According to section 2.17 of the DWARF spec, if high_pc is a constant (e.g., form
-            // data4) then its value is the size of the function. Likewise, its existence implies
-            // the function it describes is a contiguous block of code in the object file. Since we
-            // assume this attribute is of constant form, this is the size of the function. If two
-            // or more functions with the same name have different high_pc values, their sizes are
-            // different, which means their definitions are going to be different, and that's an
-            // ODRV.
-            // dw::at::high_pc,
-            dw::at::location,
-            dw::at::low_pc,
-            dw::at::name,
-            dw::at::prototyped,
-        };
-
-        std::sort(nonfatal_attributes.begin(), nonfatal_attributes.end());
-
-        return nonfatal_attributes;
-    }();
-
-    return sorted_has(attributes, at);
-}
-
-/**************************************************************************************************/
 bool type_equivalent(const attribute& x, const attribute& y);
-dw::at find_die_conflict(const die& x, const die& y) {
+dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
     auto yfirst = y.begin();
     auto ylast = y.end();
 
@@ -135,8 +78,10 @@ dw::at find_die_conflict(const die& x, const die& y) {
 
         const auto& yattr = *yfound;
 
-        if (name == dw::at::type && type_equivalent(xattr, yattr)) continue;
-        else if (xattr == yattr) continue;
+        if (name == dw::at::type && type_equivalent(xattr, yattr))
+            continue;
+        else if (xattr == yattr)
+            continue;
 
         return name;
     }
@@ -151,9 +96,6 @@ dw::at find_die_conflict(const die& x, const die& y) {
         if (xfound == xlast) return name;
     }
 
-    // REVISIT (fbrereto) : There may be some attributes left over in y; should we care?
-    // If they're not nonfatal attributes, we should...
-
     return dw::at::none; // they're "the same"
 }
 
@@ -163,80 +105,17 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
 
-    if (x.has(attribute_value::type::reference) &&
-        y.has(attribute_value::type::reference) &&
+    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference) &&
         x.reference() == y.reference()) {
         return true;
     }
 
-    if (x.has(attribute_value::type::string) &&
-        y.has(attribute_value::type::string) &&
+    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string) &&
         x.string_hash() == y.string_hash()) {
         return true;
     }
 
-    if (x.has(attribute_value::type::die) && y.has(attribute_value::type::die) &&
-        find_die_conflict(x.die(), y.die()) == dw::at::none) {
-        return true; // Should this change based on find_die_conflict's result?
-    }
-
     // Type mismatch.
-    return false;
-}
-
-/**************************************************************************************************/
-
-bool skip_tagged_die(const die& d) {
-    static const dw::tag skip_tags[] = {
-        dw::tag::compile_unit,
-        dw::tag::partial_unit,
-        dw::tag::variable,
-        dw::tag::formal_parameter,
-    };
-    static const auto first = std::begin(skip_tags);
-    static const auto last = std::end(skip_tags);
-
-    return std::find(first, last, d._tag) != last;
-}
-
-/**************************************************************************************************/
-
-bool skip_die(const dies& dies, die& d, const std::string_view& symbol) {
-    // These are a handful of "filters" we use to elide false positives.
-
-    // These are the tags we don't deal with (yet, if ever.)
-    if (skip_tagged_die(d)) return true;
-
-    // According to DWARF 3.3.1, a subprogram tag that is missing the external
-    // flag means the function is invisible outside its compilation unit. As
-    // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !d.has_attribute(dw::at::external)) return true;
-
-    // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
-    // them.
-    if (d._path.empty()) return true;
-
-    // Symbols with __ in them are reserved, so are not user-defined. No need to register
-    // them.
-    if (d._path.view().find("::__") != std::string::npos) return true;
-
-    // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.view().find("lambda") != std::string::npos) return true;
-
-    // we don't handle any die that's ObjC-based.
-    if (d.has_attribute(dw::at::apple_runtime_class)) return true;
-
-    // If the symbol is listed in the symbol_ignore list, we're done here.
-    if (sorted_has(settings::instance()._symbol_ignore, symbol)) return true;
-
-    // Unfortunately we have to do this work to see if we're dealing with
-    // a self-referential type.
-    if (d.has_attribute(dw::at::type)) {
-        const auto& type = d.attribute(dw::at::type);
-        // if this is a self-referential type, it's die will have no attributes.
-        if (type.die()._attributes_size == 0) return true;
-    }
-
     return false;
 }
 
@@ -249,7 +128,7 @@ void update_progress() {
     std::size_t total = globals::instance()._die_processed_count;
     std::size_t percentage = static_cast<double>(done) / total * 100;
 
-    cout_safe([&](auto& s){
+    cout_safe([&](auto& s) {
         s << '\r' << done << "/" << total << "  " << percentage << "%; ";
         s << globals::instance()._odrv_count << " violation(s) found";
         s << "          "; // 10 spaces of overprint to clear out any previous lingerers
@@ -296,7 +175,7 @@ void register_dies(dies die_vector) {
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
     // pointers we use will stay valid for the lifetime of the application.
-    dies& dies = *with_global_die_collection([&](auto& collection){
+    dies& dies = *with_global_die_collection([&](auto& collection) {
         collection.push_back(std::move(die_vector));
         return --collection.end();
     });
@@ -304,19 +183,9 @@ void register_dies(dies die_vector) {
     globals::instance()._die_processed_count += dies.size();
 
     for (auto& d : dies) {
-        // save for debugging. Useful to watch for a specific symbol.
+        if (d._skippable) continue;
 #if 0
-        if (d._path == "::[u]::_ZNK14example_vtable6object3apiEv") {
-            int x;
-            (void)x;
-        }
-#endif
-
-        auto symbol = path_to_symbol(d._path.view());
-        auto should_skip = skip_die(dies, d, symbol);
-
         if (settings::instance()._print_symbol_paths) {
-#if 0
             // This is all horribly broken, especially now that we're calling this from multiple threads.
             static pool_string last_object_file_s;
 
@@ -331,10 +200,8 @@ void register_dies(dies die_vector) {
                 s.fill('0');
                 s << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
             });
-#endif
         }
-
-        if (should_skip) continue;
+#endif
 
         //
         // At this point we know we're going to register the die. Hereafter belongs
@@ -343,7 +210,7 @@ void register_dies(dies die_vector) {
 
         auto result = global_die_map().insert(std::make_pair(d._hash, &d));
         if (result.second) {
-            ++globals::instance()._die_registered_count;
+            ++globals::instance()._unique_symbol_count;
             continue;
         }
 
@@ -375,16 +242,16 @@ struct work_counter {
     struct state {
         void increment() {
             {
-            std::lock_guard<std::mutex> lock(_m);
-            ++_n;
+                std::lock_guard<std::mutex> lock(_m);
+                ++_n;
             }
             _c.notify_all();
         }
 
         void decrement() {
             {
-            std::lock_guard<std::mutex> lock(_m);
-            --_n;
+                std::lock_guard<std::mutex> lock(_m);
+                --_n;
             }
             _c.notify_all();
         }
@@ -392,7 +259,7 @@ struct work_counter {
         void wait() {
             std::unique_lock<std::mutex> lock(_m);
             if (_n == 0) return;
-            _c.wait(lock, [&]{ return _n == 0; });
+            _c.wait(lock, [&] { return _n == 0; });
         }
 
         std::mutex _m;
@@ -409,9 +276,12 @@ public:
 
     struct token {
         token(shared_state w) : _w(std::move(w)) { _w->increment(); }
-        token(const token& t) : _w{t._w}  { _w->increment(); }
+        token(const token& t) : _w{t._w} { _w->increment(); }
         token(token&& t) = default;
-        ~token() { if (_w) _w->decrement(); }
+        ~token() {
+            if (_w) _w->decrement();
+        }
+
     private:
         shared_state _w;
     };
@@ -436,18 +306,14 @@ auto& work() {
 
 /**************************************************************************************************/
 
-void do_work(std::function<void()> f){
-    auto doit = [](auto&& f){
+void do_work(std::function<void()> f) {
+    auto doit = [](auto&& f) {
         try {
             f();
         } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) {
-                s << error.what() << '\n';
-            });
+            cerr_safe([&](auto& s) { s << error.what() << '\n'; });
         } catch (...) {
-            cerr_safe([&](auto& s) {
-                s << "unknown exception caught" << '\n';
-            });
+            cerr_safe([&](auto& s) { s << "unknown exception caught" << '\n'; });
         }
     };
 
@@ -458,9 +324,7 @@ void do_work(std::function<void()> f){
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
-        _doit(_f);
-    });
+    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] { _doit(_f); });
 }
 
 /**************************************************************************************************/
@@ -469,42 +333,66 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 
 /**************************************************************************************************/
 
-} // namespace
+attribute_sequence fetch_attributes_for_die(const die& d) {
+    auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
 
-/**************************************************************************************************/
-
-std::string odrv_report::category() const {
-    return to_string(_list_head->_tag) + std::string(":") + to_string(_name);
+    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
+    assert(die._tag == d._tag);
+    assert(die._arch == d._arch);
+    assert(die._has_children == d._has_children);
+    assert(die._debug_info_offset == d._debug_info_offset);
+    return std::move(attributes);
 }
 
 /**************************************************************************************************/
 
-std::size_t fatal_attribute_hash(const die& d) {
-    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
-    // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    std::vector<dw::at> names;
-    for (const auto& attr : d) {
-        if (nonfatal_attribute(attr._name)) continue;
-        names.push_back(attr._name);
-    }
-    std::sort(names.begin(), names.end());
+} // namespace
 
-    std::size_t h{0};
-    for (const auto& name : names) {
-        h = hash_combine(h, d.attribute(name)._value.hash());
+/**************************************************************************************************/
+
+odrv_report::odrv_report(std::string_view symbol, const die* list_head)
+    : _symbol(symbol), _list_head(list_head) {
+    assert(_list_head->_conflict);
+
+    // Construct a map of unique definitions of the conflicting symbol.
+
+    if (_conflict_map.empty()) {
+        for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
+            std::size_t hash = next_die->_fatal_attribute_hash;
+            if (_conflict_map.count(hash)) continue;
+            conflict_details details;
+            details._die = next_die;
+            details._attributes = fetch_attributes_for_die(*details._die);
+            _conflict_map[hash] = std::move(details);
+        }
     }
-    return h;
+
+    assert(_conflict_map.size() > 1);
+
+    // Derive the ODRV category.
+
+    auto& front = _conflict_map.begin()->second;
+    auto& back = (--_conflict_map.end())->second;
+    _name = find_attribute_conflict(front._attributes, back._attributes);
+}
+
+/**************************************************************************************************/
+
+std::string odrv_report::category() const {
+    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") +
+           to_string(_name);
 }
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    auto& settings = settings::instance();
-    std::string odrv_category(report.category());
-    bool do_report{true};
+    std::string odrv_category = report.category();
 
-    assert(report._list_head->_conflict);
+    // Decide if we should report or ignore.
+
+    auto& settings = settings::instance();
+    bool do_report{true};
 
     if (!settings._violation_ignore.empty()) {
         // Report everything except the stuff on the ignore list
@@ -516,21 +404,12 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
     if (!do_report) return s;
 
-    // Construct a map of unique definitions of the conflicting symbol.
-
-    std::map<std::size_t, const die*> conflict_map;
-    for (const die* next_die = report._list_head; next_die; next_die = next_die->_next_die) {
-        std::size_t hash = fatal_attribute_hash(*next_die);
-        if (conflict_map.count(hash)) continue;
-        conflict_map[hash] = next_die;
-    }
-
     // Output the report
 
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
-    for (const auto& entry : conflict_map) {
-        s << *entry.second << '\n';
+    for (const auto& entry : report.conflict_map()) {
+        s << (*entry.second._die) << entry.second._attributes << '\n';
     }
     s << "\n";
 
@@ -548,53 +427,60 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 
 /**************************************************************************************************/
 
-void enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results)
-{
+die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     std::vector<die*> dies;
-    for(die* ptr = base; ptr; ptr = ptr->_next_die) {
+    for (die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);
     }
     assert(!dies.empty());
-    if (dies.size() == 1)
-        return;
+    if (dies.size() == 1) return base;
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
     // and the ancestry is unique.
-    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b){
-        return a->_ancestry < b->_ancestry;
+    std::sort(dies.begin(), dies.end(), [](const die* a, const die* b) {
+        return object_file_ancestry(a->_ofd_index) < object_file_ancestry(b->_ofd_index);
     });
 
-    dw::at conflict = dw::at::none;
-    for(size_t i=1; i<dies.size(); ++i) {
+    bool conflict{false};
+    for (size_t i = 1; i < dies.size(); ++i) {
         // Re-link the die list to match the sorted order.
-        dies[i-1]->_next_die = dies[i];
+        dies[i - 1]->_next_die = dies[i];
 
-        if (conflict == dw::at::none) {
-            conflict = find_die_conflict(*dies[0], *dies[i]);
+        if (!conflict) {
+            conflict = dies[i - 1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
         }
     }
     dies.back()->_next_die = nullptr;
 
-    if (conflict != dw::at::none) {
-        dies[0]->_conflict = true;
-        std::string_view symbol = path_to_symbol(base->_path.view());
+    if (!conflict) return dies.front();
 
-        odrv_report report{
-            symbol, dies[0], conflict
-        
-        };
+    dies[0]->_conflict = true;
 
-        static std::mutex result_mutex;
-        std::lock_guard<std::mutex> lock(result_mutex);
-        results.push_back(report);
+    odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
+
+    static std::mutex result_mutex;
+    std::lock_guard<std::mutex> lock(result_mutex);
+    results.push_back(report);
+
+    return dies.front();
+}
+
+/**************************************************************************************************/
+
+auto unique_symbol_die_count() {
+    std::size_t count{0};
+    for (const auto& entry : global_die_map()) {
+        for (const die* ptr = entry.second; ptr; ptr = ptr->_next_die) {
+            ++count;
+        }
     }
+    return count;
 }
 
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
-
     // First stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
@@ -606,34 +492,31 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
             callbacks callbacks = {
                 register_dies,
                 do_work,
-                empool,
             };
 
-            parse_file(_input_path.string(),
-                       object_ancestry(),
-                       input,
-                       input.size(),
+            parse_file(_input_path.string(), object_ancestry(), input, input.size(),
                        std::move(callbacks));
         });
     }
 
     work().wait();
 
+    globals::instance()._unique_symbol_die_count = unique_symbol_die_count();
+
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
 
-    for(auto& entry : global_die_map()) {
-        die* base = entry.second;
-        do_work([base, &result] {
-            enforce_odrv_for_die_list(base, result);
+    for (auto& entry : global_die_map()) {
+        do_work([&entry, &result]() mutable {
+            entry.second = enforce_odrv_for_die_list(entry.second, result);
         });
     }
+
     work().wait();
 
     // Sort the ordrv_report
-    std::sort(result.begin(), result.end(), [](const odrv_report& a, const odrv_report& b) {
-        return a._symbol < b._symbol;
-    });
+    std::sort(result.begin(), result.end(),
+              [](const odrv_report& a, const odrv_report& b) { return a._symbol < b._symbol; });
 
     return result;
 }
@@ -642,9 +525,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
 void orc_reset() {
     global_die_map().clear();
-    with_global_die_collection([](auto& collection){
-        collection.clear();
-    });
+    with_global_die_collection([](auto& collection) { collection.clear(); });
 }
 
 /**************************************************************************************************/

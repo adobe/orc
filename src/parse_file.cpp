@@ -102,7 +102,7 @@ auto mmap_file(const std::filesystem::path& p) {
     void* ptr = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
     if (ptr == MAP_FAILED) return result_type();
-    auto deleter = [_sz = size](char* x){ munmap(x, _sz); };
+    auto deleter = [_sz = size](void* x) { munmap(x, _sz); };
     return result_type(static_cast<char*>(ptr), std::move(deleter));
 }
 
@@ -118,7 +118,8 @@ std::uint32_t uleb128(freader& s) {
 
     while (true) {
         auto c = s.get();
-        if (shift < 32) // shifts above 32 on uint32_t are undefined, but the s.get() needs to continue.
+        if (shift <
+            32) // shifts above 32 on uint32_t are undefined, but the s.get() needs to continue.
             result |= (c & 0x7f) << shift;
         if (!(c & 0x80)) return result;
         shift += 7;
@@ -145,7 +146,7 @@ std::int32_t sleb128(freader& s) {
     constexpr auto size_k{sizeof(result) * 8};
 
     if (sign && shift < size_k) {
-        result |= - (1 << shift);
+        result |= -(1 << shift);
     }
 
     return result;
@@ -162,26 +163,26 @@ void parse_file(std::string_view object_name,
 
     // append this object name to the ancestry
     object_ancestry new_ancestry = ancestry;
-    new_ancestry.emplace_back(callbacks._empool(object_name));
+    new_ancestry.emplace_back(empool(object_name));
 
     switch (detection._format) {
         case file_details::format::unknown:
             throw std::runtime_error("unknown format");
         case file_details::format::macho:
-            return read_macho(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
+            return read_macho(std::move(new_ancestry), s, end_pos, std::move(detection),
+                              std::move(callbacks));
         case file_details::format::ar:
-            return read_ar(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
+            return read_ar(std::move(new_ancestry), s, end_pos, std::move(detection),
+                           std::move(callbacks));
         case file_details::format::fat:
-            return read_fat(std::move(new_ancestry), s, end_pos, std::move(detection), std::move(callbacks));
+            return read_fat(std::move(new_ancestry), s, end_pos, std::move(detection),
+                            std::move(callbacks));
     }
 }
 
 /**************************************************************************************************/
 
-freader::freader(const std::filesystem::path& p) :
-    _buffer(mmap_file(p)),
-    _f(_buffer.get()),
-    _p(_f),
-    _l(_p + std::filesystem::file_size(p)) {}
+freader::freader(const std::filesystem::path& p)
+    : _buffer(mmap_file(p)), _f(_buffer.get()), _p(_f), _l(_p + std::filesystem::file_size(p)) {}
 
 /**************************************************************************************************/

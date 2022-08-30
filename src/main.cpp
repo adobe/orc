@@ -11,15 +11,15 @@
 #include <fstream>
 #include <list>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <unordered_map>
-#include <set>
 
 // stlab
 #include <stlab/concurrency/default_executor.hpp>
 #include <stlab/concurrency/future.hpp>
-#include <stlab/concurrency/utility.hpp>
 #include <stlab/concurrency/serial_queue.hpp>
+#include <stlab/concurrency/utility.hpp>
 
 // toml++
 #include <toml++/toml.h>
@@ -149,7 +149,7 @@ void process_orc_config_file(const char* bin_path_string) {
                 }
             }
 
-            auto read_string_list = [&_settings = settings](const char* name){
+            auto read_string_list = [&_settings = settings](const char* name) {
                 std::vector<std::string> result;
                 if (auto* array = _settings.get_as<toml::array>(name)) {
                     for (const auto& entry : *array) {
@@ -175,7 +175,7 @@ void process_orc_config_file(const char* bin_path_string) {
                     });
                 }
             }
-                
+
 
             if (log_level_at_least(settings::log_level::info)) {
                 cout_safe([&](auto& s){
@@ -200,7 +200,7 @@ void process_orc_config_file(const char* bin_path_string) {
 auto derive_filelist_file_list(const std::filesystem::path& filelist) {
     std::vector<std::filesystem::path> result;
     std::ifstream input(filelist, std::ios::binary);
-    
+
     if (!input) throw std::runtime_error("problem opening filelist for reading");
 
     static constexpr auto buffer_sz{1024};
@@ -209,8 +209,7 @@ auto derive_filelist_file_list(const std::filesystem::path& filelist) {
     // The link file list contains object files, one per line.
     while (input) {
         input.getline(&buffer[0], buffer_sz);
-        if (strnlen(&buffer[0], 1024))
-            result.push_back(&buffer[0]);
+        if (strnlen(&buffer[0], 1024)) result.push_back(&buffer[0]);
     }
 
     return result;
@@ -228,9 +227,8 @@ auto find_artifact(std::string_view type,
     }
 
     if (log_level_at_least(settings::log_level::warning)) {
-        cout_safe([&](auto& s){
-            s << "warning: Could not find " << type << " '" << artifact << "'\n";
-        });
+        cout_safe(
+            [&](auto& s) { s << "warning: Could not find " << type << " '" << artifact << "'\n"; });
     }
 
     return std::filesystem::path();
@@ -370,7 +368,6 @@ auto process_command_line(int argc, char** argv) {
 /**************************************************************************************************/
 
 auto epilogue(bool exception) {
-
     const auto& g = globals::instance();
 
     // If we were showing progress this session, take all the stored up ODRVs and output them
@@ -382,13 +379,15 @@ auto epilogue(bool exception) {
         // });
     }
 
-    if (log_level_at_least(settings::log_level::info)) {
-        cout_safe([&](auto& s){
-            s << "info: ORC complete.\n"
-              << "info:   " << g._odrv_count << " ODRVs reported\n"
-              << "info:   " << g._object_file_count << " compilation units processed\n"
-              << "info:   " << g._die_processed_count << " dies processed\n"
-              << "info:   " << g._die_registered_count << " dies registered\n";
+    if (log_level_at_least(settings::log_level::warning)) {
+        cout_safe([&](auto& s) {
+            s << "ORC complete.\n"
+              << "  " << g._odrv_count << " ODRVs reported\n"
+              << "  " << g._object_file_count << " compilation units processed\n"
+              << "  " << g._die_processed_count << " dies processed\n"
+              << "  " << g._unique_symbol_count << " unique symbols registered\n"
+              << "  " << g._unique_symbol_die_count << " unique symbol dies\n"
+              ;
         });
     }
 
@@ -413,10 +412,10 @@ auto interrupt_callback_handler(int signum) {
 /**************************************************************************************************/
 
 void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdline) {
-
     if (!settings::instance()._forward_to_linker) return;
 
-    std::filesystem::path executable_path = rstrip(exec("xcode-select -p")) + "/Toolchains/XcodeDefault.xctoolchain/usr/bin/";
+    std::filesystem::path executable_path =
+        rstrip(exec("xcode-select -p")) + "/Toolchains/XcodeDefault.xctoolchain/usr/bin/";
 
     if (cmdline._ld_mode) {
         if (settings::instance()._standalone_mode) {

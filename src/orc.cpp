@@ -34,6 +34,7 @@
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
+#include "orc/memory.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/parse_file.hpp"
 #include "orc/settings.hpp"
@@ -138,13 +139,8 @@ void update_progress() {
 /**************************************************************************************************/
 
 auto& unsafe_global_die_collection() {
-#if ORC_FEATURE(LEAKY_MEMORY)
-    static std::list<dies>* collection_s = new std::list<dies>;
-    return *collection_s;
-#else
-    static std::list<dies> collection_s;
+    static decltype(auto) collection_s = orc::make_leaky<std::list<dies>>();
     return collection_s;
-#endif
 }
 
 template <class F>
@@ -157,15 +153,8 @@ auto with_global_die_collection(F&& f) {
 /**************************************************************************************************/
 
 auto& global_die_map() {
-    using map_type = tbb::concurrent_unordered_map<std::size_t, die*>;
-
-#if ORC_FEATURE(LEAKY_MEMORY)
-    static map_type* map_s = new map_type;
-    return *map_s;
-#else
-    static map_type map_s;
+    static decltype(auto) map_s = orc::make_leaky<tbb::concurrent_unordered_map<std::size_t, die*>>();
     return map_s;
-#endif
 }
 
 /**************************************************************************************************/
@@ -467,7 +456,7 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 }
 
 /**************************************************************************************************/
-
+#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
 auto unique_symbol_die_count() {
     std::size_t count{0};
     for (const auto& entry : global_die_map()) {
@@ -477,7 +466,7 @@ auto unique_symbol_die_count() {
     }
     return count;
 }
-
+#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
@@ -501,7 +490,9 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
+#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
     globals::instance()._unique_symbol_die_count = unique_symbol_die_count();
+#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
 
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;

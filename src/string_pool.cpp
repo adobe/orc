@@ -22,8 +22,9 @@
 // application
 #include "orc/features.hpp"
 #include "orc/hash.hpp"
+#include "orc/memory.hpp"
 
-#define ORC_PRIVATE_FEATURE_SINGLE_POOL() 1
+#define ORC_PRIVATE_FEATURE_SINGLE_POOL() 0
 
 /*static*/ std::string_view pool_string::default_view("");
 
@@ -49,7 +50,7 @@ std::size_t string_view_hash(std::string_view s) {
 struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
-    std::vector<std::unique_ptr<char[]>> _ponds;
+    std::vector<std::unique_ptr<char[]>> _ponds; // don't leak this; the pool itself is leaked
 
     const char* empool(std::string_view incoming) {
         constexpr auto default_min_k = 16 * 1024 * 1024; // 16MB
@@ -102,49 +103,30 @@ pool_string empool(std::string_view src) {
     // default_view would be returned.)
     if (src.empty()) return pool_string(nullptr);
 
-#if ORC_FEATURE(SINGLE_POOL)
-    static tbb::concurrent_unordered_map<size_t, const char*> keys;
+    const std::size_t h = string_view_hash(src);
 
-    const size_t h = std::hash<std::string_view>{}(src);
+#if ORC_FEATURE(SINGLE_POOL)
+    static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
     const auto it0 = keys.find(h);
     if (it0 != keys.end()) {
         return pool_string(it0->second);
     }
 
-    static pool the_pool;
+    static decltype(auto) the_pool = orc::make_leaky<pool>();
     static std::mutex poolMutex;
     std::lock_guard<std::mutex> poolGuard(poolMutex);
 
-    // The goal here is to keep multiple threads from "safely racing" and inserting the same string
-    // more than once. There are a handful of paths through this code to get right.
-    //
-    // 0) We were _not_ racing another thread, and won the lock.
-    //     - In this case we empool the string.
-    // 1) We were racing another thread, and won the lock.
-    //     a) We initially lost, actually, but they were able to complete the insert before our
-    //        try_lock was called, so another thread has inserted the string, then we won the lock.
-    //         - In this case we need to re-search, and empool if not found.
-    //     b) We won outright, and the string has yet to be inserted.
-    //         - In this case we need to empool the string.
-    // 2) We were racing another thread, and lost the lock.
-    //     - In this case we do not know if the winner was inserting the same string or not.
-    //       Therefore, we need to block the current thread until we have acquired the lock, then
-    //       re-search and possibly empool the string if it is not found.
-    //
-    // Thus, the general strategy is to block the thread until the lock is acquired, then
-    // perform _another_ search for the same string, and empool a new string if it is not found.
-
+    // Now that we have the lock, do the search again in case another thread empooled the string
+    // while we were waiting for the lock.
     const auto it1 = keys.find(h);
     if (it1 != keys.end()) {
         return pool_string(it1->second);
     }
 #else
-    thread_local std::unordered_map<size_t, const char*> keys;
+    thread_local decltype(auto) keys = orc::make_leaky<std::unordered_map<size_t, const char*>>();
     thread_local pool the_pool;
 
     // Is the string interned already?
-    const std::size_t h = string_view_hash(src);
-
     auto found = keys.find(h);
     if (found != keys.end()) {
         return pool_string(found->second);

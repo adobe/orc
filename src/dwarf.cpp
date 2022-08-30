@@ -192,7 +192,11 @@ struct file_name {
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     bool is_declaration =
         attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
-    return orc::hash_combine(0, d._arch, d._tag, d._path.hash(), is_declaration);
+    return orc::hash_combine(0,
+                             static_cast<std::size_t>(d._arch),
+                             static_cast<std::size_t>(d._tag),
+                             d._path.hash(),
+                             is_declaration);
 };
 
 /**************************************************************************************************/

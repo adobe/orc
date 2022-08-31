@@ -103,7 +103,6 @@ pool_string empool(std::string_view src) {
 
     const std::size_t h = string_view_hash(src);
 
-#if ORC_FEATURE(SINGLE_POOL)
     static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
     constexpr int pool_count_k = 23;
 
@@ -143,20 +142,7 @@ pool_string empool(std::string_view src) {
     const char* ptr = the_pool[index].empool(src);
     assert(ptr);
     keys[h] = ptr;
-#else
-    thread_local decltype(auto) keys = orc::make_leaky<std::unordered_map<size_t, const char*>>();
-    thread_local pool the_pool;
 
-    // Is the string interned already?
-    auto found = keys.find(h);
-    if (found != keys.end()) {
-        return pool_string(found->second);
-    }
-    // Not already interned; empool it and add to the 'keys'
-    const char* ptr = the_pool.empool(src);
-    assert(ptr);
-    keys[h] = ptr;
-#endif // ORC_FEATURE(SINGLE_POOL)
     return pool_string(ptr);
 }
 

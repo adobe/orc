@@ -14,8 +14,6 @@
 
 #include "orc/features.hpp"
 
-#define ORC_PRIVATE_FEATURE_SINGLE_POOL() 1
-
 /**************************************************************************************************/
 
 struct pool_string;
@@ -78,13 +76,9 @@ struct pool_string {
     }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {
-#if ORC_FEATURE(SINGLE_POOL)
         bool equal = x._data == y._data;
         assert(equal == (x.view() == y.view()));
         return equal;
-#else
-        return x._data == y._data || x.view() == y.view();
-#endif
     }
 
     friend inline bool operator!=(const pool_string& x, const pool_string& y) {

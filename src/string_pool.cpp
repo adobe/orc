@@ -95,23 +95,6 @@ std::size_t pool_string::get_hash(const char* d) {
     return h;
 }
 
-#if ORC_FEATURE(SINGLE_POOL)
-
-const char* find_key(const tbb::concurrent_unordered_map<size_t, const char*>& keys, size_t h)
-{
-    // This code doesn't work because there's a race condition where end() can change.
-    // const auto it0 = keys.find(h);
-    // if (it0 != keys.end()) {
-
-    // But we never remove from the map, so if contains(), it is guaraneteed to find()
-    if (keys.contains(h)) {
-        return keys.find(h)->second;
-    }
-    return nullptr;
-}
-
-#endif
-
 pool_string empool(std::string_view src) {
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
@@ -121,15 +104,25 @@ pool_string empool(std::string_view src) {
     const std::size_t h = string_view_hash(src);
 
 #if ORC_FEATURE(SINGLE_POOL)
+    static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
     constexpr int pool_count_k = 23;
-    //static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
-    static tbb::concurrent_unordered_map<size_t, const char*> keys[pool_count_k];
+
+    auto find_key = [](const auto& keys, size_t h) -> const char* {
+        // This code doesn't work because there's a race condition where end() can change.
+        // const auto it0 = keys.find(h);
+        // if (it0 != keys.end()) {
+
+        // But we never remove from the map, so if contains(), it is guaraneteed to find()
+        if (keys.contains(h)) {
+            return keys.find(h)->second;
+        }
+        return nullptr;
+    };
 
     const int index = std::uint64_t(h) % pool_count_k;
-    
-    const char* c0 = find_key(keys[index], h);
-    if (c0) {
-        pool_string ps(c0);
+
+    if (const char* c = find_key(keys, h)) {
+        pool_string ps(c);
         assert(ps.view() == src);
         return ps;
     }
@@ -140,16 +133,16 @@ pool_string empool(std::string_view src) {
 
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
-    const char* c1 = find_key(keys[index], h);
-    if (c1) {
-        pool_string ps(c1);
+    if (const char* c = find_key(keys, h)) {
+        pool_string ps(c);
         assert(ps.view() == src);
         return ps;
     }
+
     // Not already interned; empool it and add to the 'keys'
     const char* ptr = the_pool[index].empool(src);
     assert(ptr);
-    keys[index][h] = ptr;
+    keys[h] = ptr;
 #else
     thread_local decltype(auto) keys = orc::make_leaky<std::unordered_map<size_t, const char*>>();
     thread_local pool the_pool;

@@ -33,7 +33,7 @@ namespace orc {
 // }
 
 template <class T>
-inline std::size_t hash_combine(std::size_t seed, const T& x) {
+inline std::size_t hash_combine(std::size_t seed, T x) {
     // This is the terminating hash_combine call when there's only one item left to hash into the
     // seed. It also serves as the combiner the other routine variant uses to generate its new
     // seed.

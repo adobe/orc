@@ -48,7 +48,12 @@ std::size_t string_view_hash(std::string_view s) {
 struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
-    std::vector<std::unique_ptr<char[]>> _ponds; // don't leak this; the pool itself is leaked
+    using ponds_type = std::vector<std::unique_ptr<char[]>>;
+#if ORC_FEATURE(LEAKY_MEMORY)
+    ponds_type& _ponds{orc::make_leaky<ponds_type>()};
+#else
+    ponds_type _ponds{orc::make_leaky<ponds_type>()};
+#endif // ORC_FEATURE(LEAKY_MEMORY)
 
     const char* empool(std::string_view incoming) {
         constexpr auto default_min_k = 16 * 1024 * 1024; // 16MB
@@ -101,12 +106,11 @@ pool_string empool(std::string_view src) {
     // default_view would be returned.)
     if (src.empty()) return pool_string(nullptr);
 
+    static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
+
     const std::size_t h = string_view_hash(src);
 
-    static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
-    constexpr int pool_count_k = 23;
-
-    auto find_key = [](const auto& keys, size_t h) -> const char* {
+    auto find_key = [&](size_t h) -> const char* {
         // This code doesn't work because there's a race condition where end() can change.
         // const auto it0 = keys.find(h);
         // if (it0 != keys.end()) {
@@ -118,28 +122,29 @@ pool_string empool(std::string_view src) {
         return nullptr;
     };
 
-    const int index = std::uint64_t(h) % pool_count_k;
-
-    if (const char* c = find_key(keys, h)) {
+    if (const char* c = find_key(h)) {
         pool_string ps(c);
         assert(ps.view() == src);
         return ps;
     }
 
-    static pool the_pool[pool_count_k];
-    static std::mutex poolMutex[pool_count_k];
-    std::lock_guard<std::mutex> poolGuard(poolMutex[index]);
+    constexpr int pool_count_k = 23;
+    static std::mutex pool_mutex[pool_count_k];
+    const int index = h % pool_count_k;
+    std::lock_guard<std::mutex> pool_guard(pool_mutex[index]);
 
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
-    if (const char* c = find_key(keys, h)) {
+    if (const char* c = find_key(h)) {
         pool_string ps(c);
         assert(ps.view() == src);
         return ps;
     }
 
     // Not already interned; empool it and add to the 'keys'
-    const char* ptr = the_pool[index].empool(src);
+    // The pools are not threadsafe, so we need one per mutex
+    static pool pools[pool_count_k];
+    const char* ptr = pools[index].empool(src);
     assert(ptr);
     keys[h] = ptr;
 

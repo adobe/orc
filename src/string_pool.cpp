@@ -146,7 +146,7 @@ pool_string empool(std::string_view src) {
     static pool pools[pool_count_k];
     const char* ptr = pools[index].empool(src);
     assert(ptr);
-    keys[h] = ptr;
+    keys.insert(std::make_pair(h, ptr));
 
     return pool_string(ptr);
 }

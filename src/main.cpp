@@ -386,7 +386,9 @@ auto epilogue(bool exception) {
               << "  " << g._object_file_count << " compilation units processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
               << "  " << g._unique_symbol_count << " unique symbols registered\n"
+#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
               << "  " << g._unique_symbol_die_count << " unique symbol dies\n"
+#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
               ;
         });
     }

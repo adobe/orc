@@ -12,6 +12,10 @@
 #include <string_view>
 #include <filesystem>
 
+#include "orc/features.hpp"
+
+#define ORC_PRIVATE_FEATURE_SINGLE_POOL() 1
+
 /**************************************************************************************************/
 
 struct pool_string;
@@ -27,13 +31,14 @@ pool_string empool(std::string_view src);
 
 /*
     A pool_string is an interned string. Once created, the pointer `_data` is immutable for the
-    life of the application. This has some useful properties.
+    life of the application. All the pool_strings are stored in one pool, so they are unique.
+    This has some useful properties.
 
     * A `pool_string` is one pointer in size
     * A `pool_string` is thread safe
-    * Two `pool_strings` pointing to the same `_data` are always equal.
-    * Becaues `pool_strings` can be in different pools, if the `_data` members are different, they may still be equal
-    * `_data` is a char* to null terminated data, which is just a c string. Useful for debugging. 
+    * Two `pool_strings` pointing to the same `_data` are always equal, and if the `_data` is different,
+      they are not equal.<
+    * `_data` is a char* to null terminated data, which is just a c string. Useful for debugging.
     * if `_data` is null, it is intepreted as an empty string (""). If `_data` is not-null, it always is size() > 0
     
     When empooled, the hash (64 bits) and size/length (32 bits) are stored before the char* to the data.
@@ -73,7 +78,13 @@ struct pool_string {
     }
 
     friend inline bool operator==(const pool_string& x, const pool_string& y) {
+#if ORC_FEATURE(SINGLE_POOL)
+        bool equal = x._data == y._data;
+        assert(equal == (x.view() == y.view()));
+        return equal;
+#else
         return x._data == y._data || x.view() == y.view();
+#endif
     }
 
     friend inline bool operator!=(const pool_string& x, const pool_string& y) {

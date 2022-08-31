@@ -22,8 +22,7 @@
 // application
 #include "orc/features.hpp"
 #include "orc/hash.hpp"
-
-#define SINGLE_POOL() 1
+#include "orc/memory.hpp"
 
 /*static*/ std::string_view pool_string::default_view("");
 
@@ -39,14 +38,6 @@ std::size_t string_view_hash(std::string_view s) {
 
 /**************************************************************************************************/
 
-static int64_t counter = 0;
-struct Outputter {
-    ~Outputter() {
-        printf("Count=%lld\n", counter);
-    }
-};
-static Outputter outputter;
-
 // Data is backed and not aligned.
 // Before the _data pointer:
 //      'uint32_t' length of string
@@ -57,7 +48,7 @@ static Outputter outputter;
 struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
-    std::vector<std::unique_ptr<char[]>> _ponds;
+    std::vector<std::unique_ptr<char[]>> _ponds; // don't leak this; the pool itself is leaked
 
     const char* empool(std::string_view incoming) {
         constexpr auto default_min_k = 16 * 1024 * 1024; // 16MB
@@ -104,59 +95,75 @@ std::size_t pool_string::get_hash(const char* d) {
     return h;
 }
 
+#if ORC_FEATURE(SINGLE_POOL)
+
+const char* find_key(const tbb::concurrent_unordered_map<size_t, const char*>& keys, size_t h)
+{
+    // This code doesn't work because there's a race condition where end() can change.
+    // const auto it0 = keys.find(h);
+    // if (it0 != keys.end()) {
+
+    // But we never remove from the map, so if contains(), it is guaraneteed to find()
+    if (keys.contains(h)) {
+        return keys.find(h)->second;
+    }
+    return nullptr;
+}
+
+#endif
+
 pool_string empool(std::string_view src) {
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
     // default_view would be returned.)
     if (src.empty()) return pool_string(nullptr);
 
-    struct pool_key_to_hash {
-        auto operator()(size_t key) const { return key; }
-    };
+    const std::size_t h = string_view_hash(src);
 
-#if SINGLE_POOL()
-    static tbb::concurrent_unordered_map<size_t, const char*, pool_key_to_hash> keys;
+#if ORC_FEATURE(SINGLE_POOL)
+    constexpr int pool_count_k = 23;
+    //static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
+    static tbb::concurrent_unordered_map<size_t, const char*> keys[pool_count_k];
 
-    const size_t h = string_view_hash(src);
-    {
-        const auto it = keys.find(h);
-        if (it != keys.end()) {
-            return pool_string(it->second);
-        }
-    }
-    static pool the_pool;
-    static std::mutex poolMutex;
-    std::lock_guard<std::mutex> poolGuard(poolMutex);
-
-    {
-        const auto it = keys.find(h);
-        if (it != keys.end()) {
-            return pool_string(it->second);
-        }
-    }
-    ++counter;
+    const int index = std::uint64_t(h) % pool_count_k;
     
+    const char* c0 = find_key(keys[index], h);
+    if (c0) {
+        pool_string ps(c0);
+        assert(ps.view() == src);
+        return ps;
+    }
+
+    static pool the_pool[pool_count_k];
+    static std::mutex poolMutex[pool_count_k];
+    std::lock_guard<std::mutex> poolGuard(poolMutex[index]);
+
+    // Now that we have the lock, do the search again in case another thread empooled the string
+    // while we were waiting for the lock.
+    const char* c1 = find_key(keys[index], h);
+    if (c1) {
+        pool_string ps(c1);
+        assert(ps.view() == src);
+        return ps;
+    }
+    // Not already interned; empool it and add to the 'keys'
+    const char* ptr = the_pool[index].empool(src);
+    assert(ptr);
+    keys[index][h] = ptr;
 #else
-    thread_local std::unordered_multimap<size_t, const char*, pool_key_to_hash> keys;
+    thread_local decltype(auto) keys = orc::make_leaky<std::unordered_map<size_t, const char*>>();
     thread_local pool the_pool;
 
     // Is the string interned already?
-    const size_t h = string_view_hash(src);
-    
-    const auto range = keys.equal_range(h);
-    int c = 0;
-    for(auto it = range.first; it != range.second; ++it) {
-        c++;
-        pool_string ps(it->second);
-        if (ps.view() == src) {
-            return ps;
-        }
+    auto found = keys.find(h);
+    if (found != keys.end()) {
+        return pool_string(found->second);
     }
-    assert(c <= 1);
-#endif
-    // Not already interned; empool it and add to the 'keys' 
+    // Not already interned; empool it and add to the 'keys'
     const char* ptr = the_pool.empool(src);
+    assert(ptr);
     keys[h] = ptr;
+#endif // ORC_FEATURE(SINGLE_POOL)
     return pool_string(ptr);
 }
 

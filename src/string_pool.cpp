@@ -32,9 +32,7 @@ namespace {
 
 /**************************************************************************************************/
 
-std::size_t string_view_hash(std::string_view s) {
-    return orc::murmur3_64(s.data(), s.length());
-}
+std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data(), s.length()); }
 
 /**************************************************************************************************/
 
@@ -85,19 +83,16 @@ struct pool {
 std::size_t pool_string::get_size(const char* d) {
     assert(d);
     const void* bytes = d - sizeof(std::uint32_t) - sizeof(std::size_t);
-    std::uint32_t s;
-    std::memcpy(&s, bytes, sizeof(s)); // not aligned - need to use memcpy
-    assert(s > 0);                     // required, else should have been _data == nullptr
-    assert(s < 100000);                // sanity check
+    std::uint32_t s = orc::unaligned_read<std::uint32_t>(bytes);
+    assert(s > 0);      // required, else should have been _data == nullptr
+    assert(s < 100000); // sanity check
     return s;
 }
 
 std::size_t pool_string::get_hash(const char* d) {
     assert(d);
     const void* bytes = d - sizeof(std::size_t);
-    std::size_t h;
-    std::memcpy(&h, bytes, sizeof(h)); // not aligned -- need to use memcpy
-    return h;
+    return orc::unaligned_read<std::size_t>(bytes);
 }
 
 pool_string empool(std::string_view src) {
@@ -106,7 +101,8 @@ pool_string empool(std::string_view src) {
     // default_view would be returned.)
     if (src.empty()) return pool_string(nullptr);
 
-    static decltype(auto) keys = orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
+    static decltype(auto) keys =
+        orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
 
     const std::size_t h = string_view_hash(src);
 

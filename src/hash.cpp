@@ -7,6 +7,9 @@
 // identity
 #include "orc/hash.hpp"
 
+// application
+#include "orc/memory.hpp"
+
 /**************************************************************************************************/
 
 namespace {
@@ -37,7 +40,9 @@ inline uint64_t rotl64(uint64_t x, int8_t r) { return (x << r) | (x >> (64 - r))
 
 /**************************************************************************************************/
 
-FORCE_INLINE uint64_t getblock64(const uint64_t* p, int i) { return p[i]; }
+FORCE_INLINE std::uint64_t getblock64(const uint64_t* p, int i) {
+    return orc::unaligned_read<std::uint64_t>(p + i);
+}
 
 /**************************************************************************************************/
 

@@ -13,7 +13,6 @@
 // application
 #include "orc/dwarf.hpp"
 #include "orc/mach_types.hpp"
-#include "orc/object_file_registry.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
 
@@ -159,7 +158,7 @@ struct mach_header {
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(std::uint32_t ofd_index,
+dwarf dwarf_from_macho(ofd_index ofd_index,
                        freader&& s,
                        file_details&& details,
                        register_dies_callback&& callback) {
@@ -220,8 +219,8 @@ void read_macho(object_ancestry&& ancestry,
                         _callback = std::move(callbacks._register_die)]() mutable {
         ++globals::instance()._object_file_count;
 
-        std::uint32_t ofd_index = object_file_register(std::move(_ancestry), copy(_details));
-        dwarf dwarf = dwarf_from_macho(ofd_index, std::move(_s), std::move(_details),
+        ofd_index index = object_file_register(std::move(_ancestry), copy(_details));
+        dwarf dwarf = dwarf_from_macho(index, std::move(_s), std::move(_details),
                                        std::move(_callback));
 
         dwarf.process_all_dies();
@@ -230,7 +229,7 @@ void read_macho(object_ancestry&& ancestry,
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback) {
+dwarf dwarf_from_macho(ofd_index ofd_index, register_dies_callback&& callback) {
     const auto& entry = object_file_fetch(ofd_index);
     freader s(entry._ancestry.begin()->allocate_path());
 

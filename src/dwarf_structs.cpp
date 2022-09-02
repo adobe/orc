@@ -10,6 +10,9 @@
 // stdc++
 #include <filesystem>
 
+// tbb
+#include <tbb/concurrent_unordered_map.h>
+
 // application
 #include "orc/parse_file.hpp"
 #include "orc/object_file_registry.hpp"
@@ -35,6 +38,15 @@ const char* to_string(arch arch) {
 
 /**************************************************************************************************/
 
+pool_string deferred_string_descriptor::resolve() const {
+    freader s(_s);
+    return temp_seek(s, _offset, [&] {
+        return empool(s.read_c_string_view());
+    });
+}
+
+/**************************************************************************************************/
+
 void attribute::read(freader& s) {
     _name = static_cast<dw::at>(uleb128(s));
     _form = static_cast<dw::form>(uleb128(s));
@@ -56,25 +68,25 @@ std::size_t attribute_value::hash() const {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
-    if (x.type() == attribute_value::type::none) return s << "<none>";
-    if (x.type() == attribute_value::type::passover) return s << "<unhandled>";
+    if (x.type() == attribute_value_type::none) return s << "<none>";
+    if (x.type() == attribute_value_type::passover) return s << "<unhandled>";
 
     auto first_space = [_first = true, &_s = s]() mutable {
         if (!_first) _s << "; ";
         _first = false;
     };
 
-    if (x.has(attribute_value::type::string)) {
+    if (x.has(attribute_value_type::string)) {
         first_space();
         s << x.string();
     }
 
-    if (x.has(attribute_value::type::uint)) {
+    if (x.has(attribute_value_type::uint)) {
         first_space();
         s << x.uint() << " (0x" << std::hex << x.uint() << std::dec << ")";
     }
 
-    if (x.has(attribute_value::type::sint)) {
+    if (x.has(attribute_value_type::sint)) {
         first_space();
         s << x.sint() << " (0x" << std::hex << x.sint() << std::dec << ")";
     }

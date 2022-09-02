@@ -106,12 +106,12 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
 
-    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference) &&
+    if (x.has(attribute_value_type::reference) && y.has(attribute_value_type::reference) &&
         x.reference() == y.reference()) {
         return true;
     }
 
-    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string) &&
+    if (x.has(attribute_value_type::string) && y.has(attribute_value_type::string) &&
         x.string_hash() == y.string_hash()) {
         return true;
     }
@@ -327,7 +327,7 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
     assert(die._tag == d._tag);
-    assert(die._arch == d._arch);
+    assert(object_file_details(die._ofd_index)._arch == object_file_details(d._ofd_index)._arch);
     assert(die._has_children == d._has_children);
     assert(die._debug_info_offset == d._debug_info_offset);
     return std::move(attributes);

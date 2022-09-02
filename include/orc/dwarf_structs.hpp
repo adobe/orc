@@ -13,122 +13,159 @@
 #include <string>
 #include <vector>
 
+// stlab
+#include <stlab/enum_ops.hpp>
+
 // application
 #include "orc/dwarf_constants.hpp"
+#include "orc/freader.hpp"
+#include "orc/hash.hpp"
+#include "orc/object_file_registry.hpp"
 #include "orc/string_pool.hpp"
 
 /**************************************************************************************************/
 
-struct freader;
+struct deferred_string_descriptor {
+    freader _s;
+    // the offset to the start of the string (in the debug_str block) from the top of the file,
+    // taking into account all other offsets, etc.
+    std::size_t _offset{0};
+
+    bool valid() const { return _s && _offset != 0; }
+
+    explicit operator bool() const { return valid(); }
+
+    pool_string resolve() const;
+};
 
 /**************************************************************************************************/
 // This is intentionally not a union. The reason is because there are a lot of values that are
 // binary encoded in DWARF, but then require further interpretation (such as references to other
 // DIEs) or can be converted to human-readable strings. In those cases, it can be beneficial to
 // have both values around (especially in the DIE reference case.)
-struct attribute_value {
-    enum class type {
+    enum class attribute_value_type {
         none = 0,
         passover = 1 << 0,
         uint = 1 << 1,
         sint = 1 << 2,
         string = 1 << 3,
-        reference = 1 << 4,
-        die = 1 << 5,
+        string_deferred = 1 << 4,
+        reference = 1 << 5,
+        die = 1 << 6,
     };
-    using ut = typename std::underlying_type<type>::type;
 
-    friend auto operator|=(type& x, const type& y) {
-        return reinterpret_cast<enum type&>(reinterpret_cast<ut&>(x) |=
-                                            reinterpret_cast<const ut&>(y));
-    }
-    friend auto has_type(type x, type y) { return (static_cast<ut>(x) & static_cast<ut>(y)) != 0; }
+auto stlab_enable_bitmask_enum(attribute_value_type) -> std::true_type;
 
-    void passover() { _type = type::passover; }
+inline auto has_type(attribute_value_type x, attribute_value_type y) {
+    return (x & y) != attribute_value_type::none;
+}
+
+/**************************************************************************************************/
+
+struct attribute_value {
+    void passover() { _type = attribute_value_type::passover; }
 
     void uint(std::uint64_t x) {
-        _type |= type::uint;
+        _type |= attribute_value_type::uint;
         _uint = x;
     }
 
     auto uint() const {
-        assert(has(type::uint));
+        assert(has(attribute_value_type::uint));
         return _uint;
     }
 
     void sint(std::int32_t x) {
-        _type |= type::sint;
+        _type |= attribute_value_type::sint;
         _int = x;
     }
 
     auto sint() const {
-        assert(has(type::sint));
+        assert(has(attribute_value_type::sint));
         return _int;
     }
 
-    void string(pool_string x) {
-        _type |= type::string;
+    void string(pool_string x) const {
+        // if we are getting a string set, then we cannot be
+        // string deferred, so clear the bit. This can be the
+        // case e.g., when resolving a type, that starts out
+        // deferred but then is resolved during type resolution.
+        // assert(x);
+        _type &= ~attribute_value_type::string_deferred;
+        _type |= attribute_value_type::string;
         _string = x;
     }
 
-    const auto& string() const {
-        assert(has(type::string));
+    void string(deferred_string_descriptor descriptor) {
+        assert(descriptor);
+        // flag that we have a deferred *and* string
+        // so `has` checks will succeed as intended.
+        _type |= attribute_value_type::string;
+        _type |= attribute_value_type::string_deferred;
+        _descriptor = std::move(descriptor);
+    }
+
+    pool_string string() const {
+        // check deferred case first
+        if (has(attribute_value_type::string_deferred)) string(_descriptor.resolve());
+        assert(has(attribute_value_type::string));
         return _string;
     }
 
     auto string_hash() const {
-        assert(has(type::string));
+        assert(has(attribute_value_type::string));
         return _string.hash();
     }
 
     void reference(std::uint32_t offset) {
-        _type |= type::reference;
+        _type |= attribute_value_type::reference;
         _uint = offset;
     }
 
     auto reference() const {
-        assert(has(type::reference));
+        assert(has(attribute_value_type::reference));
         return _uint;
     }
 
     void die(const struct die& d) {
-        _type |= type::die;
+        _type |= attribute_value_type::die;
         _die = &d;
     }
 
     const auto& die() const {
-        assert(has(type::die));
+        assert(has(attribute_value_type::die));
         return *_die;
     }
 
     std::size_t hash() const;
 
     auto type() const { return _type; }
-    bool has(enum type t) const { return has_type(type(), t); }
-    bool has_none() const { return has(type::none); }
-    bool has_passover() const { return has(type::passover); }
-    bool has_uint() const { return has(type::uint); }
-    bool has_sint() const { return has(type::sint); }
-    bool has_string() const { return has(type::string); }
-    bool has_reference() const { return has(type::reference); }
-    bool has_die() const { return has(type::die); }
+    bool has(attribute_value_type t) const { return has_type(type(), t); }
+    bool has_none() const { return has(attribute_value_type::none); }
+    bool has_passover() const { return has(attribute_value_type::passover); }
+    bool has_uint() const { return has(attribute_value_type::uint); }
+    bool has_sint() const { return has(attribute_value_type::sint); }
+    bool has_string() const { return has(attribute_value_type::string); }
+    bool has_reference() const { return has(attribute_value_type::reference); }
+    bool has_die() const { return has(attribute_value_type::die); }
 
 private:
     friend bool operator==(const attribute_value& x, const attribute_value& y);
 
-    enum type _type { type::none };
+    mutable attribute_value_type _type{attribute_value_type::none};
     std::uint64_t _uint{0};
     std::int64_t _int{0};
-    pool_string _string;
+    mutable pool_string _string; // also used as a cache for deferred string resolve
+    deferred_string_descriptor _descriptor;
     const struct die* _die{nullptr};
 };
 
 inline bool operator==(const attribute_value& x, const attribute_value& y) {
     // we do string first, as there are references/dies that "resolve" to
     // some string value, and if we can compare that, we should.
-    if (x.has(attribute_value::type::string)) return x._string == y._string;
-    if (x.has(attribute_value::type::uint)) return x._uint == y._uint;
-    if (x.has(attribute_value::type::sint)) return x._int == y._int;
+    if (x.has(attribute_value_type::string)) return x._string == y._string;
+    if (x.has(attribute_value_type::uint)) return x._uint == y._uint;
+    if (x.has(attribute_value_type::sint)) return x._int == y._int;
 
     // we cannot compare references, as they are offsets into specific
     // __debug_info blocks that the two DIEs may not share.
@@ -151,10 +188,10 @@ struct attribute {
 
     void read(freader& s);
 
-    auto has(enum attribute_value::type t) const { return _value.has(t); }
+    auto has(attribute_value_type t) const { return _value.has(t); }
 
     auto reference() const { return _value.reference(); }
-    const auto& string() const { return _value.string(); }
+    pool_string string() const { return _value.string(); }
     auto uint() const { return _value.uint(); }
     auto string_hash() const { return _value.string_hash(); }
     const auto& die() const { return _value.die(); }
@@ -185,21 +222,21 @@ struct attribute_sequence {
         return valid;
     }
 
-    bool has(dw::at name, enum attribute_value::type t) const {
+    bool has(dw::at name, attribute_value_type t) const {
         auto [valid, iterator] = find(name);
         return valid ? iterator->has(t) : false;
     }
 
     bool has_uint(dw::at name) const {
-        return has(name, attribute_value::type::uint);
+        return has(name, attribute_value_type::uint);
     }
 
     bool has_string(dw::at name) const {
-        return has(name, attribute_value::type::string);
+        return has(name, attribute_value_type::string);
     }
 
     bool has_reference(dw::at name) const {
-        return has(name, attribute_value::type::reference);
+        return has(name, attribute_value_type::reference);
     }
 
     auto& get(dw::at name) {
@@ -262,58 +299,6 @@ private:
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
 /**************************************************************************************************/
-
-enum class arch : std::uint8_t {
-    unknown,
-    x86,
-    x86_64,
-    arm,
-    arm64,
-    arm64_32,
-};
-
-const char* to_string(arch arch);
-
-/**************************************************************************************************/
-
-struct object_ancestry {
-    std::array<pool_string, 5> _ancestors;
-    std::size_t _count{0};
-
-    auto begin() const { return _ancestors.begin(); }
-    auto end() const { return begin() + _count; }
-
-    auto& back() {
-        assert(_count);
-        return _ancestors[_count];
-    }
-
-    const auto& back() const {
-        assert(_count);
-        return _ancestors[_count];
-    }
-
-    void emplace_back(pool_string&& ancestor) {
-        assert((_count + 1) < _ancestors.size());
-        _ancestors[_count++] = std::move(ancestor);
-    }
-
-    bool operator<(const object_ancestry& rhs) const {
-        if (_count < rhs._count)
-            return true;
-        if (_count > rhs._count)
-            return false;
-        for(size_t i=0; i<_count; ++i) {
-            if (_ancestors[i].view() < rhs._ancestors[i].view())
-                return true;
-            if (_ancestors[i].view() > rhs._ancestors[i].view())
-                return false;
-        }
-        return false;
-    }
-};
-
-/**************************************************************************************************/
 // A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to
 // use the same abbreviation, but because the die is listed in a different place in the debug_info
@@ -326,10 +311,9 @@ struct die {
     die* _next_die{nullptr};
     std::size_t _hash{0};
     std::size_t _fatal_attribute_hash{0};
-    std::uint32_t _ofd_index{0}; // object file descriptor index
+    ofd_index _ofd_index{0};
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
-    arch _arch{arch::unknown};
     bool _has_children{false};
     bool _conflict{false};
     bool _skippable{false};

@@ -10,6 +10,7 @@
 #include <iostream>
 
 // application
+#include "orc/object_file_registry.hpp"
 #include "orc/parse_file.hpp"
 
 /**************************************************************************************************/
@@ -22,6 +23,6 @@ void read_macho(object_ancestry&& ancestry,
 
 /**************************************************************************************************/
 
-struct dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback);
+struct dwarf dwarf_from_macho(ofd_index index, register_dies_callback&& callback);
 
 /**************************************************************************************************/

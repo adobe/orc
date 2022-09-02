@@ -37,7 +37,7 @@ inline std::size_t hash_combine(std::size_t seed, const T& x) {
     // This is the terminating hash_combine call when there's only one item left to hash into the
     // seed. It also serves as the combiner the other routine variant uses to generate its new
     // seed.
-    return (seed ^ x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    return seed ^= x + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
 template <class T, class... Args>

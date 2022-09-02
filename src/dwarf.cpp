@@ -193,7 +193,7 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     bool is_declaration =
         attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
     return orc::hash_combine(0,
-                             static_cast<std::size_t>(d._arch),
+                             static_cast<std::size_t>(object_file_details(d._ofd_index)._arch),
                              static_cast<std::size_t>(d._tag),
                              d._path.hash(),
                              is_declaration);
@@ -355,7 +355,7 @@ enum class process_mode {
 /**************************************************************************************************/
 
 struct dwarf::implementation {
-    implementation(std::uint32_t ofd_index,
+    implementation(ofd_index ofd_index,
                    freader&& s,
                    file_details&& details,
                    register_dies_callback&& callback)
@@ -415,7 +415,7 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     std::size_t _cu_address{0};
-    std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
+    ofd_index _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
@@ -814,7 +814,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.uint(read_uleb()); // sdata is expecting unsigned values?
         } break;
         case dw::form::strp: {
-            result.string(read_debug_str(read32()));
+            auto absolute_offset = _debug_str._offset + read32();
+            result.string(deferred_string_descriptor{_s, absolute_offset});
         } break;
         case dw::form::exprloc: {
             read_exactly(_s, read_uleb(),
@@ -928,7 +929,6 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     attribute_sequence attributes;
 
     die._debug_info_offset = die_address - _debug_info._offset;
-    die._arch = _details._arch;
 
     std::size_t abbrev_code = read_uleb();
 
@@ -1098,9 +1098,12 @@ void dwarf::implementation::process_all_dies() {
             }
 
             die._skippable = skip_die(die, attributes);
-            die._ofd_index = _ofd_index;
-            die._hash = die_hash(die, attributes);
-            die._fatal_attribute_hash = fatal_attribute_hash(attributes);
+
+            if (!die._skippable) {
+                die._ofd_index = _ofd_index;
+                die._hash = die_hash(die, attributes);
+                die._fatal_attribute_hash = fatal_attribute_hash(attributes);
+            }
 
             dies.emplace_back(std::move(die));
         }
@@ -1128,7 +1131,7 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
 
 /**************************************************************************************************/
 
-dwarf::dwarf(std::uint32_t ofd_index,
+dwarf::dwarf(ofd_index ofd_index,
              freader&& s,
              file_details&& details,
              register_dies_callback&& callback)

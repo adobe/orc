@@ -10,4 +10,7 @@
 
 #define ORC_FEATURE(X) (ORC_PRIVATE_FEATURE_ ## X())
 
+#define ORC_PRIVATE_FEATURE_RELEASE() (defined(NDEBUG))
+#define ORC_PRIVATE_FEATURE_DEBUG() (!ORC_PRIVATE_FEATURE_RELEASE())
+
 /**************************************************************************************************/

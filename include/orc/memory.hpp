@@ -46,6 +46,16 @@ decltype(auto) make_leaky(Args&&... args) {
 }
 
 /**************************************************************************************************/
+// Useful for reading integer values (that otherwise need to be aligned) from unaligned memory. The
+// typical solution is to use memcpy and let the compiler optimize it further.
+template <class Integer>
+Integer unaligned_read(const void* p) {
+    Integer result{Integer()};
+    std::memcpy(&result, p, sizeof(result));
+    return result;
+}
+
+/**************************************************************************************************/
 
 } // namespace orc
 

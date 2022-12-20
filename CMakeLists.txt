@@ -56,6 +56,7 @@ if (NOT TARGET TBB::tbb)
     # Turning strict off causes warnings to not be errors for the TBB sources, which works for us.
     set(TBB_STRICT OFF)
     set(BUILD_SHARED_LIBS OFF) # See https://github.com/oneapi-src/oneTBB/issues/297#issuecomment-772759422
+    add_compile_options(-Wno-error)
     FetchContent_MakeAvailable(tbb)
 endif()
 

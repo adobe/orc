@@ -70,6 +70,16 @@ standalone_mode = false
 
 # output_file = "out.txt"
 
+# If defined, ORC will log output at the file location of the liner output file,
+# which must be specified with `-o` or `--output` on the command line. For example,
+# if the the output file is `path\to\my\binary` and this is set to `out.txt`, ORC 
+# will write its output to `path\to\my\binary.out.txt`.
+# 
+# output_file should NOT be specified if this is used.
+# (Normal stream output is unaffected by `relative_output_file`.)
+
+# relative_output_file = "out.txt"
+
 # `print_object_file_list`, when true, will print the list of object files ORC would otherwise
 # process, and then it exits without failure.
 #

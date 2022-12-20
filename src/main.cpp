@@ -69,6 +69,24 @@ std::string exec(const char* cmd) {
     return result;
 }
 
+void open_output_file(const std::string& a, const std::string& b)
+{
+    std::filesystem::path path(b);
+    if (!a.empty()) {
+        path = a + '.' + b;
+    }
+    std::cout << "open output file\n";
+    std::cout << "path:" << path << "\n";
+    try {
+        globals::instance()._fp.open(path);
+    }
+    catch (const std::exception& e) {
+        cout_safe([&](auto& s){
+            s << "warning: Could not open output file: " << path << "\n";
+        });
+    }
+}
+
 /**************************************************************************************************/
 
 void process_orc_config_file(const char* bin_path_string) {
@@ -115,19 +133,12 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
             app_settings._show_progress = settings["show_progress"].value_or(false);
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
-            app_settings._print_object_file_list =
-                settings["print_object_file_list"].value_or(false);
+            app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
+            app_settings._relative_output_file = settings["relative_output_file"].value_or("");
 
             if (settings["output_file"]) {
-                try {
-                    std::string fn = *settings["output_file"].value<std::string>();
-                    globals::instance()._fp.open(fn);
-                }
-                catch (const std::exception& e) {
-                    cout_safe([&](auto& s){
-                        s << "warning: Could not open output file: " << settings["output_file"] << "\n";
-                    });
-                }
+                std::string fn = *settings["output_file"].value<std::string>();
+                open_output_file("", fn);
             }
 
             if (auto log_level = settings["log_level"].value<std::string>()) {
@@ -244,7 +255,7 @@ struct cmdline_results {
 
 /**************************************************************************************************/
 
-auto process_command_line(int argc, char** argv) {
+cmdline_results process_command_line(int argc, char** argv) {
 
     cmdline_results result;
 
@@ -270,8 +281,12 @@ auto process_command_line(int argc, char** argv) {
 
         for (std::size_t i{1}; i < argc; ++i) {
             std::string_view arg = argv[i];
-            if (arg == "-o") {
+            if (arg == "-o" || arg == "--output") {
                 std::string filename(argv[++i]);
+                
+                if (!settings::instance()._relative_output_file.empty()) {
+                    open_output_file(filename, settings::instance()._relative_output_file);
+                }
 
                 // next argument is the output file. Use its name to decide
                 // whether we should run in ld or libtool mode. If the mode
@@ -476,7 +491,7 @@ int main(int argc, char** argv) try {
 
     process_orc_config_file(argv[0]);
 
-    auto cmdline = process_command_line(argc, argv);
+    cmdline_results cmdline = process_command_line(argc, argv);
     const auto& file_list = cmdline._file_object_list;
 
     if (settings::instance()._print_object_file_list) {

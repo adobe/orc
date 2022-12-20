@@ -32,7 +32,7 @@ namespace {
 
 /**************************************************************************************************/
 
-std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data(), (std::uint32_t) s.length()); }
+std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length())); }
 
 /**************************************************************************************************/
 

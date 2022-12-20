@@ -49,7 +49,7 @@ std::uint32_t form_length(dw::form f, freader& s) {
             assert(false);
             return 0; // TODO: read NTSB from s
         case dw::form::block:
-            return (std::uint32_t)leb_block();
+            return static_cast<std::uint32_t>(leb_block());
         case dw::form::block1:
             // for block1, block2, and block4, we read the N-byte prefix, and then send back
             // its value as the length of the form. This causes the passover to skip over the
@@ -90,7 +90,7 @@ std::uint32_t form_length(dw::form f, freader& s) {
         case dw::form::sec_offset:
             return length_size_k;
         case dw::form::exprloc:
-            return (std::uint32_t)leb_block();
+            return static_cast<std::uint32_t>(leb_block());
         case dw::form::flag_present:
             return 0;
         case dw::form::strx:
@@ -780,7 +780,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
         result.passover();
     } else {
         assert(!stack.empty());
-        result.sint((std::int32_t)stack.back());
+        result.sint(static_cast<std::int32_t>(stack.back()));
     }
 
     return result;
@@ -818,7 +818,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         } break;
         case dw::form::exprloc: {
             read_exactly(_s, read_uleb(),
-                         [&](auto expr_size) { result = evaluate_exprloc((std::uint32_t)expr_size); });
+                         [&](auto expr_size) { result = evaluate_exprloc(static_cast<std::uint32_t>(expr_size)); });
         } break;
         case dw::form::addr: {
             result.uint(read64());
@@ -827,16 +827,16 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.reference(read32());
         } break;
         case dw::form::ref1: {
-            result.reference(std::uint32_t(cu_offset + read8()));
+            result.reference(static_cast<std::uint32_t>(cu_offset + read8()));
         } break;
         case dw::form::ref2: {
-            result.reference(std::uint32_t(cu_offset + read16()));
+            result.reference(static_cast<std::uint32_t>(cu_offset + read16()));
         } break;
         case dw::form::ref4: {
-            result.reference(std::uint32_t(cu_offset + read32()));
+            result.reference(static_cast<std::uint32_t>(cu_offset + read32()));
         } break;
         case dw::form::ref8: {
-            result.reference(std::uint32_t(cu_offset + read64()));
+            result.reference(static_cast<std::uint32_t>(cu_offset + read64()));
         } break;
         case dw::form::data1: {
             result.uint(read8());
@@ -927,14 +927,14 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die die;
     attribute_sequence attributes;
 
-    die._debug_info_offset = std::uint32_t(die_address - _debug_info._offset);
+    die._debug_info_offset = static_cast<std::uint32_t>(die_address - _debug_info._offset);
     die._arch = _details._arch;
 
     std::size_t abbrev_code = read_uleb();
 
     if (abbrev_code == 0) return std::make_tuple(std::move(die), std::move(attributes));
 
-    auto& a = find_abbreviation((std::uint32_t)abbrev_code);
+    auto& a = find_abbreviation(static_cast<std::uint32_t>(abbrev_code));
 
     die._tag = a._tag;
     die._has_children = a._has_children;

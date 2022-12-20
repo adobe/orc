@@ -75,8 +75,6 @@ void open_output_file(const std::string& a, const std::string& b)
     if (!a.empty()) {
         path = a + '.' + b;
     }
-    std::cout << "open output file\n";
-    std::cout << "path:" << path << "\n";
     try {
         globals::instance()._fp.open(path);
     }

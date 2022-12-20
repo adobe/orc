@@ -220,7 +220,7 @@ void read_macho(object_ancestry&& ancestry,
                         _callback = std::move(callbacks._register_die)]() mutable {
         ++globals::instance()._object_file_count;
 
-        std::uint32_t ofd_index = (std::uint32_t) object_file_register(std::move(_ancestry), copy(_details));
+        std::uint32_t ofd_index = static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
         dwarf dwarf = dwarf_from_macho(ofd_index, std::move(_s), std::move(_details),
                                        std::move(_callback));
 

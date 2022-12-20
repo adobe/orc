@@ -508,6 +508,22 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("ORC could not find files to process");
     }
 
+    // Count the ODRVs. FIXME See `filter_print_report` for code that needs refactoring.
+    // The stream_to_nowhere is a temporary work-around.
+    for (const auto& report : orc_process(file_list)) {
+        std::stringstream stream_to_nowhere;
+
+        if (filter_print_report(stream_to_nowhere, report)) {
+            // Administrivia
+            ++globals::instance()._odrv_count;
+
+            if (settings::instance()._max_violation_count > 0 &&
+                globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
+                throw std::runtime_error("ODRV limit reached");
+            }
+        }
+    }
+
     for (const auto& report : orc_process(file_list)) {
         cout_safe([&](auto& s){
             s << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines

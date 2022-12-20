@@ -373,8 +373,16 @@ std::string odrv_report::category() const {
 }
 
 /**************************************************************************************************/
+// FIXME This just needs refactoring. This code originally:
+// 1. filters
+// 2. output
+// 3. counts numeber of ODRVs
+// All inside a `operator<<`.
+// This pulls things part just a little bit so we can compute the number of ODRVs correctly,
+// but still needs cleanup.
 
-std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
+bool filter_print_report(std::ostream& s, const odrv_report& report)
+{
     const std::string_view& symbol = report._symbol;
     std::string odrv_category = report.category();
 
@@ -391,10 +399,9 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         do_report = sorted_has(settings._violation_report, odrv_category);
     }
 
-    if (!do_report) return s;
+    if (!do_report) return false;
 
     // Output the report
-
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : report.conflict_map()) {
@@ -402,15 +409,14 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     }
     s << "\n";
 
-    // Administrivia
+    return true;
+}
 
-    ++globals::instance()._odrv_count;
 
-    if (settings::instance()._max_violation_count > 0 &&
-        globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-        throw std::runtime_error("ODRV limit reached");
-    }
+/**************************************************************************************************/
 
+std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
+    filter_print_report(s, report);
     return s;
 }
 

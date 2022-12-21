@@ -43,6 +43,7 @@ struct settings {
     bool _parallel_processing{true};
     bool _show_progress{false};
     bool _filter_redundant{true};
+    std::string _relative_output_file;
 };
 
 /**************************************************************************************************/

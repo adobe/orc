@@ -373,9 +373,8 @@ std::string odrv_report::category() const {
 }
 
 /**************************************************************************************************/
-
-std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
-    const std::string_view& symbol = report._symbol;
+bool filter_report(const odrv_report& report)
+{
     std::string odrv_category = report.category();
 
     // Decide if we should report or ignore.
@@ -391,9 +390,16 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         do_report = sorted_has(settings._violation_report, odrv_category);
     }
 
-    if (!do_report) return s;
+    return do_report;
+}
 
-    // Output the report
+
+/**************************************************************************************************/
+
+std::ostream& operator<<(std::ostream& s, const odrv_report& report) 
+{    
+    const std::string_view& symbol = report._symbol;
+    std::string odrv_category = report.category();
 
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
@@ -401,15 +407,6 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         s << (*entry.second._die) << entry.second._attributes << '\n';
     }
     s << "\n";
-
-    // Administrivia
-
-    ++globals::instance()._odrv_count;
-
-    if (settings::instance()._max_violation_count > 0 &&
-        globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-        throw std::runtime_error("ODRV limit reached");
-    }
 
     return s;
 }

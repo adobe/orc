@@ -41,6 +41,9 @@ private:
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);
 
+// Return `true` if an ODRV
+bool filter_report(const odrv_report& report);
+
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>&);

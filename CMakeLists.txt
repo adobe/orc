@@ -56,8 +56,8 @@ if (NOT TARGET TBB::tbb)
     # Turning strict off causes warnings to not be errors for the TBB sources, which works for us.
     set(TBB_STRICT OFF)
     set(BUILD_SHARED_LIBS OFF) # See https://github.com/oneapi-src/oneTBB/issues/297#issuecomment-772759422
-    add_compile_options(-Wno-error)
     FetchContent_MakeAvailable(tbb)
+    target_compile_options(tbb PUBLIC -Wno-error)
 endif()
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -76,6 +76,11 @@ add_executable(orc::orc ALIAS orc_orc)
 
 set_target_properties(orc_orc PROPERTIES OUTPUT_NAME "orc")
 
+if (PROJECT_IS_TOP_LEVEL)
+    target_compile_options(orc_orc PRIVATE -Wall -Werror)
+    set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
+endif()
+
 target_link_libraries(orc_orc
     PRIVATE
         stlab::stlab
@@ -87,11 +92,6 @@ target_include_directories(orc_orc
     PRIVATE
         ${PROJECT_SOURCE_DIR}/include
 )
-
-if (PROJECT_IS_TOP_LEVEL)
-    target_compile_options(orc_orc PRIVATE -Wall -Werror)
-    set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
-endif()
 
 # This is the end of the ORC executable definition
 

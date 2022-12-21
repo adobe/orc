@@ -75,14 +75,7 @@ void open_output_file(const std::string& a, const std::string& b)
     if (!a.empty()) {
         path = a + '.' + b;
     }
-    try {
-        globals::instance()._fp.open(path);
-    }
-    catch (const std::exception& e) {
-        cout_safe([&](auto& s){
-            s << "warning: Could not open output file: " << path << "\n";
-        });
-    }
+    globals::instance()._fp.open(path);
 }
 
 /**************************************************************************************************/

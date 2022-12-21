@@ -41,7 +41,8 @@ private:
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);
 
-bool filter_print_report(std::ostream& s, const odrv_report& report);
+// Return `true` if an ODRV
+bool filter_report(const odrv_report& report);
 
 /**************************************************************************************************/
 

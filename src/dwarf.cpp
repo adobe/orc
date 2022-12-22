@@ -709,13 +709,13 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     const auto end = _s.tellg() + expression_size;
 
     // There are some exprlocs that cannot be deciphered, probably because we don't have as much
-    // information in our state machine as a debugger does when they're doing these evaluations.
-    // In the event that happens, we set this passover flag, and avoid the evaluation entirely.
+    // information in our state machine as a debugger does when they're doing these evaluations. In
+    // the event that happens, we set this passover flag, and avoid the evaluation entirely.
     bool passover = false;
 
-    // The use of the range-based switch statements below are an extension to the C++ standard,
-    // but is supported by both GCC and clang. It makes the below *far* more readable, but if
-    // we need to pull it out, we can.
+    // The use of the range-based switch statements below are an extension to the C++ standard, but
+    // is supported by both GCC and clang. It makes the below *far* more readable, but if we need
+    // to pull it out, we can.
 
     auto stack_pop = [&_stack = stack] {
         assert(!_stack.empty());
@@ -726,41 +726,127 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 
     auto stack_push = [&_stack = stack](auto value) { _stack.push_back(value); };
 
-    // REVISIT (fosterbrereton) : The DWARF specification describes a
-    // multi-register stack machine. This implementation is anything but.
-    // Instead, it aims to be the minimum amount of work required to
-    // evaluate the DWARF attributes we care about. To date, this has not
-    // required that we fully implement the stack machine.
+    // REVISIT (fosterbrereton) : The DWARF specification describes a multi-register stack machine
+    // whose registers imitate (or are?!) the registers present on architecture for which this code
+    // has been written. This implementation is anything but. Instead, it aims to be the minimum
+    // implementation required to evaluate the DWARF attributes we care about.
+    //
+    // The DWARF spec mentions that each stack entry is a type/value tuple. As of now we store all
+    // values as unsigned integers, the rebels we are.
+    //
+    // Implementations marked OP_BROKEN are known to be incorrect, but whose implementations suffice
+    // for the purposes of the tool. They could still be broken for unencountered cases. It's
+    // likely there are other parts of this routine that are also broken, but are not known.
+    //
+    // The switch statements are ordered according to their enumeration in the DWARF 5
+    // specification (starting in section 2.5).
 
     // clang-format off
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
+            //
+            // 2.5.1.1 Literal Encodings
+            //
             case dw::op::lit0 ... dw::op::lit31: { // gcc/clang extension
-                stack_push(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+                // These opcodes encode the unsigned literal values from 0 through 31, inclusive.
+                stack_push(static_cast<int>(op) - static_cast<int>(dw::op::lit0));
             } break;
-            case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
-                stack_push(0);
-            } break;
-            case dw::op::breg0 ... dw::op::breg31: { // gcc/clang extension
-                // The single operand of the DW_OP_bregn operations provides a signed LEB128
-                // offset from the specified register.
-                stack_push(read_sleb());
-            } break;
-            case dw::op::fbreg: {
-                // Provides a signed LEB128 offset from the address specified by the
-                // location description in the DW_AT_frame_base attribute of the current
-                // function.
-                stack_push(read_sleb());
-            }   break;
             case dw::op::addr: {
-                // a single operand that encodes a machine address and whose size is the size of
-                // an address on the target machine.
+                // A single operand that encodes a machine address and whose size is the size of an
+                // address on the target machine.
                 if (_details._is_64_bit) {
                     stack_push(read64());
                 } else {
                     stack_push(read32()); // safe to assume?
                 }
+            } break;
+            case dw::op::const1u: {
+                // The single operand provides a 1-byte unsigned integer constant
+                stack_push(read8());
+            } break;
+            case dw::op::const2u: {
+                // The single operand provides a 2-byte unsigned integer constant
+                stack_push(read16());
+            } break;
+            case dw::op::const4u: {
+                // The single operand provides a 4-byte unsigned integer constant
+                stack_push(read32());
+            } break;
+            case dw::op::const8u: {
+                // The single operand provides an 8-byte unsigned integer constant
+                stack_push(read64());
+            } break;
+            case dw::op::const1s: {
+                // The single operand provides a 1-byte signed integer constant
+                stack_push(read_pod<std::int8_t>(_s));
+            } break;
+            case dw::op::const2s: {
+                // The single operand provides a 2-byte signed integer constant
+                stack_push(read_pod<std::int16_t>(_s));
+            } break;
+            case dw::op::const4s: {
+                // The single operand provides a 4-byte signed integer constant
+                stack_push(read_pod<std::int32_t>(_s));
+            } break;
+            case dw::op::const8s: {
+                // The single operand provides an 8-byte signed integer constant
+                stack_push(read_pod<std::int64_t>(_s));
+            } break;
+            case dw::op::constu: {
+                // The single operand provides an unsigned LEB128 integer constant
+                stack_push(read_uleb());
+            } break;
+            case dw::op::consts: {
+                // The single operand provides a signed LEB128 integer constant
+                stack_push(read_sleb());
+            } break;
+
+            //
+            // 2.5.1.2 Register Values
+            //
+            case dw::op::fbreg: {
+                // OP_BROKEN
+                // Provides a signed LEB128 offset from the address specified by the location
+                // description in the DW_AT_frame_base attribute of the current function.
+                stack_push(read_sleb());
+            }   break;
+            case dw::op::breg0 ... dw::op::breg31: { // gcc/clang extension
+                // OP_BROKEN
+                // The single operand provides a signed LEB128 offset from the specified register.
+                stack_push(read_sleb());
+            } break;
+
+            //
+            // 2.5.1.3 Stack Operations
+            //
+            case dw::op::dup: {
+                // Duplicates the value (including its type identifier) at the top of the stack
+                if (stack.empty()) {
+                    passover = true;
+                } else {
+                    stack_push(stack.back());
+                }
+            } break;
+            case dw::op::drop: {
+                // Pops the value (including its type identifier) at the top of the stack
+                if (stack.empty()) {
+                    passover = true;
+                } else {
+                    (void)stack_pop();
+                }
+            } break;
+
+            //
+            // 2.5.1.4 Arithmetic and Logical Operations
+            //
+            case dw::op::and_: {
+                // Pops the top two stack values, performs a bitwise and operation on the two, and
+                // pushes the result.
+                assert(stack.size() > 1);
+                auto arg0 = stack_pop();
+                auto arg1 = stack_pop();
+                stack_push(arg0 | arg1);
             } break;
             case dw::op::plus_uconst: {
                 // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
@@ -772,61 +858,41 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
                 }
                 stack_push(operand);
             } break;
-            case dw::op::and_: {
-                // Pops the top two stack values, performs a bitwise and operation on the two,
-                // and pushes the result.
-                assert(stack.size() > 1);
-                auto arg0 = stack_pop();
-                auto arg1 = stack_pop();
-                stack_push(arg0 | arg1);
-            } break;
-            case dw::op::stack_value: {
-                // The DWARF expression represents the actual value of the object, rather than
-                // its location. The DW_OP_stack_value operation terminates the expression.
-                // This is the "return" operator of the expression system. We assume it is at
-                // the end of the evaluation stream and so do nothing. This may need to be
-                // revisited if the assumption is bad.
-            } break;
-            case dw::op::const1u: {
-                stack_push(read8());
-            } break;
-            case dw::op::const2u: {
-                stack_push(read16());
-            } break;
-            case dw::op::const4u: {
-                stack_push(read32());
-            } break;
-            case dw::op::const8u: {
-                stack_push(read64());
-            } break;
-            case dw::op::const1s: {
-                stack_push(read_pod<std::int8_t>(_s));
-            } break;
-            case dw::op::const2s: {
-                stack_push(read_pod<std::int16_t>(_s));
-            } break;
-            case dw::op::const4s: {
-                stack_push(read_pod<std::int32_t>(_s));
-            } break;
-            case dw::op::const8s: {
-                stack_push(read_pod<std::int64_t>(_s));
-            } break;
-            case dw::op::constu: {
-                stack_push(read_uleb());
-            } break;
-            case dw::op::consts: {
-                stack_push(read_sleb());
+
+            //
+            // This is the end of Section 2.5. What follows in Section 2.6 are descriptions
+            // of "objects" in the machine. Unfortunately the spec isn't entirely clear what to do
+            // with these objects once they've been located, so we push something to the stack.
+            //
+
+            //
+            // 2.6.1.1.3 Register Location Descriptions
+            //
+            case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
+                // These opcodes encode the names of up to 32 registers, numbered from 0 through 31,
+                // inclusive. The object addressed is in register n.
+                stack_push(0);
             } break;
             case dw::op::regx: {
-                stack_push(read_uleb());
+                // A single unsigned LEB128 literal operand that encodes the name of a register.
+                stack_push(read_uleb()); } break;
+
+            //
+            // 2.6.1.1.4 Implicit Location Descriptions
+            //
+            case dw::op::stack_value: {
+                // The DWARF expression represents the actual value of the object, rather than its
+                // location. The DW_OP_stack_value operation terminates the expression. This is
+                // the "return" operator of the expression system. We assume it is at the end of
+                // the evaluation stream and so do nothing. This may need to be revisited if the
+                // assumption is bad.
             } break;
-            case dw::op::dup: {
-                if (stack.empty()) {
-                    passover = true;
-                } else {
-                    stack_push(stack.back());
-                }
-            } break;
+
+            //
+            // As soon as we find an opcode we don't interpret, we pass over the entire expression
+            // and mark the result as unhandled.
+            //
+
             default: {
                 passover = true;
             } break;

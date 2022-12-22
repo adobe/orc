@@ -6,6 +6,7 @@
 
 // stdc++
 #include <array>
+#include <csignal>
 #include <cxxabi.h>
 #include <filesystem>
 #include <fstream>

@@ -6,6 +6,9 @@
 
 #pragma once
 
+// stdc++
+#include <cstring>
+
 // application
 #include "orc/features.hpp"
 

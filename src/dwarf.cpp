@@ -746,14 +746,11 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // implementation required to evaluate the DWARF attributes we care about.
     //
     // The DWARF spec mentions that each stack entry is a type/value tuple. As of now we store all
-    // values as unsigned integers, the rebels we are.
+    // values as 64-bit unsigned integers, the rebels we are.
     //
     // Implementations marked OP_BROKEN are known to be incorrect, but whose implementations suffice
     // for the purposes of the tool. They could still be broken for unencountered cases. It's
     // likely there are other parts of this routine that are also broken, but are not known.
-    //
-    // The switch statements are ordered according to their enumeration in the DWARF 5
-    // specification (starting in section 2.5).
     //
     // When evaluating DW_AT_data_member_location for a DW_TAG_inheritance, we have to abide
     // by 5.7.3 of the spec, which says (in part):
@@ -769,7 +766,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // In other words, this is a _runtime derived_ value, where the object instance's address is
     // pushed onto the stack and then the machine is evaluated to derive the data member location
     // of the subclass. For our purposes, we can assume a base object address of 0.
-
+    //
     // For a handful of expression location evaluations (like the one above), an initial value is
     // assumed to be on the stack. It's probably easiest to just push a default value of 0x10000
     // onto the stack to start with for all cases. (This isn't 0 because in some cases it's an
@@ -778,7 +775,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // shouldn't be fatal. That's what we'll do for now, and if a case pops where that's a problem,
     // we'll revisit.
     //
-    // Aaaand we've hit a problem. I still think the above scenario works, but I'm still getting
+    // Aaaand we've hit a problem. I still think the above scenario works, but I am getting
     // some runtime errors. I have found cases where two libraries that appear to be compiled
     // with identical settings produce differing DWARF entries for DW_AT_data_member_location,
     // causing the values to differ when the base address is not 0. Specifically, the two
@@ -790,7 +787,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // sure why one object file chooses an address-relative expression, while the other opts
     // for the absolute value. I _think_ in the absolute case, I need to add that value to
     // the base object's offset, which in our simulated case would be 0x10000. (See details
-    // about DW_AT_data_member_location in Sectioin 5.7.6 Data Member Entries).
+    // about DW_AT_data_member_location in Section 5.7.6 (Data Member Entries)).
     //
     // TL;DR: This is set to zero for now and we can address (ha!) it later if required.
     stack_push(0); // Ideally should be a nonzero value to better emulate addresses.
@@ -805,8 +802,9 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 
     // clang-format off
     while (_s.tellg() < end && !passover) {
-        auto op = read_pod<dw::op>(_s);
-        switch (op) {
+        // The switch statements are ordered according to their enumeration in the DWARF 5
+        // specification (starting in section 2.5).
+        switch (auto op = read_pod<dw::op>(_s); op) {
             //
             // 2.5.1.1 Literal Encodings
             //

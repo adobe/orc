@@ -192,11 +192,8 @@ struct file_name {
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     bool is_declaration =
         attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
-    return orc::hash_combine(0,
-                             static_cast<std::size_t>(d._arch),
-                             static_cast<std::size_t>(d._tag),
-                             d._path.hash(),
-                             is_declaration);
+    return orc::hash_combine(0, static_cast<std::size_t>(d._arch), static_cast<std::size_t>(d._tag),
+                             d._path.hash(), is_declaration);
 };
 
 /**************************************************************************************************/
@@ -720,16 +717,14 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // but is supported by both GCC and clang. It makes the below *far* more readable, but if
     // we need to pull it out, we can.
 
-    auto stack_pop = [&_stack = stack]{
+    auto stack_pop = [&_stack = stack] {
         assert(!_stack.empty());
         auto result = _stack.back();
         _stack.pop_back();
         return result;
     };
 
-    auto stack_push = [&_stack = stack](auto value){
-        _stack.push_back(value);
-    };
+    auto stack_push = [&_stack = stack](auto value) { _stack.push_back(value); };
 
     // REVISIT (fosterbrereton) : The DWARF specification describes a
     // multi-register stack machine. This implementation is anything but.
@@ -861,7 +856,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     const auto cu_offset = _cu_address - debug_info_offset;
     attribute_value result;
 
-    auto set_passover_result = [&]{
+    auto set_passover_result = [&] {
         result.passover();
         auto size = form_length(form, _s);
         _s.seekg(size, std::ios::cur);
@@ -874,8 +869,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             return;
         }
         auto length = (_impl->*length_fn)();
-        read_exactly(_s, length,
-                     [&](auto length) { result = evaluate_exprloc(length); });
+        read_exactly(_s, length, [&](auto length) { result = evaluate_exprloc(length); });
     };
 
     /*
@@ -900,8 +894,9 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.string(read_debug_str(read32()));
         } break;
         case dw::form::exprloc: {
-            read_exactly(_s, read_uleb(),
-                         [&](auto expr_size) { result = evaluate_exprloc(static_cast<std::uint32_t>(expr_size)); });
+            read_exactly(_s, read_uleb(), [&](auto expr_size) {
+                result = evaluate_exprloc(static_cast<std::uint32_t>(expr_size));
+            });
         } break;
         case dw::form::addr: {
             result.uint(read64());

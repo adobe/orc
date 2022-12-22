@@ -592,6 +592,10 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
 
     result._value = process_form(attr, cur_die_offset);
 
+    if (result._value.has_passover()) {
+        return result;
+    }
+
     // some attributes need further processing. Once we have the initial value from process_form,
     // we can continue the work here. (Some forms, like ref_addr, have already been processed
     // completely- these are the cases when a value needs contextual interpretation. For example,
@@ -716,54 +720,116 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // but is supported by both GCC and clang. It makes the below *far* more readable, but if
     // we need to pull it out, we can.
 
+    auto stack_pop = [&_stack = stack]{
+        assert(!_stack.empty());
+        auto result = _stack.back();
+        _stack.pop_back();
+        return result;
+    };
+
+    auto stack_push = [&_stack = stack](auto value){
+        _stack.push_back(value);
+    };
+
+    // REVISIT (fosterbrereton) : The DWARF specification describes a
+    // multi-register stack machine. This implementation is anything but.
+    // Instead, it aims to be the minimum amount of work required to
+    // evaluate the DWARF attributes we care about. To date, this has not
+    // required that we fully implement the stack machine.
+
     // clang-format off
     while (_s.tellg() < end && !passover) {
         auto op = read_pod<dw::op>(_s);
         switch (op) {
             case dw::op::lit0 ... dw::op::lit31: { // gcc/clang extension
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+                stack_push(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
             } break;
             case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+                stack_push(0);
+            } break;
+            case dw::op::breg0 ... dw::op::breg31: { // gcc/clang extension
+                // The single operand of the DW_OP_bregn operations provides a signed LEB128
+                // offset from the specified register.
+                stack_push(read_sleb());
+            } break;
+            case dw::op::fbreg: {
+                // Provides a signed LEB128 offset from the address specified by the
+                // location description in the DW_AT_frame_base attribute of the current
+                // function.
+                stack_push(read_sleb());
+            }   break;
+            case dw::op::addr: {
+                // a single operand that encodes a machine address and whose size is the size of
+                // an address on the target machine.
+                if (_details._is_64_bit) {
+                    stack_push(read64());
+                } else {
+                    stack_push(read32()); // safe to assume?
+                }
+            } break;
+            case dw::op::plus_uconst: {
+                // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
+                // pushes the result. I have seen cases where the stack is empty, so we do a check
+                // first.
+                auto operand = read_uleb();
+                if (!stack.empty()) {
+                    operand += stack_pop();
+                }
+                stack_push(operand);
+            } break;
+            case dw::op::and_: {
+                // Pops the top two stack values, performs a bitwise and operation on the two,
+                // and pushes the result.
+                assert(stack.size() > 1);
+                auto arg0 = stack_pop();
+                auto arg1 = stack_pop();
+                stack_push(arg0 | arg1);
+            } break;
+            case dw::op::stack_value: {
+                // The DWARF expression represents the actual value of the object, rather than
+                // its location. The DW_OP_stack_value operation terminates the expression.
+                // This is the "return" operator of the expression system. We assume it is at
+                // the end of the evaluation stream and so do nothing. This may need to be
+                // revisited if the assumption is bad.
             } break;
             case dw::op::const1u: {
-                stack.push_back(read8());
+                stack_push(read8());
             } break;
             case dw::op::const2u: {
-                stack.push_back(read16());
+                stack_push(read16());
             } break;
             case dw::op::const4u: {
-                stack.push_back(read32());
+                stack_push(read32());
             } break;
             case dw::op::const8u: {
-                stack.push_back(read64());
+                stack_push(read64());
             } break;
             case dw::op::const1s: {
-                stack.push_back(read_pod<std::int8_t>(_s));
+                stack_push(read_pod<std::int8_t>(_s));
             } break;
             case dw::op::const2s: {
-                stack.push_back(read_pod<std::int16_t>(_s));
+                stack_push(read_pod<std::int16_t>(_s));
             } break;
             case dw::op::const4s: {
-                stack.push_back(read_pod<std::int32_t>(_s));
+                stack_push(read_pod<std::int32_t>(_s));
             } break;
             case dw::op::const8s: {
-                stack.push_back(read_pod<std::int64_t>(_s));
+                stack_push(read_pod<std::int64_t>(_s));
             } break;
             case dw::op::constu: {
-                stack.push_back(read_uleb());
+                stack_push(read_uleb());
             } break;
             case dw::op::consts: {
-                stack.push_back(read_sleb());
+                stack_push(read_sleb());
             } break;
             case dw::op::regx: {
-                stack.push_back(read_uleb());
+                stack_push(read_uleb());
             } break;
             case dw::op::dup: {
                 if (stack.empty()) {
                     passover = true;
                 } else {
-                    stack.push_back(stack.back());
+                    stack_push(stack.back());
                 }
             } break;
             default: {
@@ -794,6 +860,23 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     const auto debug_info_offset = _debug_info._offset;
     const auto cu_offset = _cu_address - debug_info_offset;
     attribute_value result;
+
+    auto set_passover_result = [&]{
+        result.passover();
+        auto size = form_length(form, _s);
+        _s.seekg(size, std::ios::cur);
+    };
+
+    auto evaluate_expression = [&, _impl = this](auto length_fn) {
+        // If the attribute is nonfatal, don't waste time evaluating it.
+        if (nonfatal_attribute(attr._name)) {
+            set_passover_result();
+            return;
+        }
+        auto length = (_impl->*length_fn)();
+        read_exactly(_s, length,
+                     [&](auto length) { result = evaluate_exprloc(length); });
+    };
 
     /*
         Notes worth remembering:
@@ -862,10 +945,20 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::sec_offset: {
             result.uint(read32());
         } break;
+        case dw::form::block1: {
+            evaluate_expression(&dwarf::implementation::read8);
+        } break;
+        case dw::form::block2: {
+            evaluate_expression(&dwarf::implementation::read16);
+        } break;
+        case dw::form::block4: {
+            evaluate_expression(&dwarf::implementation::read32);
+        } break;
+        case dw::form::block: {
+            evaluate_expression(&dwarf::implementation::read_uleb);
+        } break;
         default: {
-            result.passover();
-            auto size = form_length(form, _s);
-            _s.seekg(size, std::ios::cur);
+            set_passover_result();
         } break;
     }
 
@@ -943,7 +1036,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
-                       // REVISIT (fosterbrereton) Can we skip processing nonfatal attributes?
+                       // If the attribute is nonfatal, we'll pass over it in `process_attribute`.
                        return process_attribute(x, die._debug_info_offset);
                    });
 

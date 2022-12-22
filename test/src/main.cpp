@@ -66,7 +66,7 @@ auto& toml_out() {
 
 /**************************************************************************************************/
 
-namespace log {
+namespace logging {
 
 /**************************************************************************************************/
 
@@ -433,7 +433,7 @@ void run_battery_test(const std::filesystem::path& home) {
     const bool skip_test = settings["orc_test_flags"]["disable"].value_or(false);
 
     if (skip_test) {
-        log::notice("test disabled");
+        logging::notice("test disabled");
         return;
     }
 
@@ -446,7 +446,7 @@ void run_battery_test(const std::filesystem::path& home) {
 
     auto expected_odrvs = derive_expected_odrvs(home, settings);
     if (expected_odrvs.empty()) {
-        log::notice("Found no expected ODRVs for this test", test_name);
+        logging::notice("Found no expected ODRVs for this test", test_name);
     }
 
     auto object_files = compile_compilation_units(home, settings, compilation_units);
@@ -553,10 +553,10 @@ int main(int argc, char** argv) try {
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
-    log::error(error.what(), "Fatal error");
+    logging::error(error.what(), "Fatal error");
     return EXIT_FAILURE;
 } catch (...) {
-    log::error("unknown", "Fatal error");
+    logging::error("unknown", "Fatal error");
     return EXIT_FAILURE;
 }
 

@@ -619,6 +619,15 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             case 0xff: result._value.string(empool("hi user")); break;
             // otherwise, leave the value unchanged.
         }
+    } else if (result._name == dw::at::accessibility) {
+        auto accessibility = result._value.uint();
+        assert(accessibility >= 1 && accessibility <= 3);
+        switch (accessibility) {
+            case 1: result._value.string(empool("public")); break;
+            case 2: result._value.string(empool("protected")); break;
+            case 3: result._value.string(empool("private")); break;
+            // otherwise, leave the value unchanged.
+        }
     } else if (result._name == dw::at::virtuality) {
         auto virtuality = result._value.uint();
         assert(virtuality >= 0 && virtuality <= 2);
@@ -745,6 +754,38 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     //
     // The switch statements are ordered according to their enumeration in the DWARF 5
     // specification (starting in section 2.5).
+    //
+    // When evaluating DW_AT_data_member_location for a DW_TAG_inheritance, we have to abide
+    // by 5.7.3 of the spec, which says (in part):
+    //     An inheritance entry for a class that derives from or extends another class or struct
+    //     also has a DW_AT_data_member_location attribute, whose value describes the location of
+    //     the beginning of the inherited type relative to the beginning address of the instance of
+    //     the derived class. If that value is a constant, it is the offset in bytes from the
+    //     beginning of the class to the beginning of the instance of the inherited type.
+    //     Otherwise, the value must be a location description. In this latter case, the beginning
+    //     address of the instance of the derived class is pushed on the expression stack before
+    //     the location description is evaluated and the result of the evaluation is the location
+    //     of the instance of the inherited type.
+    // In other words, this is a _runtime derived_ value, where the object instance's address is
+    // pushed onto the stack and then the machine is evaluated to derive the data member location
+    // of the subclass. For our purposes, we can assume a base object address of 0.
+
+    // For a handful of expression location evaluations (like the one above), an initial value is
+    // assumed to be on the stack. It's probably easiest to just push a default value of 0x10000
+    // onto the stack to start with for all cases. (This isn't 0 because in some cases it's an
+    // address and may be negatively offset, so we want a reasonable value that won't underflow).
+    // Since the topmost item on the stack is the expression's value, an extra value at the bottom
+    // shouldn't be fatal. That's what we'll do for now, and if a case pops where that's a problem,
+    // we'll revisit.
+    stack_push(0x10000);
+
+    // Useful to see what the whole expression is that this routine is about to evaluate.
+#if ORC_FEATURE(DEBUG) && 0
+    std::vector<char> expression(expression_size, 0);
+    temp_seek(_s, [&]{
+        _s.read(&expression[0], expression_size);
+    });
+#endif // ORC_FEATURE(DEBUG)
 
     // clang-format off
     while (_s.tellg() < end && !passover) {
@@ -760,6 +801,10 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             case dw::op::addr: {
                 // A single operand that encodes a machine address and whose size is the size of an
                 // address on the target machine.
+                //
+                // REVISIT (fosterbrereton) : I think this "is 64 bit" question should be answered
+                // by the compilation unit header (`cu_header`), not the file details. Or, better
+                // yet, I think is the address size in that same header.
                 if (_details._is_64_bit) {
                     stack_push(read64());
                 } else {
@@ -827,19 +872,22 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             //
             case dw::op::dup: {
                 // Duplicates the value (including its type identifier) at the top of the stack
-                if (stack.empty()) {
-                    passover = true;
-                } else {
-                    stack_push(stack.back());
-                }
+                assert(!stack.empty());
+                stack_push(stack.back());
             } break;
             case dw::op::drop: {
                 // Pops the value (including its type identifier) at the top of the stack
-                if (stack.empty()) {
-                    passover = true;
-                } else {
-                    (void)stack_pop();
-                }
+                assert(!stack.empty());
+                (void)stack_pop();
+            } break;
+            case dw::op::deref: {
+                // Pops the top stack entry and treats it as an address. The popped value must
+                // have an integral type. The value retrieved from that address is pushed, and
+                // has the generic type. The size of the data retrieved from the dereferenced
+                // address is the size of an address on the target machine.
+                //
+                // The net effect of this operation is a pop, dereference, and push. In our
+                // case, then, we'll do nothing.
             } break;
 
             //
@@ -855,13 +903,20 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             } break;
             case dw::op::plus_uconst: {
                 // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
-                // pushes the result. I have seen cases where the stack is empty, so we do a check
-                // first.
-                auto operand = read_uleb();
-                if (!stack.empty()) {
-                    operand += stack_pop();
-                }
-                stack_push(operand);
+                // pushes the result.
+                assert(!stack.empty());
+                stack_push(read_uleb() + stack_pop());
+            } break;
+            case dw::op::minus: {
+                // Pops the top two stack values, subtracts the former top of the stack from the
+                // former second entry, and pushes the result.
+                auto arg0 = stack_pop();
+                auto arg1 = stack_pop();
+                stack_push(arg1 - arg0);
+            } break;
+            case dw::op::plus: {
+                // Pops the top two stack entries, adds them together, and pushes the result.
+                stack_push(stack_pop() + stack_pop());
             } break;
 
             //
@@ -1221,6 +1276,14 @@ void dwarf::implementation::process_all_dies() {
             die die;
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
+
+            // Useful for looking up symbols in dwarfdump output.
+#if ORC_FEATURE(DEBUG) && 0
+            std::cerr << std::hex << "0x" << (die._debug_info_offset) << std::dec
+                      << ": "
+                      << to_string(die._tag)
+                      << '\n';
+#endif // ORC_FEATURE(DEBUG) && 0
 
             // code 0 is reserved; it's a null entry, and signifies the end of siblings.
             if (die._tag == dw::tag::none) {

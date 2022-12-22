@@ -318,7 +318,12 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
 
     std::size_t h{0};
     for (const auto& name : names) {
-        h = orc::hash_combine(h, attributes.hash(name));
+        // If this assert fires, it means an attribute's value was passed over during evaluation,
+        // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
+        // form evaluation engine such that this attribute's value is no longer passed over.
+        const auto& attribute = attributes.get(name);
+        assert(!attributes.has(name, attribute_value::type::passover));
+        h = orc::hash_combine(h, attribute._value.hash());
     }
     return h;
 }
@@ -923,6 +928,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     attribute_value result;
 
     auto set_passover_result = [&] {
+        // We have a problem if we are passing over an attribute that is needed to determine ODRVs.
+        assert(nonfatal_attribute(attr._name));
         result.passover();
         auto size = form_length(form, _s);
         _s.seekg(size, std::ios::cur);

@@ -1020,7 +1020,7 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
         // To determine that, we'll jump to the reference, grab the abbreviation code,
         // and see how many attributes it should have.
         auto reference = attributes.reference(dw::at::type);
-        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::seekdir::beg, [&] {
+        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::beg, [&] {
             auto abbrev_code = read_uleb();
             const auto& abbrev = find_abbreviation(abbrev_code);
             return abbrev._attributes.empty();

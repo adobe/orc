@@ -777,7 +777,23 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // Since the topmost item on the stack is the expression's value, an extra value at the bottom
     // shouldn't be fatal. That's what we'll do for now, and if a case pops where that's a problem,
     // we'll revisit.
-    stack_push(0x10000);
+    //
+    // Aaaand we've hit a problem. I still think the above scenario works, but I'm still getting
+    // some runtime errors. I have found cases where two libraries that appear to be compiled
+    // with identical settings produce differing DWARF entries for DW_AT_data_member_location,
+    // causing the values to differ when the base address is not 0. Specifically, the two
+    // expressions I'm seeing are:
+    //     DW_AT_data_member_location    (0x00)
+    // and
+    //     DW_AT_data_member_location    (DW_OP_plus_uconst 0x0)
+    // which we know should be the same symbol as observed in different object files. I'm not
+    // sure why one object file chooses an address-relative expression, while the other opts
+    // for the absolute value. I _think_ in the absolute case, I need to add that value to
+    // the base object's offset, which in our simulated case would be 0x10000. (See details
+    // about DW_AT_data_member_location in Sectioin 5.7.6 Data Member Entries).
+    //
+    // TL;DR: This is set to zero for now and we can address (ha!) it later if required.
+    stack_push(0); // Ideally should be a nonzero value to better emulate addresses.
 
     // Useful to see what the whole expression is that this routine is about to evaluate.
 #if ORC_FEATURE(DEBUG) && 0

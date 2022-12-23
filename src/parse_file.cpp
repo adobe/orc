@@ -65,11 +65,7 @@ file_details detect_file(freader& s) {
         }
 
         if (result._format == file_details::format::macho) {
-            std::uint32_t cputype{0};
-            s.read(reinterpret_cast<char*>(&cputype), sizeof(cputype));
-            if (result._needs_byteswap) {
-                endian_swap(cputype);
-            }
+            const auto cputype = read_pod<std::uint32_t>(s, result._needs_byteswap);
             assert(((cputype & CPU_ARCH_ABI64) != 0) == result._is_64_bit);
             if (cputype == CPU_TYPE_X86) {
                 result._arch = arch::x86;

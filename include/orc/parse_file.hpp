@@ -157,6 +157,8 @@ struct file_details {
 
 template <typename T>
 void endian_swap(T& c) {
+    if constexpr (sizeof(T) == 1) return;
+
     char* first = reinterpret_cast<char*>(&c);
     char* last = first + sizeof(T);
     while (first != last) {
@@ -177,10 +179,24 @@ T read_pod(freader& s) {
 
 template <>
 inline bool read_pod(freader& s) {
-    char x;
-    s.read(reinterpret_cast<char*>(&x), 1);
-    return x ? true : false;
+    return read_pod<char>(s) != 0;
 }
+
+template <typename T>
+T read_pod(freader& s, bool byteswap) {
+    T x;
+    s.read(reinterpret_cast<char*>(&x), sizeof(T));
+    if (byteswap) {
+        endian_swap(x);
+    }
+    return x;
+}
+
+template <>
+inline bool read_pod(freader& s, bool) {
+    return read_pod<char>(s) != 0;
+}
+
 /**************************************************************************************************/
 
 std::uint32_t uleb128(freader& s);

@@ -160,6 +160,7 @@ bool nonfatal_attribute(dw::at at) {
             dw::at::call_line,
             dw::at::call_origin,
             dw::at::call_return_pc,
+            dw::at::call_value,
             dw::at::containing_type,
             dw::at::decl_column,
             dw::at::decl_file,
@@ -171,7 +172,7 @@ bool nonfatal_attribute(dw::at at) {
             // assume this attribute is of constant form, this is the size of the function. If two
             // or more functions with the same name have different high_pc values, their sizes are
             // different, which means their definitions are going to be different, and that's an
-            // ODRV.
+            // ODRV. Thus, dw::at::high_pc is a fatal attribute.
             // dw::at::high_pc,
             dw::at::location,
             dw::at::low_pc,

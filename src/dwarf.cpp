@@ -192,11 +192,8 @@ struct file_name {
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     bool is_declaration =
         attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
-    return orc::hash_combine(0,
-                             static_cast<std::size_t>(d._arch),
-                             static_cast<std::size_t>(d._tag),
-                             d._path.hash(),
-                             is_declaration);
+    return orc::hash_combine(0, static_cast<std::size_t>(d._arch), static_cast<std::size_t>(d._tag),
+                             d._path.hash(), is_declaration);
 };
 
 /**************************************************************************************************/
@@ -302,7 +299,12 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
 
     std::size_t h{0};
     for (const auto& name : names) {
-        h = orc::hash_combine(h, attributes.hash(name));
+        // If this assert fires, it means an attribute's value was passed over during evaluation,
+        // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
+        // form evaluation engine such that this attribute's value is no longer passed over.
+        const auto& attribute = attributes.get(name);
+        assert(!attributes.has(name, attribute_value::type::passover));
+        h = orc::hash_combine(h, attribute._value.hash());
     }
     return h;
 }
@@ -571,6 +573,10 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
 
     result._value = process_form(attr, cur_die_offset);
 
+    if (result._value.has_passover()) {
+        return result;
+    }
+
     // some attributes need further processing. Once we have the initial value from process_form,
     // we can continue the work here. (Some forms, like ref_addr, have already been processed
     // completely- these are the cases when a value needs contextual interpretation. For example,
@@ -590,6 +596,15 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             case 0x05: result._value.string(empool("pass by value")); break;
             case 0x40: result._value.string(empool("lo user")); break;
             case 0xff: result._value.string(empool("hi user")); break;
+            // otherwise, leave the value unchanged.
+        }
+    } else if (result._name == dw::at::accessibility) {
+        auto accessibility = result._value.uint();
+        assert(accessibility >= 1 && accessibility <= 3);
+        switch (accessibility) {
+            case 1: result._value.string(empool("public")); break;
+            case 2: result._value.string(empool("protected")); break;
+            case 3: result._value.string(empool("private")); break;
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
@@ -687,64 +702,250 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     const auto end = _s.tellg() + expression_size;
 
     // There are some exprlocs that cannot be deciphered, probably because we don't have as much
-    // information in our state machine as a debugger does when they're doing these evaluations.
-    // In the event that happens, we set this passover flag, and avoid the evaluation entirely.
+    // information in our state machine as a debugger does when they're doing these evaluations. In
+    // the event that happens, we set this passover flag, and avoid the evaluation entirely.
     bool passover = false;
 
-    // The use of the range-based switch statements below are an extension to the C++ standard,
-    // but is supported by both GCC and clang. It makes the below *far* more readable, but if
-    // we need to pull it out, we can.
+    // The use of the range-based switch statements below are an extension to the C++ standard, but
+    // is supported by both GCC and clang. It makes the below *far* more readable, but if we need
+    // to pull it out, we can.
+
+    auto stack_pop = [&_stack = stack] {
+        assert(!_stack.empty());
+        auto result = _stack.back();
+        _stack.pop_back();
+        return result;
+    };
+
+    auto stack_push = [&_stack = stack](auto value) { _stack.push_back(value); };
+
+    // REVISIT (fosterbrereton) : The DWARF specification describes a multi-register stack machine
+    // whose registers imitate (or are?!) the registers present on architecture for which this code
+    // has been written. This implementation is anything but. Instead, it aims to be the minimum
+    // implementation required to evaluate the DWARF attributes we care about.
+    //
+    // The DWARF spec mentions that each stack entry is a type/value tuple. As of now we store all
+    // values as 64-bit unsigned integers, the rebels we are.
+    //
+    // Implementations marked OP_BROKEN are known to be incorrect, but whose implementations suffice
+    // for the purposes of the tool. They could still be broken for unencountered cases. It's
+    // likely there are other parts of this routine that are also broken, but are not known.
+    //
+    // When evaluating DW_AT_data_member_location for a DW_TAG_inheritance, we have to abide
+    // by 5.7.3 of the spec, which says (in part):
+    //     An inheritance entry for a class that derives from or extends another class or struct
+    //     also has a DW_AT_data_member_location attribute, whose value describes the location of
+    //     the beginning of the inherited type relative to the beginning address of the instance of
+    //     the derived class. If that value is a constant, it is the offset in bytes from the
+    //     beginning of the class to the beginning of the instance of the inherited type.
+    //     Otherwise, the value must be a location description. In this latter case, the beginning
+    //     address of the instance of the derived class is pushed on the expression stack before
+    //     the location description is evaluated and the result of the evaluation is the location
+    //     of the instance of the inherited type.
+    // In other words, this is a _runtime derived_ value, where the object instance's address is
+    // pushed onto the stack and then the machine is evaluated to derive the data member location
+    // of the subclass. For our purposes, we can assume a base object address of 0.
+    //
+    // For a handful of expression location evaluations (like the one above), an initial value is
+    // assumed to be on the stack. It's probably easiest to just push a default value of 0x10000
+    // onto the stack to start with for all cases. (This isn't 0 because in some cases it's an
+    // address and may be negatively offset, so we want a reasonable value that won't underflow).
+    // Since the topmost item on the stack is the expression's value, an extra value at the bottom
+    // shouldn't be fatal. That's what we'll do for now, and if a case pops where that's a problem,
+    // we'll revisit.
+    //
+    // Aaaand we've hit a problem. I still think the above scenario works, but I am getting
+    // some runtime errors. I have found cases where two libraries that appear to be compiled
+    // with identical settings produce differing DWARF entries for DW_AT_data_member_location,
+    // causing the values to differ when the base address is not 0. Specifically, the two
+    // expressions I'm seeing are:
+    //     DW_AT_data_member_location    (0x00)
+    // and
+    //     DW_AT_data_member_location    (DW_OP_plus_uconst 0x0)
+    // which we know should be the same symbol as observed in different object files. I'm not
+    // sure why one object file chooses an address-relative expression, while the other opts
+    // for the absolute value. I _think_ in the absolute case, I need to add that value to
+    // the base object's offset, which in our simulated case would be 0x10000. (See details
+    // about DW_AT_data_member_location in Section 5.7.6 (Data Member Entries)).
+    //
+    // TL;DR: This is set to zero for now and we can address (ha!) it later if required.
+    stack_push(0); // Ideally should be a nonzero value to better emulate addresses.
+
+    // Useful to see what the whole expression is that this routine is about to evaluate.
+#if ORC_FEATURE(DEBUG) && 0
+    std::vector<char> expression(expression_size, 0);
+    temp_seek(_s, [&]{
+        _s.read(&expression[0], expression_size);
+    });
+#endif // ORC_FEATURE(DEBUG)
 
     // clang-format off
     while (_s.tellg() < end && !passover) {
-        auto op = read_pod<dw::op>(_s);
-        switch (op) {
+        // The switch statements are ordered according to their enumeration in the DWARF 5
+        // specification (starting in section 2.5).
+        switch (auto op = read_pod<dw::op>(_s); op) {
+            //
+            // 2.5.1.1 Literal Encodings
+            //
             case dw::op::lit0 ... dw::op::lit31: { // gcc/clang extension
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
+                // These opcodes encode the unsigned literal values from 0 through 31, inclusive.
+                stack_push(static_cast<int>(op) - static_cast<int>(dw::op::lit0));
             } break;
-            case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
-                stack.push_back(static_cast<int>(op) - static_cast<int>(dw::op::reg0));
-            } break;
-            case dw::op::const1u: {
-                stack.push_back(read8());
-            } break;
-            case dw::op::const2u: {
-                stack.push_back(read16());
-            } break;
-            case dw::op::const4u: {
-                stack.push_back(read32());
-            } break;
-            case dw::op::const8u: {
-                stack.push_back(read64());
-            } break;
-            case dw::op::const1s: {
-                stack.push_back(read_pod<std::int8_t>(_s)); // no byteswap?
-            } break;
-            case dw::op::const2s: {
-                stack.push_back(read_pod<std::int16_t>(_s)); // no byteswap?
-            } break;
-            case dw::op::const4s: {
-                stack.push_back(read_pod<std::int32_t>(_s)); // no byteswap?
-            } break;
-            case dw::op::const8s: {
-                stack.push_back(read_pod<std::int64_t>(_s)); // no byteswap?
-            } break;
-            case dw::op::constu: {
-                stack.push_back(read_uleb());
-            } break;
-            case dw::op::consts: {
-                stack.push_back(read_sleb());
-            } break;
-            case dw::op::regx: {
-                stack.push_back(read_uleb());
-            } break;
-            case dw::op::dup: {
-                if (stack.empty()) {
-                    passover = true;
+            case dw::op::addr: {
+                // A single operand that encodes a machine address and whose size is the size of an
+                // address on the target machine.
+                //
+                // REVISIT (fosterbrereton) : I think this "is 64 bit" question should be answered
+                // by the compilation unit header (`cu_header`), not the file details. Or, better
+                // yet, I think is the address size in that same header.
+                if (_details._is_64_bit) {
+                    stack_push(read64());
                 } else {
-                    stack.push_back(stack.back());
+                    stack_push(read32()); // safe to assume?
                 }
             } break;
+            case dw::op::const1u: {
+                // The single operand provides a 1-byte unsigned integer constant
+                stack_push(read8());
+            } break;
+            case dw::op::const2u: {
+                // The single operand provides a 2-byte unsigned integer constant
+                stack_push(read16());
+            } break;
+            case dw::op::const4u: {
+                // The single operand provides a 4-byte unsigned integer constant
+                stack_push(read32());
+            } break;
+            case dw::op::const8u: {
+                // The single operand provides an 8-byte unsigned integer constant
+                stack_push(read64());
+            } break;
+            case dw::op::const1s: {
+                // The single operand provides a 1-byte signed integer constant
+                stack_push(read_pod<std::int8_t>(_s));
+            } break;
+            case dw::op::const2s: {
+                // The single operand provides a 2-byte signed integer constant
+                stack_push(read_pod<std::int16_t>(_s));
+            } break;
+            case dw::op::const4s: {
+                // The single operand provides a 4-byte signed integer constant
+                stack_push(read_pod<std::int32_t>(_s));
+            } break;
+            case dw::op::const8s: {
+                // The single operand provides an 8-byte signed integer constant
+                stack_push(read_pod<std::int64_t>(_s));
+            } break;
+            case dw::op::constu: {
+                // The single operand provides an unsigned LEB128 integer constant
+                stack_push(read_uleb());
+            } break;
+            case dw::op::consts: {
+                // The single operand provides a signed LEB128 integer constant
+                stack_push(read_sleb());
+            } break;
+
+            //
+            // 2.5.1.2 Register Values
+            //
+            case dw::op::fbreg: {
+                // OP_BROKEN
+                // Provides a signed LEB128 offset from the address specified by the location
+                // description in the DW_AT_frame_base attribute of the current function.
+                stack_push(read_sleb());
+            }   break;
+            case dw::op::breg0 ... dw::op::breg31: { // gcc/clang extension
+                // OP_BROKEN
+                // The single operand provides a signed LEB128 offset from the specified register.
+                stack_push(read_sleb());
+            } break;
+
+            //
+            // 2.5.1.3 Stack Operations
+            //
+            case dw::op::dup: {
+                // Duplicates the value (including its type identifier) at the top of the stack
+                assert(!stack.empty());
+                stack_push(stack.back());
+            } break;
+            case dw::op::drop: {
+                // Pops the value (including its type identifier) at the top of the stack
+                assert(!stack.empty());
+                (void)stack_pop();
+            } break;
+            case dw::op::deref: {
+                // Pops the top stack entry and treats it as an address. The popped value must
+                // have an integral type. The value retrieved from that address is pushed, and
+                // has the generic type. The size of the data retrieved from the dereferenced
+                // address is the size of an address on the target machine.
+                //
+                // The net effect of this operation is a pop, dereference, and push. In our
+                // case, then, we'll do nothing.
+            } break;
+
+            //
+            // 2.5.1.4 Arithmetic and Logical Operations
+            //
+            case dw::op::and_: {
+                // Pops the top two stack values, performs a bitwise and operation on the two, and
+                // pushes the result.
+                assert(stack.size() > 1);
+                auto arg0 = stack_pop();
+                auto arg1 = stack_pop();
+                stack_push(arg0 | arg1);
+            } break;
+            case dw::op::plus_uconst: {
+                // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
+                // pushes the result.
+                assert(!stack.empty());
+                stack_push(read_uleb() + stack_pop());
+            } break;
+            case dw::op::minus: {
+                // Pops the top two stack values, subtracts the former top of the stack from the
+                // former second entry, and pushes the result.
+                auto arg0 = stack_pop();
+                auto arg1 = stack_pop();
+                stack_push(arg1 - arg0);
+            } break;
+            case dw::op::plus: {
+                // Pops the top two stack entries, adds them together, and pushes the result.
+                stack_push(stack_pop() + stack_pop());
+            } break;
+
+            //
+            // This is the end of Section 2.5. What follows in Section 2.6 are descriptions
+            // of "objects" in the machine. Unfortunately the spec isn't entirely clear what to do
+            // with these objects once they've been located, so we push something to the stack.
+            //
+
+            //
+            // 2.6.1.1.3 Register Location Descriptions
+            //
+            case dw::op::reg0 ... dw::op::reg31: { // gcc/clang extension
+                // These opcodes encode the names of up to 32 registers, numbered from 0 through 31,
+                // inclusive. The object addressed is in register n.
+                stack_push(0);
+            } break;
+            case dw::op::regx: {
+                // A single unsigned LEB128 literal operand that encodes the name of a register.
+                stack_push(read_uleb()); } break;
+
+            //
+            // 2.6.1.1.4 Implicit Location Descriptions
+            //
+            case dw::op::stack_value: {
+                // The DWARF expression represents the actual value of the object, rather than its
+                // location. The DW_OP_stack_value operation terminates the expression. This is
+                // the "return" operator of the expression system. We assume it is at the end of
+                // the evaluation stream and so do nothing. This may need to be revisited if the
+                // assumption is bad.
+            } break;
+
+            //
+            // As soon as we find an opcode we don't interpret, we pass over the entire expression
+            // and mark the result as unhandled.
+            //
+
             default: {
                 passover = true;
             } break;
@@ -774,6 +975,24 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     const auto cu_offset = _cu_address - debug_info_offset;
     attribute_value result;
 
+    auto set_passover_result = [&] {
+        // We have a problem if we are passing over an attribute that is needed to determine ODRVs.
+        assert(nonfatal_attribute(attr._name));
+        result.passover();
+        auto size = form_length(form, _s);
+        _s.seekg(size, std::ios::cur);
+    };
+
+    auto evaluate_expression = [&, _impl = this](auto length_fn) {
+        // If the attribute is nonfatal, don't waste time evaluating it.
+        if (nonfatal_attribute(attr._name)) {
+            set_passover_result();
+            return;
+        }
+        auto length = (_impl->*length_fn)();
+        read_exactly(_s, length, [&](auto length) { result = evaluate_exprloc(length); });
+    };
+
     /*
         Notes worth remembering:
 
@@ -796,8 +1015,9 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.string(read_debug_str(read32()));
         } break;
         case dw::form::exprloc: {
-            read_exactly(_s, read_uleb(),
-                         [&](auto expr_size) { result = evaluate_exprloc(static_cast<std::uint32_t>(expr_size)); });
+            read_exactly(_s, read_uleb(), [&](auto expr_size) {
+                result = evaluate_exprloc(static_cast<std::uint32_t>(expr_size));
+            });
         } break;
         case dw::form::addr: {
             result.uint(read64());
@@ -841,10 +1061,20 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::sec_offset: {
             result.uint(read32());
         } break;
+        case dw::form::block1: {
+            evaluate_expression(&dwarf::implementation::read8);
+        } break;
+        case dw::form::block2: {
+            evaluate_expression(&dwarf::implementation::read16);
+        } break;
+        case dw::form::block4: {
+            evaluate_expression(&dwarf::implementation::read32);
+        } break;
+        case dw::form::block: {
+            evaluate_expression(&dwarf::implementation::read_uleb);
+        } break;
         default: {
-            result.passover();
-            auto size = form_length(form, _s);
-            _s.seekg(size, std::ios::cur);
+            set_passover_result();
         } break;
     }
 
@@ -922,7 +1152,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
-                       // REVISIT (fosterbrereton) Can we skip processing nonfatal attributes?
+                       // If the attribute is nonfatal, we'll pass over it in `process_attribute`.
                        return process_attribute(x, die._debug_info_offset);
                    });
 
@@ -1039,6 +1269,14 @@ void dwarf::implementation::process_all_dies() {
             die die;
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
+
+            // Useful for looking up symbols in dwarfdump output.
+#if ORC_FEATURE(DEBUG) && 0
+            std::cerr << std::hex << "0x" << (die._debug_info_offset) << std::dec
+                      << ": "
+                      << to_string(die._tag)
+                      << '\n';
+#endif // ORC_FEATURE(DEBUG) && 0
 
             // code 0 is reserved; it's a null entry, and signifies the end of siblings.
             if (die._tag == dw::tag::none) {

@@ -10,4 +10,12 @@
 
 #define ORC_FEATURE(X) (ORC_PRIVATE_FEATURE_ ## X())
 
+#ifndef NDEBUG
+    #define ORC_PRIVATE_FEATURE_DEBUG() 1
+    #define ORC_PRIVATE_FEATURE_RELEASE() 0
+#else
+    #define ORC_PRIVATE_FEATURE_DEBUG() 0
+    #define ORC_PRIVATE_FEATURE_RELEASE() 1
+#endif // !defined(NDEBUG)
+
 /**************************************************************************************************/

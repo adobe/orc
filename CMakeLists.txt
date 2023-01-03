@@ -73,27 +73,37 @@ add_executable(orc_orc
     ${HEADER_FILES}
 )
 add_executable(orc::orc ALIAS orc_orc)
-
 set_target_properties(orc_orc PROPERTIES OUTPUT_NAME "orc")
 
-if (PROJECT_IS_TOP_LEVEL)
-    target_compile_options(orc_orc PRIVATE -Wall -Werror)
-    set_target_properties(orc_orc PROPERTIES XCODE_GENERATE_SCHEME ON)
-endif()
-
-target_link_libraries(orc_orc
-    PRIVATE
-        stlab::stlab
-        TBB::tbb
-        tomlplusplus::tomlplusplus
+add_executable(orc_dogfood
+    ${SRC_FILES}
+    ${HEADER_FILES}
 )
+add_executable(orc::dogfood ALIAS orc_dogfood)
+set_target_properties(orc_dogfood PROPERTIES OUTPUT_NAME "orc_dogfood")
 
-target_include_directories(orc_orc
-    PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-)
+foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
 
-# This is the end of the ORC executable definition
+    if (PROJECT_IS_TOP_LEVEL)
+        target_compile_options(${_TARGET_NAME} PRIVATE -Wall -Werror)
+        set_target_properties(${_TARGET_NAME} PROPERTIES XCODE_GENERATE_SCHEME ON)
+    endif()
+
+    target_link_libraries(${_TARGET_NAME}
+        PRIVATE
+            stlab::stlab
+            TBB::tbb
+            tomlplusplus::tomlplusplus
+    )
+
+    target_include_directories(${_TARGET_NAME}
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+    )
+
+endforeach()
+
+# This is the end of the ORC executable(s) definition
 
 file(GLOB TEST_SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/test/src/*.cpp)
 list(REMOVE_ITEM SRC_FILES ${PROJECT_SOURCE_DIR}/src/main.cpp)
@@ -130,12 +140,17 @@ if (NOT PROJECT_IS_TOP_LEVEL)
     set(ORC_HELPERS ${ORC_HELPERS} PARENT_SCOPE)
 endif()
 
+include(${ORC_HELPERS})
+
+# The dogfood target is specifically to run ORC over itself.
+if (CMAKE_GENERATOR MATCHES "Xcode")
+    link_via_orc(orc_dogfood)
+endif()
+
 # These are example apps that uses ORC as its linker. We can add as many of these as necessary to
 # test out the tool.
 
 if (ORC_BUILD_EXAMPLES)
-
-    include(${ORC_HELPERS})
 
     ##### example app: vtable
 

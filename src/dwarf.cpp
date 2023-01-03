@@ -209,27 +209,20 @@ struct cu_header {
 };
 
 void cu_header::read(freader& s, bool needs_byteswap) {
-    _length = read_pod<std::uint32_t>(s);
-    if (needs_byteswap) {
-        endian_swap(_length);
-    }
+    _length = read_pod<std::uint32_t>(s, needs_byteswap);
+
     if (_length >= 0xfffffff0) {
         // REVISIT: (fbrereto) handle extended length / DWARF64
         throw std::runtime_error("unsupported length");
     }
 
-    _version = read_pod<std::uint16_t>(s);
+    _version = read_pod<std::uint16_t>(s, needs_byteswap);
 
     // note the read_pod types differ.
     if (_is_64_bit) {
-        _debug_abbrev_offset = read_pod<std::uint64_t>(s);
+        _debug_abbrev_offset = read_pod<std::uint64_t>(s, needs_byteswap);
     } else {
-        _debug_abbrev_offset = read_pod<std::uint32_t>(s);
-    }
-
-    if (needs_byteswap) {
-        endian_swap(_version);
-        endian_swap(_debug_abbrev_offset);
+        _debug_abbrev_offset = read_pod<std::uint32_t>(s, needs_byteswap);
     }
 
     _address_size = read_pod<std::uint8_t>(s);
@@ -255,16 +248,13 @@ struct line_header {
 };
 
 void line_header::read(freader& s, bool needs_byteswap) {
-    _length = read_pod<std::uint32_t>(s);
-    if (needs_byteswap) {
-        endian_swap(_length);
-    }
+    _length = read_pod<std::uint32_t>(s, needs_byteswap);
     if (_length >= 0xfffffff0) {
         // REVISIT: (fbrereto) handle extended length / DWARF64
         throw std::runtime_error("unsupported length");
     }
-    _version = read_pod<std::uint16_t>(s);
-    _header_length = read_pod<std::uint32_t>(s);
+    _version = read_pod<std::uint16_t>(s, needs_byteswap);
+    _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
     _min_instruction_length = read_pod<std::uint8_t>(s);
     if (_version >= 4) {
         _max_ops_per_instruction = read_pod<std::uint8_t>(s);
@@ -273,16 +263,7 @@ void line_header::read(freader& s, bool needs_byteswap) {
     _line_base = read_pod<std::int8_t>(s);
     _line_range = read_pod<std::uint8_t>(s);
     _opcode_base = read_pod<std::uint8_t>(s);
-    if (needs_byteswap) {
-        endian_swap(_version);
-        endian_swap(_header_length);
-        // endian_swap(_min_instruction_length);
-        // endian_swap(_max_ops_per_instruction);
-        // endian_swap(_default_is_statement);
-        // endian_swap(_line_base);
-        // endian_swap(_line_range);
-        // endian_swap(_opcode_base);
-    }
+
     for (std::size_t i{0}; i < (_opcode_base - 1); ++i) {
         _standard_opcode_lengths.push_back(read_pod<std::int8_t>(s));
     }
@@ -429,9 +410,7 @@ struct dwarf::implementation {
 
 template <class T>
 T dwarf::implementation::read() {
-    T result = read_pod<T>(_s);
-    if (_details._needs_byteswap) endian_swap(result);
-    return result;
+    return read_pod<T>(_s, _details._needs_byteswap);
 }
 
 std::uint64_t dwarf::implementation::read64() { return read<std::uint64_t>(); }

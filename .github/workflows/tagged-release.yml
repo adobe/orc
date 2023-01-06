@@ -23,10 +23,11 @@ jobs:
       - name: 🛠️ Build ORC
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
-      - name: 🗜️ Compress binary
+      - name: 🗜️ Create archive
         run: |
-          tar -zcvf orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz build/Release/orc
-      - name: ✍️ Release archive
+          cd build/Release
+          tar -zcvf orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz orc
+      - name: ✍️ Post archive
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true

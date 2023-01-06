@@ -5,30 +5,32 @@ on:
       - "v*.*.*"
 permissions:
   contents: write
+env:
+  artifact_name: orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
 jobs:
   release:
     runs-on: macos-latest
     steps:
-      - name: 🐍 Setup
+      - name: 🐍 Python setup
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-      - name: ⬇️ Sources
+      - name: ⬇️ Checkout sources
         uses: actions/checkout@v3
-      - name: 🏗️ Project files
+      - name: 🏗️ Setup project files
         run: |
           mkdir build
           cd build
           cmake --log-level=WARNING -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: 🛠️ ORC
+      - name: 🛠️ Build ORC
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
-      - name: ✏️ Compress
+      - name: 🗜️ Compress binary
         run: |
-          tar -zcvf orc-${{ env.NEXT_TAG }}-macos.tgz build/Release/orc
-      - name: ✍️ Release
+          tar -zcvf ${{env.artifact_name}} build/Release/orc
+      - name: ✍️ Release archive
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
           files:
-            orc-${{ env.NEXT_TAG }}-macos.tgz
+            ${{env.artifact_name}}

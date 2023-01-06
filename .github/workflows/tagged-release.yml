@@ -6,25 +6,29 @@ on:
 permissions:
   contents: write
 jobs:
-  build:
+  release:
     runs-on: macos-latest
     steps:
-      - name: 🐍 setup
+      - name: 🐍 Setup
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-      - name: ⬇️ sources
+      - name: ⬇️ Sources
         uses: actions/checkout@v3
-      - name: 🏗️ project files
+      - name: 🏗️ Project files
         run: |
           mkdir build
           cd build
           cmake --log-level=WARNING -DORC_BUILD_EXAMPLES=0 -GXcode ..
-      - name: 🛠️ orc release
+      - name: 🛠️ ORC
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
+      - name: ✏️ Compress
+        run: |
+          tar -zcvf orc-${{ env.NEXT_TAG }}-macos.tgz build/Release/orc
       - name: ✍️ Release
         uses: softprops/action-gh-release@v1
+        generate_release_notes: true
         with:
           files:
-            build/Release/orc
+            orc-${{ env.NEXT_TAG }}-macos.tgz

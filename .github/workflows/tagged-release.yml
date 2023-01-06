@@ -8,8 +8,6 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
-    env:
-      artifact_name: orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
     steps:
       - name: 🐍 Python setup
         uses: actions/setup-python@v2
@@ -27,10 +25,10 @@ jobs:
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
       - name: 🗜️ Compress binary
         run: |
-          tar -zcvf ${{env.artifact_name}} build/Release/orc
+          tar -zcvf orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz build/Release/orc
       - name: ✍️ Release archive
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
           files:
-            ${{env.artifact_name}}
+            orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz

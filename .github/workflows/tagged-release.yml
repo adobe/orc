@@ -32,4 +32,4 @@ jobs:
         with:
           generate_release_notes: true
           files:
-            orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
+            build/Release/orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz

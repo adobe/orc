@@ -5,11 +5,11 @@ on:
       - "v*.*.*"
 permissions:
   contents: write
-env:
-  artifact_name: orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
 jobs:
   release:
     runs-on: macos-latest
+    env:
+      artifact_name: orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
     steps:
       - name: 🐍 Python setup
         uses: actions/setup-python@v2

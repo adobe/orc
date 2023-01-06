@@ -1,0 +1,28 @@
+name: Tagged Release
+on:
+  push:
+    tags:
+      - "v*.*.*"
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: 🐍 setup
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: ⬇️ sources
+        uses: actions/checkout@v3
+      - name: 🏗️ project files
+        run: |
+          mkdir build
+          cd build
+          cmake --log-level=WARNING -DORC_BUILD_EXAMPLES=0 -GXcode ..
+      - name: 🛠️ orc release
+        run: |
+          xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
+      - name: ✍️ Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files:
+            build/Release/orc

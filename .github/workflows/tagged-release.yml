@@ -28,7 +28,7 @@ jobs:
           tar -zcvf orc-${{ env.NEXT_TAG }}-macos.tgz build/Release/orc
       - name: ✍️ Release
         uses: softprops/action-gh-release@v1
-        generate_release_notes: true
         with:
+          generate_release_notes: true
           files:
             orc-${{ env.NEXT_TAG }}-macos.tgz

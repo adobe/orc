@@ -394,10 +394,8 @@ auto epilogue(bool exception) {
               << "  " << g._odrv_count << " ODRVs reported\n"
               << "  " << g._object_file_count << " compilation units processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
-              << "  " << g._unique_symbol_count << " unique symbols registered\n"
-#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
-              << "  " << g._unique_symbol_die_count << " unique symbol dies\n"
-#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
+              << "  " << g._die_skipped_count << " dies skipped (" << format_pct(g._die_skipped_count, g._die_processed_count) << ")\n"
+              << "  " << g._unique_symbol_count << " unique symbols\n"
               ;
         });
     }
@@ -407,22 +405,22 @@ auto epilogue(bool exception) {
         const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0);
         const auto pool_wasted = string_pool_wasted();
         const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
-        const auto die_memory_footprint(g._die_processed_count * sizeof(die));
+        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) * sizeof(die));
 
         cout_safe([&](auto& s) {
             s << "Resource metrics:\n"
               << "  String pool size / waste:\n";
+
             for (std::size_t i(0); i < string_pool_count_k; ++i) {
-                const double waste_pct(static_cast<double>(pool_wasted[i]) / pool_sizes[i] * 100);
-                s << "    " << i << ": " << size_format(pool_sizes[i]) << " (" << pool_sizes[i] << ") / "
-                  << size_format(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
-                  << std::fixed << std::setprecision(2) << waste_pct << "%\n";
+                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i] << ") / "
+                  << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
+                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "%\n";
             }
-            const double waste_pct(static_cast<double>(total_pool_wasted) / total_pool_size * 100);
-            s << "    totals: " << size_format(total_pool_size) << " (" << total_pool_size << ") / "
-              << size_format(total_pool_wasted) << " (" << total_pool_wasted << ") / "
-              << std::fixed << std::setprecision(2) << waste_pct << "%\n";
-            s << "  die footprint: " << size_format(die_memory_footprint) << " (" << die_memory_footprint << ") \n";
+
+            s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
+              << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
+              << format_pct(total_pool_wasted, total_pool_size) << "%\n";
+            s << "  die footprint: " << format_size(die_memory_footprint) << " (" << die_memory_footprint << ") \n";
         });
     }
 

@@ -50,7 +50,7 @@ std::string join(std::vector<std::string> src, const std::string& delimiter) {
 
 /**************************************************************************************************/
 
-std::string size_format(std::size_t x, format_mode mode) {
+std::string format_size(std::size_t x, format_mode mode) {
     double v(x);
     std::size_t exponent{0};
     const std::size_t factor{mode == format_mode::binary ? 1024ul : 1000ul};
@@ -74,6 +74,18 @@ std::string size_format(std::size_t x, format_mode mode) {
     const bool with_precision = std::modf(v, &dummy) != 0;
     std::stringstream result;
     result << std::fixed << std::setprecision(with_precision ? 2 : 0) << v << ' ' << label;
+    return result.str();
+}
+
+/**************************************************************************************************/
+
+std::string format_pct(float x) {
+    x *= 100.;
+
+    float dummy(0);
+    const bool with_precision = std::modf(x, &dummy) != 0;
+    std::stringstream result;
+    result << std::fixed << std::setprecision(with_precision ? 2 : 0) << x << '%';
     return result.str();
 }
 

@@ -12,6 +12,7 @@
 #include <cxxabi.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <list>
 #include <mutex>
 #include <set>
@@ -123,6 +124,9 @@ bool type_equivalent(const attribute& x, const attribute& y) {
 /**************************************************************************************************/
 
 void update_progress() {
+    // Since moving to a multithreaded solution, progress is horribly broken. We should probably
+    // remove this feature, as I'm not aware of anyone using it.
+#if 0
     if (!settings::instance()._show_progress) return;
 
     std::size_t done = globals::instance()._die_analyzed_count;
@@ -134,6 +138,7 @@ void update_progress() {
         s << globals::instance()._odrv_count << " violation(s) found";
         s << "          "; // 10 spaces of overprint to clear out any previous lingerers
     });
+#endif
 }
 
 /**************************************************************************************************/
@@ -153,7 +158,8 @@ auto with_global_die_collection(F&& f) {
 /**************************************************************************************************/
 
 auto& global_die_map() {
-    static decltype(auto) map_s = orc::make_leaky<tbb::concurrent_unordered_map<std::size_t, die*>>();
+    static decltype(auto) map_s =
+        orc::make_leaky<tbb::concurrent_unordered_map<std::size_t, die*>>();
     return map_s;
 }
 
@@ -184,10 +190,8 @@ void register_dies(dies die_vector) {
         return --collection.end();
     });
 
-    globals::instance()._die_processed_count += dies.size();
-
     for (auto& d : dies) {
-        if (d._skippable) continue;
+        assert(!d._skippable);
 #if 0
         if (settings::instance()._print_symbol_paths) {
             // This is all horribly broken, especially now that we're calling this from multiple threads.
@@ -227,7 +231,7 @@ void register_dies(dies die_vector) {
         d_in_map._next_die = &d;
     }
 
-    globals::instance()._die_analyzed_count += dies.size();
+    globals::instance()._die_skipped_count += skip_count;
 
     update_progress();
 }
@@ -388,8 +392,7 @@ std::string odrv_report::category() const {
 }
 
 /**************************************************************************************************/
-bool filter_report(const odrv_report& report)
-{
+bool filter_report(const odrv_report& report) {
     std::string odrv_category = report.category();
 
     // Decide if we should report or ignore.
@@ -411,8 +414,7 @@ bool filter_report(const odrv_report& report)
 
 /**************************************************************************************************/
 
-std::ostream& operator<<(std::ostream& s, const odrv_report& report) 
-{    
+std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
     std::string odrv_category = report.category();
 
@@ -468,18 +470,6 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 }
 
 /**************************************************************************************************/
-#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
-auto unique_symbol_die_count() {
-    std::size_t count{0};
-    for (const auto& entry : global_die_map()) {
-        for (const die* ptr = entry.second; ptr; ptr = ptr->_next_die) {
-            ++count;
-        }
-    }
-    return count;
-}
-#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
-/**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
     // First stage: process all the DIEs
@@ -501,10 +491,6 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     }
 
     work().wait();
-
-#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
-    globals::instance()._unique_symbol_die_count = unique_symbol_die_count();
-#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
 
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;

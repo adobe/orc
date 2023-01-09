@@ -160,6 +160,21 @@ auto& global_die_map() {
 /**************************************************************************************************/
 
 void register_dies(dies die_vector) {
+    globals::instance()._die_processed_count += die_vector.size();
+
+    // pre-process the vector of dies by partitioning them into those that are skippable and those
+    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
+    // cause a reallocation and copying of only the necessary dies into a vector whose memory
+    // consumption is exactly what's needed.
+
+    auto unskipped_end =
+        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
+
+    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
+
+    die_vector.erase(unskipped_end, die_vector.end());
+    die_vector.shrink_to_fit();
+
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
     // point to one another by reference, and the odr_map itself stores const pointers to the dies
     // it registers. Thus, we move our incoming die_vector to the end of this list, and all the

@@ -8,6 +8,7 @@
 #include "orc/string_pool.hpp"
 
 // stdc++
+#include <array>
 #include <cassert>
 #include <cstring>
 #include <memory>
@@ -46,6 +47,9 @@ std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data
 struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
+    std::size_t _size{0};
+    std::size_t _wasted{0};
+
     using ponds_type = std::vector<std::unique_ptr<char[]>>;
 #if ORC_FEATURE(LEAKY_MEMORY)
     ponds_type& _ponds{orc::make_leaky<ponds_type>()};
@@ -59,10 +63,13 @@ struct pool {
         const uint32_t tsz = sz + sizeof(uint32_t) + sizeof(size_t) + 1;
 
         if (_n < tsz) {
+            _wasted += _n;
             _n = std::max<std::size_t>(default_min_k, tsz);
             _ponds.push_back(std::make_unique<char[]>(_n));
             _p = _ponds.back().get();
+            _size += _n;
         }
+
         const std::size_t h = string_view_hash(incoming);
         // Memory isn't aligned - need to memcpy to pack the data
         std::memcpy(_p, &sz, sizeof(uint32_t));
@@ -76,6 +83,21 @@ struct pool {
         return result;
     }
 };
+
+/**************************************************************************************************/
+
+auto& pool_mutex(std::size_t index) {
+    static std::mutex mutexes[string_pool_count_k];
+    return mutexes[index];
+}
+
+auto& pool(std::size_t index) {
+    static struct pool pools[string_pool_count_k];
+    return pools[index];
+}
+
+/**************************************************************************************************/
+
 } // namespace
 
 /**************************************************************************************************/
@@ -124,10 +146,8 @@ pool_string empool(std::string_view src) {
         return ps;
     }
 
-    constexpr int pool_count_k = 23;
-    static std::mutex pool_mutex[pool_count_k];
-    const int index = h % pool_count_k;
-    std::lock_guard<std::mutex> pool_guard(pool_mutex[index]);
+    const int index = h % string_pool_count_k;
+    std::lock_guard<std::mutex> pool_guard(pool_mutex(index));
 
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
@@ -139,12 +159,38 @@ pool_string empool(std::string_view src) {
 
     // Not already interned; empool it and add to the 'keys'
     // The pools are not threadsafe, so we need one per mutex
-    static pool pools[pool_count_k];
-    const char* ptr = pools[index].empool(src);
+    const char* ptr = pool(index).empool(src);
     assert(ptr);
     keys.insert(std::make_pair(h, ptr));
 
     return pool_string(ptr);
+}
+
+/**************************************************************************************************/
+
+std::array<std::size_t, string_pool_count_k> string_pool_sizes() {
+    std::array<std::size_t, string_pool_count_k> result;
+
+    for (std::size_t i(0); i < string_pool_count_k; ++i) {
+        std::lock_guard<std::mutex> pool_guard(pool_mutex(i));
+        result[i] = pool(i)._size;
+    }
+
+    return result;
+}
+
+/**************************************************************************************************/
+
+std::array<std::size_t, string_pool_count_k> string_pool_wasted() {
+    std::array<std::size_t, string_pool_count_k> result;
+
+    for (std::size_t i(0); i < string_pool_count_k; ++i) {
+        std::lock_guard<std::mutex> pool_guard(pool_mutex(i));
+        // Add the accumulated waste from previous ponds to the current pond's unused space.
+        result[i] = pool(i)._wasted + pool(i)._n;
+    }
+
+    return result;
 }
 
 /**************************************************************************************************/

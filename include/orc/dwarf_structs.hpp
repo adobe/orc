@@ -356,16 +356,32 @@ bool sorted_has(const Container& c, const T& x) {
 /**************************************************************************************************/
 // Quick and dirty type to print an integer value as a padded, fixed-width hex value.
 // e.g., std::cout << hex_print(my_int) << '\n';
-struct hex_print {
-    explicit hex_print(std::size_t x) : _x{x} {}
-    std::size_t _x;
+template <class Integral>
+struct hex_print_t {
+    explicit hex_print_t(Integral x) : _x{x} {}
+    Integral _x;
 };
 
-inline std::ostream& operator<<(std::ostream& s, const hex_print& x) {
-    s << "0x";
-    s.width(8);
-    s.fill('0');
-    return s << std::hex << x._x << std::dec;
+template <class Integral>
+auto hex_print(Integral x) {
+    return hex_print_t<Integral>(x);
+}
+
+struct flag_saver {
+    explicit flag_saver(std::ios_base& s) : _s{s}, _f{_s.flags()} {}
+    ~flag_saver() { _s.setf(_f); }
+
+private:
+    std::ios_base& _s;
+    std::ios_base::fmtflags _f;
+};
+
+template <class Integral>
+inline std::ostream& operator<<(std::ostream& s, const hex_print_t<Integral>& x) {
+    constexpr auto width_k = sizeof(x._x) * 2 + 2; // +2 to the width for std::showbase
+    flag_saver fs(s);
+    return s << std::internal << std::showbase << std::hex << std::setw(width_k)
+             << std::setfill('0') << x._x;
 }
 
 /**************************************************************************************************/

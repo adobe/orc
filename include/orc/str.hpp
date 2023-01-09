@@ -20,4 +20,9 @@ std::vector<std::string> split(const std::string& src, const std::string& delimi
 
 std::string join(std::vector<std::string> src, const std::string& delimiter);
 
+// pretty-print the size with two decimal places of precision
+// e.g., "12.34 MiB" (binary), or "12.34 MB" (decimal).
+enum class format_mode { binary, decimal };
+std::string size_format(std::size_t x, format_mode mode = format_mode::binary);
+
 /**************************************************************************************************/

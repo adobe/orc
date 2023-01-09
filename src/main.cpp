@@ -402,7 +402,7 @@ auto epilogue(bool exception) {
 
     if (settings::instance()._resource_metrics) {
         const auto pool_sizes = string_pool_sizes();
-        const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0);
+        const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0ull);
         const auto pool_wasted = string_pool_wasted();
         const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
         const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) * sizeof(die));
@@ -414,12 +414,12 @@ auto epilogue(bool exception) {
             for (std::size_t i(0); i < string_pool_count_k; ++i) {
                 s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i] << ") / "
                   << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
-                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "%\n";
+                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "\n";
             }
 
             s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
               << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
-              << format_pct(total_pool_wasted, total_pool_size) << "%\n";
+              << format_pct(total_pool_wasted, total_pool_size) << "\n";
             s << "  die footprint: " << format_size(die_memory_footprint) << " (" << die_memory_footprint << ") \n";
         });
     }

@@ -7,6 +7,10 @@
 // identity
 #include "orc/str.hpp"
 
+// stdc++
+#include <cmath>
+#include <sstream>
+
 /**************************************************************************************************/
 
 std::string rstrip(std::string s) {
@@ -42,6 +46,47 @@ std::string join(std::vector<std::string> src, const std::string& delimiter) {
     for (std::size_t i = 1; i < src.size(); ++i)
         result += delimiter + src[i];
     return result;
+}
+
+/**************************************************************************************************/
+
+std::string format_size(std::size_t x, format_mode mode) {
+    double v(x);
+    std::size_t exponent{0};
+    const std::size_t factor{mode == format_mode::binary ? 1024ul : 1000ul};
+
+    while (v >= factor && exponent < 4) {
+        v /= factor;
+        ++exponent;
+    }
+
+    const char* label = [&]{
+        switch (exponent) {
+            case 0: return "bytes";
+            case 1: return mode == format_mode::binary ? "KiB" : "KB";
+            case 2: return mode == format_mode::binary ? "MiB" : "MB";
+            case 3: return mode == format_mode::binary ? "GiB" : "GB";
+            default: return mode == format_mode::binary ? "TiB" : "TB";
+        }
+    }();
+
+    float dummy(0);
+    const bool with_precision = std::modf(v, &dummy) != 0;
+    std::stringstream result;
+    result << std::fixed << std::setprecision(with_precision ? 2 : 0) << v << ' ' << label;
+    return result.str();
+}
+
+/**************************************************************************************************/
+
+std::string format_pct(float x) {
+    x *= 100.;
+
+    float dummy(0);
+    const bool with_precision = std::modf(x, &dummy) != 0;
+    std::stringstream result;
+    result << std::fixed << std::setprecision(with_precision ? 2 : 0) << x << '%';
+    return result.str();
 }
 
 /**************************************************************************************************/

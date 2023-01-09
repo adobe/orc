@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <list>
+#include <numeric>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -127,6 +128,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
             app_settings._relative_output_file = settings["relative_output_file"].value_or("");
+            app_settings._resource_metrics = settings["resource_metrics"].value_or(false);
 
             if (settings["output_file"]) {
                 std::string fn = *settings["output_file"].value<std::string>();
@@ -392,11 +394,33 @@ auto epilogue(bool exception) {
               << "  " << g._odrv_count << " ODRVs reported\n"
               << "  " << g._object_file_count << " compilation units processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
-              << "  " << g._unique_symbol_count << " unique symbols registered\n"
-#if ORC_FEATURE(UNIQUE_SYMBOL_DIES)
-              << "  " << g._unique_symbol_die_count << " unique symbol dies\n"
-#endif // ORC_FEATURE(UNIQUE_SYMBOL_DIES)
+              << "  " << g._die_skipped_count << " dies skipped (" << format_pct(g._die_skipped_count, g._die_processed_count) << ")\n"
+              << "  " << g._unique_symbol_count << " unique symbols\n"
               ;
+        });
+    }
+
+    if (settings::instance()._resource_metrics) {
+        const auto pool_sizes = string_pool_sizes();
+        const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0ull);
+        const auto pool_wasted = string_pool_wasted();
+        const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
+        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) * sizeof(die));
+
+        cout_safe([&](auto& s) {
+            s << "Resource metrics:\n"
+              << "  String pool size / waste:\n";
+
+            for (std::size_t i(0); i < string_pool_count_k; ++i) {
+                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i] << ") / "
+                  << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
+                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "\n";
+            }
+
+            s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
+              << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
+              << format_pct(total_pool_wasted, total_pool_size) << "\n";
+            s << "  die footprint: " << format_size(die_memory_footprint) << " (" << die_memory_footprint << ") \n";
         });
     }
 

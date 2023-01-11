@@ -30,14 +30,6 @@ filter_redundant = true
 
 forward_to_linker = true
 
-# Print the symbol paths as they are processed by ORC. Setting this value to `true` will result in
-# copious output. Because this can produce such a flurry of information, it is tracked separately
-# from log_level.
-#
-# The default value is `false`.
-
-print_symbol_paths = false
-
 # `log_level` determines how loud ORC should be. The following values can be used, in increasing
 # order of verbosity. The logging level does not affect ODR violation reporting.
 #
@@ -49,12 +41,6 @@ print_symbol_paths = false
 # The default value is `'warning'`.
 
 log_level = 'warning'
-
-# Output a die-count-based progress update throughout the session.
-#
-# The default value is `false`.
-
-show_progress = false
 
 # At the command line, expect a list of object/a/dylib files instead of the typical linker
 # command-line arguments. (This mode is largely helpful for debugging/testing the tool itself.)

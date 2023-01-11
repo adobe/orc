@@ -31,7 +31,6 @@ struct settings {
     bool _graceful_exit{false};
     std::size_t _max_violation_count{0};
     bool _forward_to_linker{true};
-    bool _print_symbol_paths{false};
     log_level _log_level{log_level::silent};
     bool _standalone_mode{false};
     bool _print_object_file_list{false};
@@ -39,7 +38,6 @@ struct settings {
     std::vector<std::string> _violation_report;
     std::vector<std::string> _violation_ignore;
     bool _parallel_processing{true};
-    bool _show_progress{false};
     bool _filter_redundant{true};
     std::string _relative_output_file;
     bool _resource_metrics{false};

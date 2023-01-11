@@ -123,26 +123,6 @@ bool type_equivalent(const attribute& x, const attribute& y) {
 
 /**************************************************************************************************/
 
-void update_progress() {
-    // Since moving to a multithreaded solution, progress is horribly broken. We should probably
-    // remove this feature, as I'm not aware of anyone using it.
-#if 0
-    if (!settings::instance()._show_progress) return;
-
-    std::size_t done = globals::instance()._die_analyzed_count;
-    std::size_t total = globals::instance()._die_processed_count;
-    std::size_t percentage = static_cast<double>(done) / total * 100;
-
-    cout_safe([&](auto& s) {
-        s << '\r' << done << "/" << total << "  " << percentage << "%; ";
-        s << globals::instance()._odrv_count << " violation(s) found";
-        s << "          "; // 10 spaces of overprint to clear out any previous lingerers
-    });
-#endif
-}
-
-/**************************************************************************************************/
-
 auto& unsafe_global_die_collection() {
     static decltype(auto) collection_s = orc::make_leaky<std::list<dies>>();
     return collection_s;
@@ -192,24 +172,6 @@ void register_dies(dies die_vector) {
 
     for (auto& d : dies) {
         assert(!d._skippable);
-#if 0
-        if (settings::instance()._print_symbol_paths) {
-            // This is all horribly broken, especially now that we're calling this from multiple threads.
-            static pool_string last_object_file_s;
-
-            cout_safe([&](auto& s){
-                if (d._object_file != last_object_file_s) {
-                    last_object_file_s = d._object_file;
-                    s << '\n' << last_object_file_s << '\n';
-                }
-
-                s << (should_skip ? 'S' : 'R') << " - 0x";
-                s.width(8);
-                s.fill('0');
-                s << std::hex << d._debug_info_offset << std::dec << " " << d._path << '\n';
-            });
-        }
-#endif
 
         //
         // At this point we know we're going to register the die. Hereafter belongs
@@ -232,8 +194,6 @@ void register_dies(dies die_vector) {
     }
 
     globals::instance()._die_skipped_count += skip_count;
-
-    update_progress();
 }
 
 /**************************************************************************************************/

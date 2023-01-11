@@ -121,10 +121,8 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._graceful_exit = settings["graceful_exit"].value_or(false);
             app_settings._max_violation_count = settings["max_error_count"].value_or(0);
             app_settings._forward_to_linker = settings["forward_to_linker"].value_or(true);
-            app_settings._print_symbol_paths = settings["print_symbol_paths"].value_or(false);
             app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
-            app_settings._show_progress = settings["show_progress"].value_or(false);
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
             app_settings._relative_output_file = settings["relative_output_file"].value_or("");
@@ -378,15 +376,6 @@ cmdline_results process_command_line(int argc, char** argv) {
 
 auto epilogue(bool exception) {
     const auto& g = globals::instance();
-
-    // If we were showing progress this session, take all the stored up ODRVs and output them
-    if (settings::instance()._show_progress) {
-        assert(false); // this code is currently broken, and needs rework :\
-        // cout_safe([&](auto& s){
-        //     s << '\n';
-        //     s << odrv_sstream().str();
-        // });
-    }
 
     if (log_level_at_least(settings::log_level::warning)) {
         cout_safe([&](auto& s) {

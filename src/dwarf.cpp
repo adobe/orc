@@ -192,11 +192,30 @@ struct file_name {
 
 /**************************************************************************************************/
 
+bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
+    return attributes.has_uint(name) && attributes.uint(name) == 1;
+}
+
+/**************************************************************************************************/
+
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
-    bool is_declaration =
-        attributes.has_uint(dw::at::declaration) && attributes.uint(dw::at::declaration) == 1;
-    return orc::hash_combine(0, static_cast<std::size_t>(d._arch), static_cast<std::size_t>(d._tag),
-                             d._path.hash(), is_declaration);
+    // Tag used to be a part of the fatal hash computation. Unfortunately it causes `class` and
+    // `struct` definitions to be considered different, when they should not be. As a general
+    // rule, I think _all_ symbols regardless of tag should be uniquely defined, so pulling the tag
+    // from the hash below should catch more issues without adding any false positives.
+    //
+    // The `declaration` attribute used to be a part of this hash, too. Given that a declaration
+    // is not a definition, they cannot contribute to an ODRV, so were instead added to the
+    // `skip_die` logic, and removed from this hash.
+    //
+    // Thus, the only two things that contribute to the ODR hash of a die are its architecture and
+    // symbol path.
+
+    // clang-tidy off
+    return orc::hash_combine(0,
+                             static_cast<std::size_t>(d._arch),
+                             d._path.hash());
+    // clang-tidy on
 };
 
 /**************************************************************************************************/
@@ -216,7 +235,9 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 
     if (_length >= 0xfffffff0) {
         // REVISIT: (fbrereto) handle extended length / DWARF64
-        throw std::runtime_error("unsupported length");
+        // For DWARF64 `_length` will be 0xffffffff.
+        // See section 7.5.1.1 on how to handle this.
+        throw std::runtime_error("unsupported length / DWARF64");
     }
 
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
@@ -897,7 +918,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
                 assert(stack.size() > 1);
                 auto arg0 = stack_pop();
                 auto arg1 = stack_pop();
-                stack_push(arg0 | arg1);
+                stack_push(arg0 & arg1);
             } break;
             case dw::op::plus_uconst: {
                 // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
@@ -977,40 +998,36 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
     ZoneScoped;
 
-    auto form = attr._form;
-    const auto debug_info_offset = _debug_info._offset;
-    const auto cu_offset = _cu_address - debug_info_offset;
-    attribute_value result;
-
-    auto set_passover_result = [&] {
-        // We have a problem if we are passing over an attribute that is needed to determine ODRVs.
-        assert(nonfatal_attribute(attr._name));
-        result.passover();
-        auto size = form_length(form, _s);
-        _s.seekg(size, std::ios::cur);
-    };
-
-    auto evaluate_expression = [&, _impl = this](auto length_fn) {
-        // If the attribute is nonfatal, don't waste time evaluating it.
-        if (nonfatal_attribute(attr._name)) {
-            set_passover_result();
-            return;
-        }
-        auto length = (_impl->*length_fn)();
-        read_exactly(_s, length, [&](auto length) { result = evaluate_exprloc(length); });
-    };
-
     /*
-        Notes worth remembering:
+        The values for `ref1`, `ref2`, `ref4`, and `ref8` are offsets from the first byte of
+        the current compilation unit header, not the top of __debug_info.
 
-        The values for ref1, ref2, ref4, and ref8 are offsets from the first byte of the current
-        compilation unit header, not the top of __debug_info.
+        `ref_addr` could be 4 (DWARF) or 8 (DWARF64) bytes. We assume the former at present.
+        We should save the cu_header somewhere so we can do the right thing here.
 
-        ref_addr could be 4 (DWARF) or 8 (DWARF64) bytes. We assume the former at present. We
-        should save the cu_header somewhere so we can do the right thing here.
+        Section 7.5.5 of the spec says very little about the data contained within `block` types:
+
+            In all [block] forms, the length is the number of information bytes that follow. The
+            information bytes may contain any mixture of relocated (or relocatable)
+            addresses, references to other debugging information entries or data bytes.
+
+        Given the ambiguity of the form, I am not convinced the associated attribute will be a
+        necessary one for computing an ODRV. The previous rendition of the switch statement below
+        treated them as an `exprloc`, which is _definitely_ not right (the spec doesn't say
+        anything about that being the case) so we'll treat them as a passover value and emit
+        a warning.
      */
 
-    switch (form) {
+    attribute_value result;
+
+    const auto handle_reference = [&](std::uint64_t offset){
+        const auto debug_info_offset = _debug_info._offset;
+        const auto cu_offset = _cu_address - debug_info_offset;
+        // REVISIT (fosterbrereton): Possible overflow
+        result.reference(static_cast<std::uint32_t>(cu_offset + offset));
+    };
+
+    switch (attr._form) {
         case dw::form::udata:
         case dw::form::implicit_const: {
             result.uint(read_uleb());
@@ -1033,16 +1050,16 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.reference(read32());
         } break;
         case dw::form::ref1: {
-            result.reference(static_cast<std::uint32_t>(cu_offset + read8()));
+            handle_reference(read8());
         } break;
         case dw::form::ref2: {
-            result.reference(static_cast<std::uint32_t>(cu_offset + read16()));
+            handle_reference(read16());
         } break;
         case dw::form::ref4: {
-            result.reference(static_cast<std::uint32_t>(cu_offset + read32()));
+            handle_reference(read32());
         } break;
         case dw::form::ref8: {
-            result.reference(static_cast<std::uint32_t>(cu_offset + read64()));
+            handle_reference(read64());
         } break;
         case dw::form::data1: {
             result.uint(read8());
@@ -1068,20 +1085,24 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::sec_offset: {
             result.uint(read32());
         } break;
-        case dw::form::block1: {
-            evaluate_expression(&dwarf::implementation::read8);
-        } break;
-        case dw::form::block2: {
-            evaluate_expression(&dwarf::implementation::read16);
-        } break;
-        case dw::form::block4: {
-            evaluate_expression(&dwarf::implementation::read32);
-        } break;
+        case dw::form::block1:
+        case dw::form::block2:
+        case dw::form::block4:
         case dw::form::block: {
-            evaluate_expression(&dwarf::implementation::read_uleb);
-        } break;
+            // REVISIT: Handle the `block` form value if necessary. This will require a vector of
+            // bytes (a memory allocation), which may significantly reduce overall performance if
+            // there are a lot of them. Maybe a custom type with a small object optimization? A
+            // problem for another time.
+            if (!nonfatal_attribute(attr._name)) {
+                throw std::runtime_error("essential attribute using `block` form");
+            }
+        };
         default: {
-            set_passover_result();
+            // We have a problem if we are passing over an attribute that is needed to determine ODRVs.
+            assert(nonfatal_attribute(attr._name));
+            result.passover();
+            auto size = form_length(attr._form, _s);
+            _s.seekg(size, std::ios::cur);
         } break;
     }
 
@@ -1248,6 +1269,9 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 
         if (empty) return true;
     }
+
+    // If the die is a _declaration_, it's not a _definition_, so we can skip it entirely.
+    if (has_flag_attribute(attributes, dw::at::declaration)) return true;
 
     return false;
 }

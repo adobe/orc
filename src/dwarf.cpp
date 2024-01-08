@@ -12,6 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
+// tracy
+#include "tracy/Tracy.hpp"
+
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
@@ -497,6 +500,8 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
 /**************************************************************************************************/
 
 pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
+    ZoneScoped;
+
     // I tried an implementation that loaded the whole debug_str section into the string pool on
     // the first debug string read. The big problem with that technique is that the single die
     // processing mode becomes very expensive, as it only needs a handful of debug strings but
@@ -970,6 +975,8 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 
 attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
+    ZoneScoped;
+
     auto form = attr._form;
     const auto debug_info_offset = _debug_info._offset;
     const auto cu_offset = _cu_address - debug_info_offset;
@@ -1097,6 +1104,8 @@ attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size
 /**************************************************************************************************/
 
 pool_string dwarf::implementation::resolve_type(attribute type) {
+    ZoneScoped;
+
     std::size_t reference = type.reference();
     auto found = _type_cache.find(reference);
     if (found != _type_cache.end()) {
@@ -1133,6 +1142,8 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
+    ZoneScoped;
+
     die die;
     attribute_sequence attributes;
 
@@ -1244,6 +1255,8 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 /**************************************************************************************************/
 
 void dwarf::implementation::process_all_dies() {
+    ZoneScoped;
+
     if (!_ready && !register_sections_done()) return;
     assert(_ready);
 
@@ -1331,6 +1344,8 @@ void dwarf::implementation::process_all_dies() {
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
+    ZoneScoped;
+
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);

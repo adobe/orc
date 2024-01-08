@@ -44,6 +44,16 @@ if (NOT TARGET tomlplusplus::tomlplusplus)
     FetchContent_MakeAvailable(toml)
 endif()
 
+if (NOT TARGET Tracy::TracyClient)
+    message(STATUS "ORC third-party: creating target 'Tracy::TracyClient'...")
+    FetchContent_Declare(
+        Tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy
+        GIT_TAG        37aff70dfa50cf6307b3fee6074d627dc2929143 # v0.10.0
+    )
+    FetchContent_MakeAvailable(Tracy)
+endif()
+
 if (NOT TARGET TBB::tbb)
     message(STATUS "ORC third-party: creating target 'TBB::tbb'...")
     FetchContent_Declare(
@@ -87,6 +97,12 @@ foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
     if (PROJECT_IS_TOP_LEVEL)
         target_compile_options(${_TARGET_NAME} PRIVATE -Wall -Werror)
         set_target_properties(${_TARGET_NAME} PROPERTIES XCODE_GENERATE_SCHEME ON)
+
+        # This will ensure ORC does not exit before Tracy has had a chance to connect to the
+        # client and download the profiling data.
+        set(CMAKE_XCODE_SCHEME_ENVIRONMENT
+            "TRACY_NO_EXIT=1"
+            CACHE STRING "" FORCE)
     endif()
 
     target_link_libraries(${_TARGET_NAME}
@@ -94,6 +110,7 @@ foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
             stlab::stlab
             TBB::tbb
             tomlplusplus::tomlplusplus
+            Tracy::TracyClient
     )
 
     target_include_directories(${_TARGET_NAME}
@@ -122,6 +139,7 @@ target_link_libraries(orc_test
         stlab::stlab
         TBB::tbb
         tomlplusplus::tomlplusplus
+        Tracy::TracyClient
 )
 if (PROJECT_IS_TOP_LEVEL)
     target_compile_options(orc_test PRIVATE -Wall -Werror)

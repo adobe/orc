@@ -18,4 +18,10 @@
     #define ORC_PRIVATE_FEATURE_RELEASE() 1
 #endif // !defined(NDEBUG)
 
+#if defined(ENABLE_TRACY)
+    #define ORC_PRIVATE_FEATURE_TRACY() 1
+#else
+    #define ORC_PRIVATE_FEATURE_TRACY() 0
+#endif
+
 /**************************************************************************************************/

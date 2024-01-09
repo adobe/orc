@@ -255,6 +255,10 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 /**************************************************************************************************/
 
 struct line_header {
+    // DWARF spec section 6.2.4 The Line Number Program Header.
+    // Note this will change for DWARF5, so we need to look out
+    // for DWARF data that uses the new version number and
+    // account for it differently.
     std::uint64_t _length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
     std::uint16_t _version{0};
     std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
@@ -278,6 +282,10 @@ void line_header::read(freader& s, bool needs_byteswap) {
         throw std::runtime_error("unsupported length");
     }
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
+    if (_version > 4) {
+        // REVISIT: (fbrereto) handle DWARF5 and later.
+        throw std::runtime_error("unhandled DWARF version (" + std::to_string(_version) + ")");
+    }
     _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
     _min_instruction_length = read_pod<std::uint8_t>(s);
     if (_version >= 4) {
@@ -1252,6 +1260,10 @@ bool dwarf::implementation::register_sections_done() {
     // the declaration files are 1-indexed. The 0th index is reserved for the compilation unit /
     // partial unit name. We need to prime this here because in single process mode we don't get
     // the name of the compilation unit unless we explicitly ask for it.
+    //
+    // DWARF Spec 6.2.4 talking about `directories` (sequence of directory names):
+    //     The first entry in the sequence is the primary source file whose file name exactly matches
+    //     that given in the DW_AT_name attribute in the compilation unit debugging information entry.
     _decl_files.push_back(object_file_ancestry(_ofd_index)._ancestors[0]);
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details

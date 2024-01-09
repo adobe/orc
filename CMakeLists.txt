@@ -4,6 +4,9 @@ include(FetchContent)
 
 set(CMAKE_OSX_ARCHITECTURES arm64;x86_64)
 
+cmake_policy(SET CMP0076 NEW) # The ``target_sources()`` command converts relative paths to absolute.
+cmake_policy(SET CMP0077 NEW) # ``option()`` honors normal variables.
+
 project(orc)
 
 # Detects whether this is a top-level/root/standalone project
@@ -25,6 +28,8 @@ if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ORC_BUILD_EXAMPLES FALSE)
 endif()
 
+####################################################################################################
+
 if (NOT TARGET stlab::stlab)
     message(STATUS "ORC third-party: creating target 'stlab::stlab'...")
     FetchContent_Declare(
@@ -35,6 +40,8 @@ if (NOT TARGET stlab::stlab)
     FetchContent_MakeAvailable(stlab)
 endif()
 
+####################################################################################################
+
 if (NOT TARGET tomlplusplus::tomlplusplus)
     message(STATUS "ORC third-party: creating target 'tomlplusplus::tomlplusplus'...")
     FetchContent_Declare(
@@ -44,7 +51,6 @@ if (NOT TARGET tomlplusplus::tomlplusplus)
     )
     FetchContent_MakeAvailable(toml)
 endif()
-
 
 ####################################################################################################
 #
@@ -60,10 +66,10 @@ FetchContent_Declare(
 )
 
 if (${ORC_PROFILING})
-    set(TRACY_ENABLE ON)
+    set(TRACY_ENABLE ON CACHE FORCE)
     message(STATUS "ORC_PROFILING: ON")
 else()
-    set(TRACY_ENABLE OFF)
+    set(TRACY_ENABLE OFF CACHE FORCE)
     message(STATUS "ORC_PROFILING: OFF")
 endif()
 

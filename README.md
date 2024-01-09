@@ -76,13 +76,13 @@ There are a handful of sample applications that ORC is integrated into for the p
 
 ### Enabling ORC Profiling (ORC Developers only)
 
-ORC uses Tracy as its profiling tool of choice, however it is disabled by default. The Tracy dependency is required even if profiling is disabled (it will be compiled out of the runtime.) To enable profiling, specify it from the cmake command line like so:
+ORC uses Tracy as its profiling tool of choice, and it is _enabled_ by default. To disable Tracy, specify the cmake command line like so:
 
 ```
-cmake .. -GXcode -DORC_PROFILING=ON
+cmake .. -GXcode -DTRACY_ENABLE=OFF
 ```
 
-Note this option is cached, so you must explicitly turn it `OFF` or `ON`. Re-running the command line invocation with the option missing will cause its previous value to be used.
+The Tracy dependency is required even if profiling is disabled (it will be compiled out of the runtime.) Note this option is cached, so you must explicitly turn it `OFF` or `ON`. Re-running the command line invocation with the option missing will cause its previous value to be used.
 
 ## Calling ORC
 

@@ -4,9 +4,6 @@ include(FetchContent)
 
 set(CMAKE_OSX_ARCHITECTURES arm64;x86_64)
 
-cmake_policy(SET CMP0076 NEW) # The ``target_sources()`` command converts relative paths to absolute.
-cmake_policy(SET CMP0077 NEW) # ``option()`` honors normal variables.
-
 project(orc)
 
 # Detects whether this is a top-level/root/standalone project
@@ -22,7 +19,6 @@ if (NOT DEFINED PROJECT_IS_TOP_LEVEL)
 endif()
 
 option(ORC_BUILD_EXAMPLES "Build ORC example programs" ${PROJECT_IS_TOP_LEVEL})
-option(ORC_PROFILING "Enable profiling of ORC with Tracy" OFF)
 
 if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ORC_BUILD_EXAMPLES FALSE)
@@ -65,12 +61,10 @@ FetchContent_Declare(
     GIT_TAG        37aff70dfa50cf6307b3fee6074d627dc2929143 # v0.10.0
 )
 
-if (${ORC_PROFILING})
-    set(TRACY_ENABLE ON CACHE FORCE)
-    message(STATUS "ORC_PROFILING: ON")
+if (${TRACY_ENABLE})
+    message(STATUS "ORC profiling: ON")
 else()
-    set(TRACY_ENABLE OFF CACHE FORCE)
-    message(STATUS "ORC_PROFILING: OFF")
+    message(STATUS "ORC profiling: OFF")
 endif()
 
 FetchContent_MakeAvailable(tracy)

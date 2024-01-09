@@ -22,7 +22,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DORC_PROFILING=OFF -DORC_BUILD_EXAMPLES=0 -GXcode ..
+          cmake -DTRACY_ENABLE=OFF -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ orc debug
         id: build-orc-debug
         continue-on-error: true

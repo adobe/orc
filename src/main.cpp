@@ -37,6 +37,7 @@
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
 #include "orc/task_system.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -413,6 +414,19 @@ auto epilogue(bool exception) {
         });
     }
 
+
+// On MacOS, there is no support for `TRACY_NO_EXIT`. This is a workaround provided from Tracy's
+// issue #8: https://github.com/wolfpld/tracy/issues/8#issuecomment-826349289
+#if ORC_FEATURE(TRACY)
+    auto& profiler = tracy::GetProfiler();
+
+    profiler.RequestShutdown();
+
+    while (!profiler.HasShutdownFinished()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    };
+#endif // ORC_FEATURE(TRACY)
+
     if (exception || g._odrv_count != 0) {
         return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
     }
@@ -492,6 +506,8 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
+    TracyCSetThreadName("main");
+
     signal(SIGINT, interrupt_callback_handler);
 
     process_orc_config_file(argv[0]);

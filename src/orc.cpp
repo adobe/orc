@@ -42,6 +42,7 @@
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
 #include "orc/task_system.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -68,6 +69,8 @@ std::string_view path_to_symbol(std::string_view path) {
 /**************************************************************************************************/
 bool type_equivalent(const attribute& x, const attribute& y);
 dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
+    ZoneScoped;
+
     auto yfirst = y.begin();
     auto ylast = y.end();
 
@@ -146,6 +149,8 @@ auto& global_die_map() {
 /**************************************************************************************************/
 
 void register_dies(dies die_vector) {
+    ZoneScoped;
+
     globals::instance()._die_processed_count += die_vector.size();
 
     // pre-process the vector of dies by partitioning them into those that are skippable and those
@@ -292,7 +297,17 @@ void do_work(std::function<void()> f) {
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] { _doit(_f); });
+    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
+        thread_local const char* tracy_set_thread_name_k = []{
+            thread_local char result[32] = {0};
+            snprintf(result, 32, "worker %s", orc::unique_thread_name());
+            TracyCSetThreadName(result);
+            return result;
+        }();
+        (void)tracy_set_thread_name_k;
+
+        _doit(_f);
+    });
 }
 
 /**************************************************************************************************/
@@ -302,6 +317,8 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
+    ZoneScoped;
+
     auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
 
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
@@ -320,6 +337,8 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     : _symbol(symbol), _list_head(list_head) {
+    ZoneScoped;
+
     assert(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
@@ -391,6 +410,8 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 /**************************************************************************************************/
 
 die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
+    ZoneScoped;
+
     std::vector<die*> dies;
     for (die* ptr = base; ptr; ptr = ptr->_next_die) {
         dies.push_back(ptr);

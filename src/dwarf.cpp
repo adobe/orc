@@ -12,14 +12,12 @@
 #include <unordered_map>
 #include <vector>
 
-// tracy
-#include "tracy/Tracy.hpp"
-
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/settings.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -199,6 +197,8 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
+    ZoneScoped;
+
     // Tag used to be a part of the fatal hash computation. Unfortunately it causes `class` and
     // `struct` definitions to be considered different, when they should not be. As a general
     // rule, I think _all_ symbols regardless of tag should be uniquely defined, so pulling the tag
@@ -312,24 +312,34 @@ void line_header::read(freader& s, bool needs_byteswap) {
 /**************************************************************************************************/
 
 std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+    ZoneScoped;
+
     // We only hash the attributes that could contribute to an ODRV. We also sort that set of
     // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    std::vector<dw::at> names;
+    constexpr const std::size_t max_names_k{32};
+    std::array<dw::at, max_names_k> names;
+    std::size_t count{0};
+
     for (const auto& attr : attributes) {
         if (nonfatal_attribute(attr._name)) continue;
-        names.push_back(attr._name);
+        if (count >= max_names_k) {
+            throw std::runtime_error("fatal_attribute_hash names overflow");
+        }
+        names[count++] = attr._name;
     }
-    std::sort(names.begin(), names.end());
+    std::sort(&names[0], &names[count]);
 
     std::size_t h{0};
-    for (const auto& name : names) {
+
+    std::for_each_n(&names[0], count, [&](const auto& name) {
         // If this assert fires, it means an attribute's value was passed over during evaluation,
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
         const auto& attribute = attributes.get(name);
         assert(!attributes.has(name, attribute_value::type::passover));
         h = orc::hash_combine(h, attribute._value.hash());
-    }
+    });
+
     return h;
 }
 
@@ -341,6 +351,7 @@ bool skip_tagged_die(const die& d) {
         dw::tag::partial_unit,
         dw::tag::variable,
         dw::tag::formal_parameter,
+        dw::tag::template_type_parameter,
     };
     static const auto first = std::begin(skip_tags);
     static const auto last = std::end(skip_tags);
@@ -472,6 +483,8 @@ void dwarf::implementation::register_section(const std::string& name,
 /**************************************************************************************************/
 
 void dwarf::implementation::read_abbreviations() {
+    ZoneScoped;
+
     auto section_begin = _debug_abbrev._offset;
     auto section_end = section_begin + _debug_abbrev._size;
     temp_seek(_s, section_begin, [&] {
@@ -487,6 +500,8 @@ void dwarf::implementation::read_abbreviations() {
 /**************************************************************************************************/
 
 void dwarf::implementation::read_lines() {
+    ZoneScoped;
+
     temp_seek(_s, _debug_line._offset, [&] {
         line_header header;
         header.read(_s, _details._needs_byteswap);
@@ -520,17 +535,46 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
 
 /**************************************************************************************************/
 
+#define ORC_PRIVATE_FEATURE_DEBUG_STR_CACHE() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+
 pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     ZoneScoped;
+
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+    thread_local float hit_s(0);
+    thread_local float total_s(0);
+
+    ++total_s;
+
+    thread_local const char* plot_name_k = []{
+        thread_local char result[32] = {0};
+        const char* utn = orc::unique_thread_name();
+        snprintf(result, 32, "debug_str cache %s", utn);
+        TracyPlotConfig(result, tracy::PlotFormatType::Percentage, true, true, 0);
+        return result;
+    }();
+
+    const auto update_zone = [&]{
+        tracy::Profiler::PlotData(plot_name_k, hit_s / total_s * 100);
+    };
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
 
     // I tried an implementation that loaded the whole debug_str section into the string pool on
     // the first debug string read. The big problem with that technique is that the single die
     // processing mode becomes very expensive, as it only needs a handful of debug strings but
     // ends up loading all of them. Perhaps we could pivot the technique based on the process mode?
-    auto found = _debug_str_cache.find(offset);
-    if (found != _debug_str_cache.end()) {
+    if (const auto found = _debug_str_cache.find(offset); found != _debug_str_cache.end()) {
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+        ++hit_s;
+        update_zone();
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
+
         return found->second;
     }
+
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+    update_zone();
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
 
     return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
                                                 [&] { return empool(_s.read_c_string_view()); });
@@ -555,6 +599,8 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 std::string dwarf::implementation::qualified_symbol_name(
     const die& d, const attribute_sequence& attributes) const {
+    ZoneScoped;
+
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
     // we are using, so let's use that instead here.
@@ -1225,6 +1271,8 @@ bool dwarf::implementation::register_sections_done() {
 /**************************************************************************************************/
 
 bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
+    ZoneScoped;
+
     // These are a handful of "filters" we use to elide false positives.
 
     // These are the tags we don't deal with (yet, if ever.)
@@ -1233,7 +1281,7 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
     // According to DWARF 3.3.1, a subprogram tag that is missing the external
     // flag means the function is invisible outside its compilation unit. As
     // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !attributes.has_uint(dw::at::external)) return true;
+    if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) return true;
 
     // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
     // them.
@@ -1279,8 +1327,6 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 /**************************************************************************************************/
 
 void dwarf::implementation::process_all_dies() {
-    ZoneScoped;
-
     if (!_ready && !register_sections_done()) return;
     assert(_ready);
 
@@ -1303,9 +1349,15 @@ void dwarf::implementation::process_all_dies() {
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {
+            ZoneScopedN("process_one_die"); // name matters for stats tracking
+
             die die;
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
+
+            const char* tag_str = to_string(die._tag);
+            ZoneNameL(tag_str);
+            ZoneColor(tracy::Color::ColorType::Red); // flag as skipped by default.
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0
@@ -1355,6 +1407,21 @@ void dwarf::implementation::process_all_dies() {
             die._ofd_index = _ofd_index;
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
+
+#if ORC_FEATURE(TRACY)
+            constexpr auto msg_sz_k = 32;
+            char msg[msg_sz_k] = {0};
+            std::snprintf(msg, msg_sz_k, "%zu attribute(s)", attributes.size());
+            ZoneTextL(msg);
+
+            if (die._skippable) {
+                ZoneTextL("skip");
+            } else {
+                ZoneTextL("keep");
+                ZoneColor(tracy::Color::ColorType::Green);
+                TracyMessageL(tag_str);
+            }
+#endif // ORC_FEATURE(TRACY)
 
             dies.emplace_back(std::move(die));
         }

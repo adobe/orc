@@ -74,6 +74,14 @@ ORC is managed by cmake, and is built using the typical build conventions of a C
 
 There are a handful of sample applications that ORC is integrated into for the purposes of testing. Those can be selected via the targets popup in Xcode.
 
+### Enabling ORC Profiling (ORC Developers only)
+
+ORC uses Tracy as its profiling tool of choice, however it is disabled by default. The Tracy dependency is required even if profiling is disabled (it will be compiled out of the runtime.) To enable profiling, specify it from the cmake command line like so:
+
+```
+cmake .. -GXcode -DORC_PROFILING=ON
+```
+
 ## Calling ORC
 
 ORC can be called directly from the command line, or inserted into the tool chain in the linker step. The output is unchanged; it's simply a matter

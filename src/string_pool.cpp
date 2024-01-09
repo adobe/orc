@@ -24,8 +24,11 @@
 #include "orc/features.hpp"
 #include "orc/hash.hpp"
 #include "orc/memory.hpp"
+#include "orc/tracy.hpp"
 
 /*static*/ std::string_view pool_string::default_view("");
+
+#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MEMORY() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
 /**************************************************************************************************/
 
@@ -49,6 +52,9 @@ struct pool {
     std::size_t _n{0};
     std::size_t _size{0};
     std::size_t _wasted{0};
+#if ORC_FEATURE(PROFILE_POOL_MEMORY)
+    const char* _id{nullptr};
+#endif // ORC_FEATURE(PROFILE_POOL_MEMORY)
 
     using ponds_type = std::vector<std::unique_ptr<char[]>>;
 #if ORC_FEATURE(LEAKY_MEMORY)
@@ -58,16 +64,24 @@ struct pool {
 #endif // ORC_FEATURE(LEAKY_MEMORY)
 
     const char* empool(std::string_view incoming) {
-        constexpr auto default_min_k = 16 * 1024 * 1024; // 16MB
         const uint32_t sz = (uint32_t)incoming.size();
         const uint32_t tsz = sz + sizeof(uint32_t) + sizeof(size_t) + 1;
 
         if (_n < tsz) {
             _wasted += _n;
-            _n = std::max<std::size_t>(default_min_k, tsz);
+
+            // grow the pool's ponds exponentially. This will strike a balance between
+            // the cost of memory allocations required and making sure we have enough
+            // space for this and future strings.
+            _n = std::max<std::size_t>(_size * 2, tsz);
             _ponds.push_back(std::make_unique<char[]>(_n));
             _p = _ponds.back().get();
             _size += _n;
+
+#if ORC_FEATURE(PROFILE_POOL_MEMORY)
+            assert(_id);
+            tracy::Profiler::PlotData(_id, static_cast<int64_t>(_size));
+#endif // ORC_FEATURE(TRACY)
         }
 
         const std::size_t h = string_view_hash(incoming);
@@ -92,7 +106,21 @@ auto& pool_mutex(std::size_t index) {
 }
 
 auto& pool(std::size_t index) {
-    static struct pool pools[string_pool_count_k];
+    static struct pool* pools = []{
+        static struct pool result[string_pool_count_k];
+
+#if ORC_FEATURE(PROFILE_POOL_MEMORY)
+        for (std::size_t i(0); i < string_pool_count_k; ++i) {
+            auto& pool = result[i];
+            char* pool_id = new char[32]; // allocate for the lifetime of the application
+            snprintf(pool_id, 32, "string_pool %zu", i);
+            TracyPlotConfig(pool_id, tracy::PlotFormatType::Memory, true, true, 0);
+            pool._id = pool_id;
+        }
+#endif // ORC_FEATURE(TRACY)
+
+        return result;
+    }();
     return pools[index];
 }
 
@@ -118,6 +146,9 @@ std::size_t pool_string::get_hash(const char* d) {
 }
 
 pool_string empool(std::string_view src) {
+    ZoneScoped;
+    ZoneColor(tracy::Color::ColorType::Green); // cache hit
+
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
     // default_view would be returned.)
@@ -133,7 +164,7 @@ pool_string empool(std::string_view src) {
         // const auto it0 = keys.find(h);
         // if (it0 != keys.end()) {
 
-        // But we never remove from the map, so if contains(), it is guaraneteed to find()
+        // But we never remove from the map, so if contains(), it is guaranteed to find()
         if (keys.contains(h)) {
             return keys.find(h)->second;
         }
@@ -147,6 +178,14 @@ pool_string empool(std::string_view src) {
     }
 
     const int index = h % string_pool_count_k;
+
+#if ORC_FEATURE(TRACY)
+    constexpr auto msg_sz_k = 32;
+    char msg[msg_sz_k] = {0};
+    std::snprintf(msg, msg_sz_k, "string pool %d", index);
+    ZoneTextL(msg);
+#endif // ORC_FEATURE(TRACY)
+
     std::lock_guard<std::mutex> pool_guard(pool_mutex(index));
 
     // Now that we have the lock, do the search again in case another thread empooled the string
@@ -162,6 +201,8 @@ pool_string empool(std::string_view src) {
     const char* ptr = pool(index).empool(src);
     assert(ptr);
     keys.insert(std::make_pair(h, ptr));
+
+    ZoneColor(tracy::Color::ColorType::Red); // cache miss
 
     return pool_string(ptr);
 }

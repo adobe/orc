@@ -236,6 +236,8 @@ struct attribute_sequence {
 
     bool empty() const { return _attributes.empty(); }
 
+    auto size() const { return _attributes.size(); }
+
     auto begin() { return _attributes.begin(); }
     auto begin() const { return _attributes.begin(); }
     auto end() { return _attributes.end(); }

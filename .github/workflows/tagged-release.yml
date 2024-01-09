@@ -19,7 +19,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake --log-level=WARNING -DORC_BUILD_EXAMPLES=0 -GXcode ..
+          cmake --log-level=WARNING -DORC_PROFILING=OFF -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ Build ORC
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment

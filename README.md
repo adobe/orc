@@ -82,6 +82,8 @@ ORC uses Tracy as its profiling tool of choice, however it is disabled by defaul
 cmake .. -GXcode -DORC_PROFILING=ON
 ```
 
+Note this option is cached, so you must explicitly turn it `OFF` or `ON`. Re-running the command line invocation with the option missing will cause its previous value to be used.
+
 ## Calling ORC
 
 ORC can be called directly from the command line, or inserted into the tool chain in the linker step. The output is unchanged; it's simply a matter

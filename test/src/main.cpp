@@ -17,6 +17,7 @@
 #include <orc/dwarf.hpp>
 #include <orc/macho.hpp>
 #include <orc/orc.hpp>
+#include <orc/tracy.hpp>
 
 /**************************************************************************************************/
 
@@ -530,6 +531,8 @@ void traverse_directory_tree(std::filesystem::path& directory) {
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
+    orc::tracy::initialize();
+
     if (argc < 2) {
         console_error() << "Usage: " << argv[0] << " /path/to/test/battery/\n";
         throw std::runtime_error("no path to test battery given");

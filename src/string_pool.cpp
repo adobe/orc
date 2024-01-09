@@ -111,11 +111,9 @@ auto& pool(std::size_t index) {
 
 #if ORC_FEATURE(PROFILE_POOL_MEMORY)
         for (std::size_t i(0); i < string_pool_count_k; ++i) {
-            auto& pool = result[i];
-            char* pool_id = new char[32]; // allocate for the lifetime of the application
-            snprintf(pool_id, 32, "string_pool %zu", i);
+            const char* pool_id = orc::tracy::format_unique("string_pool %zu", i);
             TracyPlotConfig(pool_id, tracy::PlotFormatType::Memory, true, true, 0);
-            pool._id = pool_id;
+            result[i]._id = pool_id;
         }
 #endif // ORC_FEATURE(TRACY)
 

@@ -33,15 +33,30 @@
 
 //==================================================================================================
 
-namespace orc {
+namespace orc::tracy {
 
 //==================================================================================================
 // returns a unique `const char*` per thread for the lifetime of the application. A _brief_ name,
-// and unrelated to the (unique) C++ thread id of the thread.
+// and unrelated to the (unique) C++ thread id of the thread. Calling this routine with Tracy
+// disabled will throw an exception.
 const char* unique_thread_name();
+
+// returns a NEW `const char*` every time it is called. Intended to be used during thread_local
+// initialization. The memory is intended to leak. Calling this routine with Tracy disabled will
+// throw an exception. The max string length returned is 32 characters.
+const char* format_unique(const char* format, ...);
+
+// MUST be called FIRST in your `main` routine. It does a couple things. The first is to set the
+// main thread's name to `main`. The second is to install a handler to block the app shutdown until
+// the Tracy profiler has completed sending all data to the Tracy analyzer. (This emulates the
+// `TRACY_NO_EXIT` behavior for platforms like macOS which do not support it.) If the analyzer is
+// not connected, the handler returns immediately. Note that if there is any static/global teardown
+// profiling, it may be missed even if you use this call. Calling this routine with Tracy disabled
+// does nothing.
+void initialize();
 
 //==================================================================================================
 
-} // namespace orc
+} // namespace orc::tracy
 
 //==================================================================================================

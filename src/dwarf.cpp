@@ -547,9 +547,7 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     ++total_s;
 
     thread_local const char* plot_name_k = []{
-        thread_local char result[32] = {0};
-        const char* utn = orc::unique_thread_name();
-        snprintf(result, 32, "debug_str cache %s", utn);
+        const char* result = orc::tracy::format_unique("debug_str cache %s", orc::tracy::unique_thread_name());
         TracyPlotConfig(result, tracy::PlotFormatType::Percentage, true, true, 0);
         return result;
     }();
@@ -1272,35 +1270,56 @@ bool dwarf::implementation::register_sections_done() {
 
 bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
     ZoneScoped;
+    ZoneColor(tracy::Color::ColorType::Red);
 
     // These are a handful of "filters" we use to elide false positives.
 
     // These are the tags we don't deal with (yet, if ever.)
-    if (skip_tagged_die(d)) return true;
+    if (skip_tagged_die(d)) {
+        ZoneTextL("skipping: tagged die");
+        return true;
+    }
 
     // According to DWARF 3.3.1, a subprogram tag that is missing the external
     // flag means the function is invisible outside its compilation unit. As
     // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) return true;
+    if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) {
+        ZoneTextL("skipping: non-external subprogram");
+        return true;
+    }
 
     // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
     // them.
-    if (d._path.empty()) return true;
+    if (d._path.empty()) {
+        ZoneTextL("skipping: empty path");
+        return true;
+    }
 
     // Symbols with __ in them are reserved, so are not user-defined. No need to register
     // them.
-    if (d._path.view().find("::__") != std::string::npos) return true;
+    if (d._path.view().find("::__") != std::string::npos) {
+        ZoneTextL("skipping: non-user-defined (reserved) symbol");
+        return true;
+    }
 
     // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.view().find("lambda") != std::string::npos) return true;
+    if (d._path.view().find("lambda") != std::string::npos) {
+        ZoneTextL("skipping: lambda");
+        return true;
+    }
 
     // we don't handle any die that's ObjC-based.
-    if (attributes.has(dw::at::apple_runtime_class)) return true;
+    if (attributes.has(dw::at::apple_runtime_class)) {
+        ZoneTextL("skipping: apple runtime class");
+        return true;
+    }
 
     // If the symbol is listed in the symbol_ignore list, we're done here.
     std::string_view symbol = d._path.view();
-    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7)))
+    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) {
+        ZoneTextL("skipping: on symbol_ignore list");
         return true;
+    }
 
     // Unfortunately we have to do this work to see if we're dealing with
     // a self-referential type.
@@ -1315,12 +1334,15 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
             return abbrev._attributes.empty();
         });
 
-        if (empty) return true;
+        if (empty) {
+            ZoneTextL("skipping: self-referential type");
+            return true;
+        }
     }
 
-    // If the die is a _declaration_, it's not a _definition_, so we can skip it entirely.
-    if (has_flag_attribute(attributes, dw::at::declaration)) return true;
-
+    // This makes the kept dies visually identifiable in the Tracy analyzer.
+    TracyMessageL("odr_used");
+    ZoneColor(tracy::Color::ColorType::Green);
     return false;
 }
 
@@ -1357,7 +1379,6 @@ void dwarf::implementation::process_all_dies() {
 
             const char* tag_str = to_string(die._tag);
             ZoneNameL(tag_str);
-            ZoneColor(tracy::Color::ColorType::Red); // flag as skipped by default.
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0
@@ -1409,18 +1430,18 @@ void dwarf::implementation::process_all_dies() {
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
 
 #if ORC_FEATURE(TRACY)
+            auto path_view = die._path.view();
+            if (!path_view.empty()) {
+                ZoneText(path_view.data(), path_view.length());
+            } else {
+                ZoneTextL("<empty path>");
+            }
             constexpr auto msg_sz_k = 32;
             char msg[msg_sz_k] = {0};
+            std::snprintf(msg, msg_sz_k, "offset 0x%dh", die._debug_info_offset);
+            ZoneTextL(msg);
             std::snprintf(msg, msg_sz_k, "%zu attribute(s)", attributes.size());
             ZoneTextL(msg);
-
-            if (die._skippable) {
-                ZoneTextL("skip");
-            } else {
-                ZoneTextL("keep");
-                ZoneColor(tracy::Color::ColorType::Green);
-                TracyMessageL(tag_str);
-            }
 #endif // ORC_FEATURE(TRACY)
 
             dies.emplace_back(std::move(die));

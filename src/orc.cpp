@@ -298,14 +298,13 @@ void do_work(std::function<void()> f) {
     static orc::task_system system;
 
     system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
-        thread_local const char* tracy_set_thread_name_k = []{
-            thread_local char result[32] = {0};
-            snprintf(result, 32, "worker %s", orc::unique_thread_name());
-            TracyCSetThreadName(result);
-            return result;
+#if ORC_FEATURE(TRACY)
+        thread_local bool tracy_set_thread_name_k = []{
+            TracyCSetThreadName(orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
+            return true;
         }();
         (void)tracy_set_thread_name_k;
-
+#endif // ORC_FEATURE(TRACY)
         _doit(_f);
     });
 }

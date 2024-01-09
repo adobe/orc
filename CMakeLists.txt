@@ -6,8 +6,6 @@ set(CMAKE_OSX_ARCHITECTURES arm64;x86_64)
 
 project(orc)
 
-option(ORC_PROFILING "Enable profiling of ORC with Tracy" OFF)
-
 # Detects whether this is a top-level/root/standalone project
 # This variable is already set by project() in cmake 3.21+
 if (NOT DEFINED PROJECT_IS_TOP_LEVEL)
@@ -21,6 +19,7 @@ if (NOT DEFINED PROJECT_IS_TOP_LEVEL)
 endif()
 
 option(ORC_BUILD_EXAMPLES "Build ORC example programs" ${PROJECT_IS_TOP_LEVEL})
+option(ORC_PROFILING "Enable profiling of ORC with Tracy" OFF)
 
 if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ORC_BUILD_EXAMPLES FALSE)

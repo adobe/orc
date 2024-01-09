@@ -31,17 +31,22 @@ struct freader {
     // `<=` here because sometimes we jump to one past the end of the buffer right before stopping.
     explicit operator bool() const { return static_cast<bool>(_buffer) && _p <= _l; }
 
-    std::size_t size() const { return _l - _p; }
+    std::size_t size() const {
+        assert(*this);
+        return _l - _p;
+    }
 
-    std::size_t tellg() const { return _p - _f; }
+    std::size_t tellg() const {
+        assert(*this);
+        return _p - _f;
+    }
 
     void seekg(std::istream::off_type offset) {
-        assert(*this);
         _p = _f + offset;
+        assert(*this);
     }
 
     void seekg(std::istream::off_type offset, std::ios::seekdir dir) {
-        assert(*this);
         switch (dir) {
             case std::ios::beg: {
                 _p = _f + offset;
@@ -59,25 +64,27 @@ struct freader {
                 assert(false);
             } break;
         }
+        assert(*this);
     }
 
     void read(char* p, std::size_t n) {
-        assert(*this);
         std::memcpy(p, _p, n);
         _p += n;
+        assert(*this);
     }
 
     char get() {
+        char result = *_p++;
         assert(*this);
-        return *_p++;
+        return result;
     }
 
     std::string_view read_c_string_view() {
-        assert(*this);
         auto f = _p;
         for (; *_p; ++_p) {
         }
         auto n = _p++ - f;
+        assert(*this);
         return std::string_view(f, n);
     }
 

@@ -162,6 +162,14 @@ bool nonfatal_attribute(dw::at at) {
             dw::at::call_return_pc,
             dw::at::call_value,
             dw::at::containing_type,
+            // Item 10 of section 4.1 talks about the `const_value` attribute, saying the
+            // entry describes a constant parameter value that can take a number of different
+            // forms. Since ORC does not concern itself with parameter values, these should
+            // be safe to skip. (Unless it's talking about _template_ parameters? But I don't
+            // get that from the interpretation of the spec. I would expect the signature of
+            // the template to contain the constant value, and it not be something required
+            // of the target architecture, as is the case with `const_value`.)
+            dw::at::const_value,
             dw::at::decl_column,
             dw::at::decl_file,
             dw::at::decl_line,

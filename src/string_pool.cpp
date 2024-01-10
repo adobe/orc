@@ -29,6 +29,7 @@
 /*static*/ std::string_view pool_string::default_view("");
 
 #define ORC_PRIVATE_FEATURE_PROFILE_POOL_MEMORY() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MUTEXES() (ORC_PRIVATE_FEATURE_TRACY() && 1)
 
 /**************************************************************************************************/
 
@@ -81,7 +82,7 @@ struct pool {
 #if ORC_FEATURE(PROFILE_POOL_MEMORY)
             assert(_id);
             tracy::Profiler::PlotData(_id, static_cast<int64_t>(_size));
-#endif // ORC_FEATURE(TRACY)
+#endif // ORC_FEATURE(PROFILE_POOL_MEMORY)
         }
 
         const std::size_t h = string_view_hash(incoming);
@@ -100,9 +101,38 @@ struct pool {
 
 /**************************************************************************************************/
 
+#if ORC_FEATURE(PROFILE_POOL_MUTEXES)
+    using string_pool_mutex = LockableBase(std::mutex);
+#else
+    using string_pool_mutex = std::mutex;
+#endif // ORC_FEATURE(PROFILE_POOL_MUTEXES)
+
+/**************************************************************************************************/
+
 auto& pool_mutex(std::size_t index) {
+    assert(index < string_pool_count_k);
+#if ORC_FEATURE(PROFILE_POOL_MUTEXES)
+    // I've been banging my head against this for a while, and this is the sadistic solution I've
+    // come up with. These are supposed to be a straightforward array of mutexes, of which one
+    // is picked when empooling a string, in order to reduce lock contention and blocking across
+    // the threads. The non-Tracy variant is what we want, but the Tracy variant requires a
+    // constructor parameter and is non-movable and non-copyable, so we have to construct them
+    // in place, which makes them very difficult to construct as a contiguous collection. So
+    // we allocate them dynamically and collect their pointers as a contiguous sequence, then
+    // index and dereference one of the pointers.
+    static string_pool_mutex** mutexes = []{
+        static std::vector<string_pool_mutex*> result;
+        for (std::size_t i(0); i < string_pool_count_k; ++i) {
+            static constexpr tracy::SourceLocationData srcloc { nullptr, "pool_mutex", TracyFile, TracyLine, 0 };
+            result.emplace_back(new string_pool_mutex(&srcloc));
+        }
+        return &result[0];
+    }();
+    return *mutexes[index];
+#else
     static std::mutex mutexes[string_pool_count_k];
     return mutexes[index];
+#endif // ORC_FEATURE(PROFILE_POOL_MUTEXES)
 }
 
 auto& pool(std::size_t index) {
@@ -115,7 +145,7 @@ auto& pool(std::size_t index) {
             TracyPlotConfig(pool_id, tracy::PlotFormatType::Memory, true, true, 0);
             result[i]._id = pool_id;
         }
-#endif // ORC_FEATURE(TRACY)
+#endif // ORC_FEATURE(PROFILE_POOL_MEMORY)
 
         return result;
     }();
@@ -176,15 +206,7 @@ pool_string empool(std::string_view src) {
     }
 
     const int index = h % string_pool_count_k;
-
-#if ORC_FEATURE(TRACY)
-    constexpr auto msg_sz_k = 32;
-    char msg[msg_sz_k] = {0};
-    std::snprintf(msg, msg_sz_k, "string pool %d", index);
-    ZoneTextL(msg);
-#endif // ORC_FEATURE(TRACY)
-
-    std::lock_guard<std::mutex> pool_guard(pool_mutex(index));
+    std::lock_guard<string_pool_mutex> pool_guard(pool_mutex(index));
 
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
@@ -211,7 +233,7 @@ std::array<std::size_t, string_pool_count_k> string_pool_sizes() {
     std::array<std::size_t, string_pool_count_k> result;
 
     for (std::size_t i(0); i < string_pool_count_k; ++i) {
-        std::lock_guard<std::mutex> pool_guard(pool_mutex(i));
+        std::lock_guard<string_pool_mutex> pool_guard(pool_mutex(i));
         result[i] = pool(i)._size;
     }
 
@@ -224,7 +246,7 @@ std::array<std::size_t, string_pool_count_k> string_pool_wasted() {
     std::array<std::size_t, string_pool_count_k> result;
 
     for (std::size_t i(0); i < string_pool_count_k; ++i) {
-        std::lock_guard<std::mutex> pool_guard(pool_mutex(i));
+        std::lock_guard<string_pool_mutex> pool_guard(pool_mutex(i));
         // Add the accumulated waste from previous ponds to the current pond's unused space.
         result[i] = pool(i)._wasted + pool(i)._n;
     }

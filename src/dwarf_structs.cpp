@@ -127,16 +127,6 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
 
 /**************************************************************************************************/
 
-bool operator<(const die& x, const die& y) {
-    if (x._path.view() < y._path.view())
-        return true;
-    if (x._path.view() > y._path.view())
-        return false;
-    return object_file_ancestry(x._ofd_index) < object_file_ancestry(y._ofd_index);
-}
-
-/**************************************************************************************************/
-
 bool nonfatal_attribute(dw::at at) {
     static const auto attributes = [] {
         std::vector<dw::at> nonfatal_attributes = {

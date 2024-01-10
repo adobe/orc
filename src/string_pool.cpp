@@ -176,6 +176,7 @@ std::size_t pool_string::get_hash(const char* d) {
 pool_string empool(std::string_view src) {
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Green); // cache hit
+    ZoneText(src.data(), src.size());
 
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
@@ -213,6 +214,9 @@ pool_string empool(std::string_view src) {
     if (const char* c = find_key(h)) {
         pool_string ps(c);
         assert(ps.view() == src);
+
+        ZoneColor(tracy::Color::ColorType::Orange); // cache "half-hit"
+
         return ps;
     }
 

@@ -206,7 +206,7 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     // Ideally, tag would also not be part of this hash and all symbols, regardless of tag, would be
     // unique. However, that fails in at least one case:
     //
-    //     typedef struct {} S;
+    //     typedef struct S {} S;
     //
     // This results in both a `typedef` element and a `struct` element, with the same symbol path,
     // but which is not an ODRV.

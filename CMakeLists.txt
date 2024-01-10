@@ -24,6 +24,8 @@ if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ORC_BUILD_EXAMPLES FALSE)
 endif()
 
+####################################################################################################
+
 if (NOT TARGET stlab::stlab)
     message(STATUS "ORC third-party: creating target 'stlab::stlab'...")
     FetchContent_Declare(
@@ -34,6 +36,8 @@ if (NOT TARGET stlab::stlab)
     FetchContent_MakeAvailable(stlab)
 endif()
 
+####################################################################################################
+
 if (NOT TARGET tomlplusplus::tomlplusplus)
     message(STATUS "ORC third-party: creating target 'tomlplusplus::tomlplusplus'...")
     FetchContent_Declare(
@@ -43,6 +47,30 @@ if (NOT TARGET tomlplusplus::tomlplusplus)
     )
     FetchContent_MakeAvailable(toml)
 endif()
+
+####################################################################################################
+#
+# Adds support for the Tracy profiler.
+#
+
+message(STATUS "ORC third-party: creating target 'TracyClient'...")
+
+FetchContent_Declare(
+    tracy
+    GIT_REPOSITORY https://github.com/wolfpld/tracy
+    GIT_TAG        37aff70dfa50cf6307b3fee6074d627dc2929143 # v0.10.0
+)
+
+if (${TRACY_ENABLE})
+    message(STATUS "ORC profiling: ON")
+else()
+    message(STATUS "ORC profiling: OFF")
+endif()
+
+FetchContent_MakeAvailable(tracy)
+
+####################################################################################################
+
 
 if (NOT TARGET TBB::tbb)
     message(STATUS "ORC third-party: creating target 'TBB::tbb'...")
@@ -94,6 +122,7 @@ foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
             stlab::stlab
             TBB::tbb
             tomlplusplus::tomlplusplus
+            Tracy::TracyClient
     )
 
     target_include_directories(${_TARGET_NAME}
@@ -122,6 +151,7 @@ target_link_libraries(orc_test
         stlab::stlab
         TBB::tbb
         tomlplusplus::tomlplusplus
+        Tracy::TracyClient
 )
 if (PROJECT_IS_TOP_LEVEL)
     target_compile_options(orc_test PRIVATE -Wall -Werror)

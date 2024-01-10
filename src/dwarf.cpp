@@ -17,6 +17,7 @@
 #include "orc/features.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/settings.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -196,6 +197,8 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
+    ZoneScoped;
+
     // Tag used to be a part of the fatal hash computation. Unfortunately it causes `class` and
     // `struct` definitions to be considered different, when they should not be. As a general
     // rule, I think _all_ symbols regardless of tag should be uniquely defined, so pulling the tag
@@ -252,6 +255,10 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 /**************************************************************************************************/
 
 struct line_header {
+    // DWARF spec section 6.2.4 The Line Number Program Header.
+    // Note this will change for DWARF5, so we need to look out
+    // for DWARF data that uses the new version number and
+    // account for it differently.
     std::uint64_t _length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
     std::uint16_t _version{0};
     std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
@@ -275,6 +282,10 @@ void line_header::read(freader& s, bool needs_byteswap) {
         throw std::runtime_error("unsupported length");
     }
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
+    if (_version > 4) {
+        // REVISIT: (fbrereto) handle DWARF5 and later.
+        throw std::runtime_error("unhandled DWARF version (" + std::to_string(_version) + ")");
+    }
     _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
     _min_instruction_length = read_pod<std::uint8_t>(s);
     if (_version >= 4) {
@@ -309,24 +320,34 @@ void line_header::read(freader& s, bool needs_byteswap) {
 /**************************************************************************************************/
 
 std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+    ZoneScoped;
+
     // We only hash the attributes that could contribute to an ODRV. We also sort that set of
     // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    std::vector<dw::at> names;
+    constexpr const std::size_t max_names_k{32};
+    std::array<dw::at, max_names_k> names;
+    std::size_t count{0};
+
     for (const auto& attr : attributes) {
         if (nonfatal_attribute(attr._name)) continue;
-        names.push_back(attr._name);
+        if (count >= max_names_k) {
+            throw std::runtime_error("fatal_attribute_hash names overflow");
+        }
+        names[count++] = attr._name;
     }
-    std::sort(names.begin(), names.end());
+    std::sort(&names[0], &names[count]);
 
     std::size_t h{0};
-    for (const auto& name : names) {
+
+    std::for_each_n(&names[0], count, [&](const auto& name) {
         // If this assert fires, it means an attribute's value was passed over during evaluation,
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
         const auto& attribute = attributes.get(name);
         assert(!attributes.has(name, attribute_value::type::passover));
         h = orc::hash_combine(h, attribute._value.hash());
-    }
+    });
+
     return h;
 }
 
@@ -338,6 +359,7 @@ bool skip_tagged_die(const die& d) {
         dw::tag::partial_unit,
         dw::tag::variable,
         dw::tag::formal_parameter,
+        dw::tag::template_type_parameter,
     };
     static const auto first = std::begin(skip_tags);
     static const auto last = std::end(skip_tags);
@@ -469,6 +491,8 @@ void dwarf::implementation::register_section(const std::string& name,
 /**************************************************************************************************/
 
 void dwarf::implementation::read_abbreviations() {
+    ZoneScoped;
+
     auto section_begin = _debug_abbrev._offset;
     auto section_end = section_begin + _debug_abbrev._size;
     temp_seek(_s, section_begin, [&] {
@@ -484,6 +508,8 @@ void dwarf::implementation::read_abbreviations() {
 /**************************************************************************************************/
 
 void dwarf::implementation::read_lines() {
+    ZoneScoped;
+
     temp_seek(_s, _debug_line._offset, [&] {
         line_header header;
         header.read(_s, _details._needs_byteswap);
@@ -517,15 +543,44 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
 
 /**************************************************************************************************/
 
+#define ORC_PRIVATE_FEATURE_DEBUG_STR_CACHE() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+
 pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
+    ZoneScoped;
+
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+    thread_local float hit_s(0);
+    thread_local float total_s(0);
+
+    ++total_s;
+
+    thread_local const char* plot_name_k = []{
+        const char* result = orc::tracy::format_unique("debug_str cache %s", orc::tracy::unique_thread_name());
+        TracyPlotConfig(result, tracy::PlotFormatType::Percentage, true, true, 0);
+        return result;
+    }();
+
+    const auto update_zone = [&]{
+        tracy::Profiler::PlotData(plot_name_k, hit_s / total_s * 100);
+    };
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
+
     // I tried an implementation that loaded the whole debug_str section into the string pool on
     // the first debug string read. The big problem with that technique is that the single die
     // processing mode becomes very expensive, as it only needs a handful of debug strings but
     // ends up loading all of them. Perhaps we could pivot the technique based on the process mode?
-    auto found = _debug_str_cache.find(offset);
-    if (found != _debug_str_cache.end()) {
+    if (const auto found = _debug_str_cache.find(offset); found != _debug_str_cache.end()) {
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+        ++hit_s;
+        update_zone();
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
+
         return found->second;
     }
+
+#if ORC_FEATURE(DEBUG_STR_CACHE)
+    update_zone();
+#endif // ORC_FEATURE(DEBUG_STR_CACHE)
 
     return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
                                                 [&] { return empool(_s.read_c_string_view()); });
@@ -550,6 +605,8 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 std::string dwarf::implementation::qualified_symbol_name(
     const die& d, const attribute_sequence& attributes) const {
+    ZoneScoped;
+
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
     // we are using, so let's use that instead here.
@@ -991,6 +1048,8 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 
 attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
+    ZoneScoped;
+
     /*
         The values for `ref1`, `ref2`, `ref4`, and `ref8` are offsets from the first byte of
         the current compilation unit header, not the top of __debug_info.
@@ -1118,6 +1177,8 @@ attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size
 /**************************************************************************************************/
 
 pool_string dwarf::implementation::resolve_type(attribute type) {
+    ZoneScoped;
+
     std::size_t reference = type.reference();
     auto found = _type_cache.find(reference);
     if (found != _type_cache.end()) {
@@ -1154,6 +1215,8 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
+    ZoneScoped;
+
     die die;
     attribute_sequence attributes;
 
@@ -1197,6 +1260,10 @@ bool dwarf::implementation::register_sections_done() {
     // the declaration files are 1-indexed. The 0th index is reserved for the compilation unit /
     // partial unit name. We need to prime this here because in single process mode we don't get
     // the name of the compilation unit unless we explicitly ask for it.
+    //
+    // DWARF Spec 6.2.4 talking about `directories` (sequence of directory names):
+    //     The first entry in the sequence is the primary source file whose file name exactly matches
+    //     that given in the DW_AT_name attribute in the compilation unit debugging information entry.
     _decl_files.push_back(object_file_ancestry(_ofd_index)._ancestors[0]);
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
@@ -1214,34 +1281,57 @@ bool dwarf::implementation::register_sections_done() {
 /**************************************************************************************************/
 
 bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
+    ZoneScoped;
+    ZoneColor(tracy::Color::ColorType::Red);
+
     // These are a handful of "filters" we use to elide false positives.
 
     // These are the tags we don't deal with (yet, if ever.)
-    if (skip_tagged_die(d)) return true;
+    if (skip_tagged_die(d)) {
+        ZoneTextL("skipping: tagged die");
+        return true;
+    }
 
     // According to DWARF 3.3.1, a subprogram tag that is missing the external
     // flag means the function is invisible outside its compilation unit. As
     // such, it cannot contribute to an ODRV.
-    if (d._tag == dw::tag::subprogram && !attributes.has_uint(dw::at::external)) return true;
+    if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) {
+        ZoneTextL("skipping: non-external subprogram");
+        return true;
+    }
 
     // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
     // them.
-    if (d._path.empty()) return true;
+    if (d._path.empty()) {
+        ZoneTextL("skipping: empty path");
+        return true;
+    }
 
     // Symbols with __ in them are reserved, so are not user-defined. No need to register
     // them.
-    if (d._path.view().find("::__") != std::string::npos) return true;
+    if (d._path.view().find("::__") != std::string::npos) {
+        ZoneTextL("skipping: non-user-defined (reserved) symbol");
+        return true;
+    }
 
     // lambdas are ephemeral and can't cause (hopefully) an ODRV
-    if (d._path.view().find("lambda") != std::string::npos) return true;
+    if (d._path.view().find("lambda") != std::string::npos) {
+        ZoneTextL("skipping: lambda");
+        return true;
+    }
 
     // we don't handle any die that's ObjC-based.
-    if (attributes.has(dw::at::apple_runtime_class)) return true;
+    if (attributes.has(dw::at::apple_runtime_class)) {
+        ZoneTextL("skipping: apple runtime class");
+        return true;
+    }
 
     // If the symbol is listed in the symbol_ignore list, we're done here.
     std::string_view symbol = d._path.view();
-    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7)))
+    if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) {
+        ZoneTextL("skipping: on symbol_ignore list");
         return true;
+    }
 
     // Unfortunately we have to do this work to see if we're dealing with
     // a self-referential type.
@@ -1256,12 +1346,15 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
             return abbrev._attributes.empty();
         });
 
-        if (empty) return true;
+        if (empty) {
+            ZoneTextL("skipping: self-referential type");
+            return true;
+        }
     }
 
-    // If the die is a _declaration_, it's not a _definition_, so we can skip it entirely.
-    if (has_flag_attribute(attributes, dw::at::declaration)) return true;
-
+    // This makes the kept dies visually identifiable in the Tracy analyzer.
+    TracyMessageL("odr_used");
+    ZoneColor(tracy::Color::ColorType::Green);
     return false;
 }
 
@@ -1290,9 +1383,14 @@ void dwarf::implementation::process_all_dies() {
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {
+            ZoneScopedN("process_one_die"); // name matters for stats tracking
+
             die die;
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
+
+            const char* tag_str = to_string(die._tag);
+            ZoneNameL(tag_str);
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0
@@ -1343,6 +1441,21 @@ void dwarf::implementation::process_all_dies() {
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
 
+#if ORC_FEATURE(TRACY)
+            auto path_view = die._path.view();
+            if (!path_view.empty()) {
+                ZoneText(path_view.data(), path_view.length());
+            } else {
+                ZoneTextL("<empty path>");
+            }
+            constexpr auto msg_sz_k = 32;
+            char msg[msg_sz_k] = {0};
+            std::snprintf(msg, msg_sz_k, "offset 0x%dh", die._debug_info_offset);
+            ZoneTextL(msg);
+            std::snprintf(msg, msg_sz_k, "%zu attribute(s)", attributes.size());
+            ZoneTextL(msg);
+#endif // ORC_FEATURE(TRACY)
+
             dies.emplace_back(std::move(die));
         }
     }
@@ -1355,6 +1468,8 @@ void dwarf::implementation::process_all_dies() {
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
+    ZoneScoped;
+
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);

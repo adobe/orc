@@ -37,12 +37,11 @@
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
 #include "orc/task_system.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
 namespace {
-
-/**************************************************************************************************/
 
 /**************************************************************************************************/
 
@@ -492,6 +491,8 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
+    orc::tracy::initialize();
+
     signal(SIGINT, interrupt_callback_handler);
 
     process_orc_config_file(argv[0]);

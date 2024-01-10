@@ -408,6 +408,7 @@ struct dwarf::implementation {
     std::uint32_t read_uleb();
     std::int32_t read_sleb();
 
+    void read_debug_strings();
     void read_abbreviations();
     void read_lines();
     const abbrev& find_abbreviation(std::uint32_t code) const;
@@ -490,6 +491,25 @@ void dwarf::implementation::register_section(const std::string& name,
 
 /**************************************************************************************************/
 
+void dwarf::implementation::read_debug_strings() {
+    ZoneScoped;
+
+    // Go through the whole of __debug_str, pre-loading every string into the string pools.
+    temp_seek(_s, _debug_str._offset, [&]{
+        const auto section_end = _debug_str._offset + _debug_str._size;
+        while (true) {
+            auto offset = _s.tellg();
+            if (offset == section_end) {
+                break;
+            }
+            offset -= _debug_str._offset;
+            _debug_str_cache[offset] = empool(_s.read_c_string_view());
+        }
+    });
+}
+
+/**************************************************************************************************/
+
 void dwarf::implementation::read_abbreviations() {
     ZoneScoped;
 
@@ -565,10 +585,6 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
     };
 #endif // ORC_FEATURE(DEBUG_STR_CACHE)
 
-    // I tried an implementation that loaded the whole debug_str section into the string pool on
-    // the first debug string read. The big problem with that technique is that the single die
-    // processing mode becomes very expensive, as it only needs a handful of debug strings but
-    // ends up loading all of them. Perhaps we could pivot the technique based on the process mode?
     if (const auto found = _debug_str_cache.find(offset); found != _debug_str_cache.end()) {
 #if ORC_FEATURE(DEBUG_STR_CACHE)
         ++hit_s;
@@ -1363,6 +1379,15 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 void dwarf::implementation::process_all_dies() {
     if (!_ready && !register_sections_done()) return;
     assert(_ready);
+
+    // This call to `read_debug_strings` should *not* be part of register_sections_done. I tried an
+    // implementation that always loaded the whole debug_str section into the string pool on the
+    // first debug string read. The big problem with that technique is that the single die
+    // processing mode becomes very expensive, as it only needs a handful of debug strings but ends
+    // up loading all of them. This is a middle ground where the debug strings are empooled when
+    // proccessing all dies, but for the fetch-single-die phase, it pays the cost for the bespoke
+    // debug strings it needs.
+    read_debug_strings();
 
     auto section_begin = _debug_info._offset;
     auto section_end = section_begin + _debug_info._size;

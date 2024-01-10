@@ -442,9 +442,11 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
 
-    static std::mutex result_mutex;
-    std::lock_guard<std::mutex> lock(result_mutex);
+    static TracyLockable(std::mutex, odrv_report_mutex);
+    {
+    std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
     results.push_back(report);
+    }
 
     return dies.front();
 }
@@ -475,10 +477,32 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     // Second stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
 
-    for (auto& entry : global_die_map()) {
-        do_work([&entry, &result]() mutable {
-            entry.second = enforce_odrv_for_die_list(entry.second, result);
+    // We now subdivide the work. We do so by looking at the total number of entries
+    // in the map, breaking up the work into chunks, and then issuing a `do_work`
+    // statement on each chunk. This is generally faster than issuing a `do_work`
+    // call for each entry, as there can be _many_ entries, and each `do_work` call
+    // incurs some bookkeeping. (It should go without saying that the die map
+    // should not be modified while this processing happens.) We set the number of
+    // work chunks to be the processor count of the machine, and resize the amount
+    // of work per core.
+    const std::size_t work_size = global_die_map().size();
+    const std::size_t chunk_count = std::thread::hardware_concurrency();
+    const std::size_t chunk_size = std::ceil(work_size / static_cast<float>(chunk_count));
+    std::size_t cur_work = 0;
+    auto first = global_die_map().begin();
+
+    while (cur_work != work_size) {
+        // All but the last chunk will be the same size.
+        // The last one could be up to (chunk_count - 1) smaller.
+        const auto next_chunk_size = std::min(chunk_size, work_size - cur_work);
+        const auto last = std::next(first, next_chunk_size);
+        do_work([_first = first, _last = last, &result]() mutable {
+            for (; _first != _last; ++_first) {
+                _first->second = enforce_odrv_for_die_list(_first->second, result);
+            }
         });
+        cur_work += next_chunk_size;
+        first = last;
     }
 
     work().wait();

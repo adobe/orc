@@ -9,6 +9,7 @@
 
 // stdc++
 #include <cmath>
+#include <iostream>
 #include <sstream>
 
 //==================================================================================================
@@ -68,6 +69,11 @@ void initialize() {
         // The workaround is to connect the analyzer or preempt the application. In either
         // case, you're not losing profiling data.
         while (!profiler.HasShutdownFinished()) {
+            static bool do_once = []{
+                std::cout << "Waiting for Tracy...\n";
+                return true;
+            }();
+            (void)do_once;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         };
     });

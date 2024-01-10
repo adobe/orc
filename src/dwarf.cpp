@@ -198,22 +198,36 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     ZoneScoped;
-
-    // Tag used to be a part of the fatal hash computation. Unfortunately it causes `class` and
-    // `struct` definitions to be considered different, when they should not be. As a general
-    // rule, I think _all_ symbols regardless of tag should be uniquely defined, so pulling the tag
-    // from the hash below should catch more issues without adding any false positives.
-    //
-    // The `declaration` attribute used to be a part of this hash, too. Given that a declaration
+    
+    // The `declaration` attribute used to be a part of this hash. Given that a declaration
     // is not a definition, they cannot contribute to an ODRV, so were instead added to the
     // `skip_die` logic, and removed from this hash.
+    
+    // Ideally, tag would also not be part of this hash and all symbols, regardless of tag, would be
+    // unique. However, that fails in at least one case:
     //
-    // Thus, the only two things that contribute to the ODR hash of a die are its architecture and
-    // symbol path.
+    //     typedef struct {} S;
+    //
+    // This results in both a `typedef` element and a `struct` element, with the same symbol path,
+    // but which is not an ODRV.
+    //
+    // On the other hand, including tag in the hash results in missed ODRVs in cases like:
+    //
+    //    struct S1 {}
+    //    ...
+    //    class S1 { int i; }
+    //
+    // which results in a `struct` element and a `class` element with the same symbol path, but
+    // differing definitions, which _is_ an ODRV.
+    //
+    // So, we will include the tag in the hash, but combine the tag values for `struct` and `class`
+    // into a single value.
+    auto tag = d._tag == dw::tag::structure_type ? dw::tag::class_type : d._tag;
 
     // clang-tidy off
     return orc::hash_combine(0,
                              static_cast<std::size_t>(d._arch),
+                             static_cast<std::size_t>(tag),
                              d._path.hash());
     // clang-tidy on
 };
@@ -440,6 +454,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    cu_header _cu_header;
     std::size_t _cu_address{0};
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
@@ -661,8 +676,17 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     // decl_file comes back as a uint, but that's a debug_str offset that needs to be resolved.
     if (result._name == dw::at::decl_file) {
         auto decl_file_index = result._value.uint();
-        assert(decl_file_index < _decl_files.size());
-        result._value.string(_decl_files[decl_file_index]);
+        // We currently only process the `file_names` part of the `debug_line` section header to
+        // determine the decl_files list. However, this is only a partial list as the line number
+        // program can also contain DW_LNE_define_file ops, which we don't currently process.
+        // See https://github.com/adobe/orc/issues/67
+        // For now, we will ignore file indexes too large for our list.
+        //assert(decl_file_index < _decl_files.size());
+        if (decl_file_index < _decl_files.size()) {
+            result._value.string(_decl_files[decl_file_index]);
+        } else {
+            result._value.string(empool("<unsupported file index>"));
+        }
     } else if (result._name == dw::at::calling_convention) {
         auto convention = result._value.uint();
         assert(convention > 0 && convention <= 0xff);
@@ -1099,7 +1123,11 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             result.uint(read64());
         } break;
         case dw::form::ref_addr: {
-            result.reference(read32());
+            if (_cu_header._version == 2) {
+                result.reference(read64());
+            } else {
+                result.reference(read32());
+            }
         } break;
         case dw::form::ref1: {
             handle_reference(read8());
@@ -1375,11 +1403,9 @@ void dwarf::implementation::process_all_dies() {
     dies dies;
 
     while (_s.tellg() < section_end) {
-        cu_header header;
-
         _cu_address = _s.tellg();
 
-        header.read(_s, _details._needs_byteswap);
+        _cu_header.read(_s, _details._needs_byteswap);
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {

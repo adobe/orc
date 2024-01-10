@@ -81,7 +81,7 @@ struct attribute_value {
         return _string.hash();
     }
 
-    void reference(std::uint32_t offset) {
+    void reference(std::uint64_t offset) {
         _type |= type::reference;
         _uint = offset;
     }

@@ -192,7 +192,7 @@ pool_string empool(std::string_view src) {
 
     auto find_key = [&](std::size_t h) -> const char* {
         const auto found = keys.find(h);
-        return found == keys.end() ? nullptr ; found->second;
+        return found == keys.end() ? nullptr : found->second;
     };
 
     if (const char* c = find_key(h)) {

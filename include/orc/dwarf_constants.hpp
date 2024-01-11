@@ -86,7 +86,7 @@ enum class at : std::uint16_t {
     discr = 0x15,
     discr_value = 0x16,
     visibility = 0x17,
-    import = 0x18,
+    import_ = 0x18,
     string_length = 0x19,
     common_reference = 0x1a,
     comp_dir = 0x1b,

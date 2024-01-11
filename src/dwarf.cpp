@@ -791,10 +791,16 @@ pool_string dwarf::implementation::die_identifier(const die& d,
 
     // If the tag type doesn't give us a good name, then we scan various
     // attributes.
+    // clang-format off
     const dw::at string_attributes[] = {
-        dw::at::linkage_name,    dw::at::name,          dw::at::type, dw::at::import,
-        dw::at::abstract_origin, dw::at::specification,
+        dw::at::linkage_name,
+        dw::at::name,
+        dw::at::type,
+        dw::at::import_,
+        dw::at::abstract_origin,
+        dw::at::specification,
     };
+    // clang-format on
     for (const auto& at : string_attributes)
         if (attributes.has_string(at)) return attributes.string(at);
 

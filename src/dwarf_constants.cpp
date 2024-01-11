@@ -36,7 +36,7 @@ const char* to_string(at attr) {
         case at::discr: return "discr";
         case at::discr_value: return "discr_value";
         case at::visibility: return "visibility";
-        case at::import: return "import";
+        case at::import_: return "import";
         case at::string_length: return "string_length";
         case at::common_reference: return "common_reference";
         case at::comp_dir: return "comp_dir";

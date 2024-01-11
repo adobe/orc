@@ -199,11 +199,7 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     ZoneScoped;
     
-    // The `declaration` attribute used to be a part of this hash. Given that a declaration
-    // is not a definition, they cannot contribute to an ODRV, so were instead added to the
-    // `skip_die` logic, and removed from this hash.
-    
-    // Ideally, tag would also not be part of this hash and all symbols, regardless of tag, would be
+    // Ideally, tag would not be part of this hash and all symbols, regardless of tag, would be
     // unique. However, that fails in at least one case:
     //
     //     typedef struct S {} S;
@@ -228,6 +224,7 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     return orc::hash_combine(0,
                              static_cast<std::size_t>(d._arch),
                              static_cast<std::size_t>(tag),
+                             has_flag_attribute(attributes, dw::at::declaration),
                              d._path.hash());
     // clang-tidy on
 };

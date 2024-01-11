@@ -379,8 +379,8 @@ auto epilogue(bool exception) {
     if (log_level_at_least(settings::log_level::warning)) {
         cout_safe([&](auto& s) {
             s << "ORC complete.\n"
-              << "  " << g._odrv_count << " ODRVs reported\n"
-              << "  " << g._object_file_count << " compilation units processed\n"
+              << "  " << g._odrv_count << " ODRV(s) reported\n"
+              << "  " << g._object_file_count << " object file(s) processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
               << "  " << g._die_skipped_count << " dies skipped (" << format_pct(g._die_skipped_count, g._die_processed_count) << ")\n"
               << "  " << g._unique_symbol_count << " unique symbols\n"

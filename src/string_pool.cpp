@@ -181,23 +181,18 @@ pool_string empool(std::string_view src) {
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
     // default_view would be returned.)
-    if (src.empty()) return pool_string(nullptr);
+    if (src.empty()) {
+        return pool_string(nullptr);
+    }
 
     static decltype(auto) keys =
         orc::make_leaky<tbb::concurrent_unordered_map<size_t, const char*>>();
 
     const std::size_t h = string_view_hash(src);
 
-    auto find_key = [&](size_t h) -> const char* {
-        // This code doesn't work because there's a race condition where end() can change.
-        // const auto it0 = keys.find(h);
-        // if (it0 != keys.end()) {
-
-        // But we never remove from the map, so if contains(), it is guaranteed to find()
-        if (keys.contains(h)) {
-            return keys.find(h)->second;
-        }
-        return nullptr;
+    auto find_key = [&](std::size_t h) -> const char* {
+        const auto found = keys.find(h);
+        return found == keys.end() ? nullptr ; found->second;
     };
 
     if (const char* c = find_key(h)) {
@@ -212,11 +207,10 @@ pool_string empool(std::string_view src) {
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
     if (const char* c = find_key(h)) {
-        pool_string ps(c);
-        assert(ps.view() == src);
-
         ZoneColor(tracy::Color::ColorType::Orange); // cache "half-hit"
 
+        pool_string ps(c);
+        assert(ps.view() == src);
         return ps;
     }
 

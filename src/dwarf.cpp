@@ -306,6 +306,14 @@ void line_header::read(freader& s, bool needs_byteswap) {
         _include_directories.push_back(cur_directory);
     }
 
+    // REVIST (fosterbrereton): The reading here isn't entirely accurate. The current code stops the
+    // first time an empty name is found, and interprets that as the end of the file names (and thus
+    // the `line_header`). However, the spec (as the end of section 6.2.4) states "A compiler may
+    // generate a single null byte for the file names field and define file names using the
+    // extended opcode DW_LNE_define_file." This loop, then, should iterate through the end of the
+    // defined size of `_header_length` instead of using an empty name as a sentry. Any additional
+    // null bytes should be interpreted as a placeholder file name description. (Admittedly, I
+    // haven't seen one of these in the wild yet.)
     while (true) {
         file_name cur_file_name;
         cur_file_name._name = s.read_c_string_view();
@@ -409,7 +417,7 @@ struct dwarf::implementation {
     std::int32_t read_sleb();
 
     void read_abbreviations();
-    void read_lines();
+    void read_lines(std::size_t header_offset);
     const abbrev& find_abbreviation(std::uint32_t code) const;
 
     pool_string read_debug_str(std::size_t offset);
@@ -507,10 +515,10 @@ void dwarf::implementation::read_abbreviations() {
 
 /**************************************************************************************************/
 
-void dwarf::implementation::read_lines() {
+void dwarf::implementation::read_lines(std::size_t header_offset) {
     ZoneScoped;
 
-    temp_seek(_s, _debug_line._offset, [&] {
+    temp_seek(_s, _debug_line._offset + header_offset, [&] {
         line_header header;
         header.read(_s, _details._needs_byteswap);
 
@@ -526,7 +534,8 @@ void dwarf::implementation::read_lines() {
             }
         }
 
-        // We don't need to process the rest of __debug__line. We're only here for the file table.
+        // We don't need to process the rest of this __debug__line subsection.
+        // We're only here for the file table.
     });
 }
 
@@ -1271,8 +1280,6 @@ bool dwarf::implementation::register_sections_done() {
 
     read_abbreviations();
 
-    read_lines();
-
     _ready = true;
 
     return true;
@@ -1410,6 +1417,21 @@ void dwarf::implementation::process_all_dies() {
 
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
+                // Spec (section 3.1.1) says that compilation and partial units may specify which
+                // __debug_line subsection they want to draw their decl_files list from. This also
+                // means we need to clear our current decl_files list (from index 1 to the end)
+                // whenever we do hit either of these two dies. (What's the right action to take
+                // when a unit doesn't have a stmt_list attribute? Where do we get our file names
+                // from? Or is the expectation that the DWARF information won't specify any in that
+                // case?)
+
+                assert(!_decl_files.empty());
+                _decl_files.erase(std::next(_decl_files.begin()), _decl_files.end());
+
+                if (attributes.has_uint(dw::at::stmt_list)) {
+                    read_lines(attributes.uint(dw::at::stmt_list));
+                }
+
                 // REVISIT (fosterbrereton): If the name is a relative path, there may be a
                 // DW_AT_comp_dir attribute that specifies the path it is relative from.
                 // Is it worth making this path absolute?

@@ -172,8 +172,9 @@ auto object_file_path(const std::filesystem::path& battery_path, const compilati
 
 /**************************************************************************************************/
 
-std::string exec(const char* cmd) {
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+std::string exec(std::string cmd) {
+    cmd += " 2>&1";
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
 
     if (!pipe) {
         throw std::runtime_error("popen() failed!");

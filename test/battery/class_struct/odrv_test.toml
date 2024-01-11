@@ -1,0 +1,8 @@
+[[source]]
+    path = "class.cpp"
+
+[[source]]
+    path = "struct.cpp"
+
+[[odrv]]
+    category = "structure:byte_size"

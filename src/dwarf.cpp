@@ -198,7 +198,7 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     ZoneScoped;
-    
+
     // Ideally, tag would not be part of this hash and all symbols, regardless of tag, would be
     // unique. However, that fails in at least one case:
     //
@@ -221,11 +221,8 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     auto tag = d._tag == dw::tag::structure_type ? dw::tag::class_type : d._tag;
 
     // clang-tidy off
-    return orc::hash_combine(0,
-                             static_cast<std::size_t>(d._arch),
-                             static_cast<std::size_t>(tag),
-                             has_flag_attribute(attributes, dw::at::declaration),
-                             d._path.hash());
+    return orc::hash_combine(0, static_cast<std::size_t>(d._arch), static_cast<std::size_t>(tag),
+                             has_flag_attribute(attributes, dw::at::declaration), d._path.hash());
     // clang-tidy on
 };
 
@@ -575,15 +572,14 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
 
     ++total_s;
 
-    thread_local const char* plot_name_k = []{
-        const char* result = orc::tracy::format_unique("debug_str cache %s", orc::tracy::unique_thread_name());
+    thread_local const char* plot_name_k = [] {
+        const char* result =
+            orc::tracy::format_unique("debug_str cache %s", orc::tracy::unique_thread_name());
         TracyPlotConfig(result, tracy::PlotFormatType::Percentage, true, true, 0);
         return result;
     }();
 
-    const auto update_zone = [&]{
-        tracy::Profiler::PlotData(plot_name_k, hit_s / total_s * 100);
-    };
+    const auto update_zone = [&] { tracy::Profiler::PlotData(plot_name_k, hit_s / total_s * 100); };
 #endif // ORC_FEATURE(DEBUG_STR_CACHE)
 
     // I tried an implementation that loaded the whole debug_str section into the string pool on
@@ -888,9 +884,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // Useful to see what the whole expression is that this routine is about to evaluate.
 #if ORC_FEATURE(DEBUG) && 0
     std::vector<char> expression(expression_size, 0);
-    temp_seek(_s, [&]{
-        _s.read(&expression[0], expression_size);
-    });
+    temp_seek(_s, [&] { _s.read(&expression[0], expression_size); });
 #endif // ORC_FEATURE(DEBUG)
 
     // clang-format off
@@ -1108,7 +1102,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
     attribute_value result;
 
-    const auto handle_reference = [&](std::uint64_t offset){
+    const auto handle_reference = [&](std::uint64_t offset) {
         const auto debug_info_offset = _debug_info._offset;
         const auto cu_offset = _cu_address - debug_info_offset;
         // REVISIT (fosterbrereton): Possible overflow
@@ -1190,7 +1184,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             }
         };
         default: {
-            // We have a problem if we are passing over an attribute that is needed to determine ODRVs.
+            // We have a problem if we are passing over an attribute that is needed to determine
+            // ODRVs.
             assert(nonfatal_attribute(attr._name));
             result.passover();
             auto size = form_length(attr._form, _s);
@@ -1302,8 +1297,9 @@ bool dwarf::implementation::register_sections_done() {
     // the name of the compilation unit unless we explicitly ask for it.
     //
     // DWARF Spec 6.2.4 talking about `directories` (sequence of directory names):
-    //     The first entry in the sequence is the primary source file whose file name exactly matches
-    //     that given in the DW_AT_name attribute in the compilation unit debugging information entry.
+    //     The first entry in the sequence is the primary source file whose file name exactly
+    //     matches that given in the DW_AT_name attribute in the compilation unit debugging
+    //     information entry.
     _decl_files.push_back(object_file_ancestry(_ofd_index)._ancestors[0]);
 
     // Once we've loaded all the necessary DWARF sections, now we start piecing the details
@@ -1430,10 +1426,8 @@ void dwarf::implementation::process_all_dies() {
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0
-            std::cerr << std::hex << "0x" << (die._debug_info_offset) << std::dec
-                      << ": "
-                      << to_string(die._tag)
-                      << '\n';
+            std::cerr << std::hex << "0x" << (die._debug_info_offset) << std::dec << ": "
+                      << to_string(die._tag) << '\n';
 #endif // ORC_FEATURE(DEBUG) && 0
 
             // code 0 is reserved; it's a null entry, and signifies the end of siblings.
@@ -1522,6 +1516,21 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
     ZoneScoped;
 
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
+
+    // This is a hack for https://github.com/adobe/orc/issues/72. The problem is the file
+    // declaration list is contained in a specific `debug_lines` entry, which is driven by the
+    // `stmt_list` attribute in the `compilation_unit` die that contains this die we are trying to
+    // fetch. (We have observed there can be more than one compilation unit declaration, and thus
+    // more than one `debug_lines` entry, per `debug_info`). However, the way ORC tracks die
+    // information today, we do not cross reference from the compilation unit die to this one, or
+    // give each die its own `debug_lines` offset (which would be the proper solution). The reasons
+    // I am avoiding the latter are 1) it adds an extra 32 bits per die, and 2) in all observed
+    // instances the `debug_lines` offset for user-defined symbols is 0. So, the hack here to save
+    // 32 bits per die is to assume a `debug_lines` offset of 0, read the file list from the
+    // `debug_lines` header, and assume it is the right one. If/when a real-world instance is found
+    // that breaks this assumption, we can fall back on the more memory-expensive option.
+    read_lines(0);
+
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);
     _cu_address = _debug_info._offset; // not sure if this is correct in all cases

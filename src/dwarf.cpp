@@ -16,6 +16,7 @@
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
 #include "orc/object_file_registry.hpp"
+#include "orc/orc.hpp"
 #include "orc/settings.hpp"
 #include "orc/tracy.hpp"
 
@@ -1110,9 +1111,11 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     };
 
     const auto handle_passover = [&]() {
-        // We have a problem if we are passing over an attribute that is needed to determine
-        // ODRVs.
-        assert(nonfatal_attribute(attr._name));
+        if (log_level_at_least(settings::log_level::warning)) {
+            cout_safe([&](auto& s){
+                s << "warning: Passing over an essential attribute (" << to_string(attr._name) << ")\n";
+            });
+        }
         result.passover();
         auto size = form_length(attr._form, _s);
         _s.seekg(size, std::ios::cur);

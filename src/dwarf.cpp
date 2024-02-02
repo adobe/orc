@@ -1109,6 +1109,57 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         result.reference(static_cast<std::uint32_t>(cu_offset + offset));
     };
 
+    const auto handle_passover = [&](){
+        // We have a problem if we are passing over an attribute that is needed to determine
+        // ODRVs.
+        assert(nonfatal_attribute(attr._name));
+        result.passover();
+        auto size = form_length(attr._form, _s);
+        _s.seekg(size, std::ios::cur);
+    };
+
+    enum class block_type {
+        one,
+        two,
+        four,
+        uleb,
+    };
+
+    const auto handle_block = [&](std::size_t size) {
+        if (size > 8) {
+            throw std::runtime_error("Unexpected block size read of essential data.");
+        }
+
+        std::uint64_t value(0);
+        while (size--) {
+            value <<= 8;
+            value |= read8();
+        }
+
+        result.uint(value);
+    };
+
+    const auto maybe_handle_block = [&](block_type type){
+        if (nonfatal_attribute(attr._name)) {
+            handle_passover();
+        } else {
+            switch (type) {
+                case block_type::one: {
+                    handle_block(read8());
+                } break;
+                case block_type::two: {
+                    handle_block(read16());
+                } break;
+                case block_type::four: {
+                    handle_block(read32());
+                } break;
+                case block_type::uleb: {
+                    handle_block(read_uleb());
+                } break;
+            }
+        }
+    };
+
     switch (attr._form) {
         case dw::form::udata:
         case dw::form::implicit_const: {
@@ -1171,25 +1222,20 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::sec_offset: {
             result.uint(read32());
         } break;
-        case dw::form::block1:
-        case dw::form::block2:
-        case dw::form::block4:
+        case dw::form::block1: {
+            maybe_handle_block(block_type::one);
+        } break;
+        case dw::form::block2: {
+            maybe_handle_block(block_type::two);
+        } break;
+        case dw::form::block4: {
+            maybe_handle_block(block_type::four);
+        } break;
         case dw::form::block: {
-            // REVISIT: Handle the `block` form value if necessary. This will require a vector of
-            // bytes (a memory allocation), which may significantly reduce overall performance if
-            // there are a lot of them. Maybe a custom type with a small object optimization? A
-            // problem for another time.
-            if (!nonfatal_attribute(attr._name)) {
-                throw std::runtime_error("essential attribute using `block` form");
-            }
-        };
+            maybe_handle_block(block_type::uleb);
+        } break;
         default: {
-            // We have a problem if we are passing over an attribute that is needed to determine
-            // ODRVs.
-            assert(nonfatal_attribute(attr._name));
-            result.passover();
-            auto size = form_length(attr._form, _s);
-            _s.seekg(size, std::ios::cur);
+            handle_passover();
         } break;
     }
 
@@ -1421,8 +1467,10 @@ void dwarf::implementation::process_all_dies() {
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
 
+#if ORC_FEATURE(TRACY)
             const char* tag_str = to_string(die._tag);
             ZoneNameL(tag_str);
+#endif // ORC_FEATURE(TRACY)
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0

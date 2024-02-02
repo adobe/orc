@@ -459,6 +459,7 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     cu_header _cu_header;
     std::size_t _cu_address{0};
+    // pool_string _cu_compilation_directory; // disabled for now. See `fetch_one_die`.
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
@@ -1515,6 +1516,18 @@ void dwarf::implementation::process_all_dies() {
                     read_lines(attributes.uint(dw::at::stmt_list));
                 }
 
+                // Grab the comp_dir value here, and apply it to relative paths so we can
+                // display the full path whenever necessary.
+                //
+                // Disabled for now, as we don't actually use it yet. I am concerned about
+                // memory allocations while appending this value to the locations specified
+                // in a die. See my comment in `fetch_one_die` as to what I think the proper
+                // fix should be.
+                //
+                // if (attributes.has_string(dw::at::comp_dir)) {
+                //     _cu_compilation_directory = attributes.string(dw::at::comp_dir);
+                // }
+
                 // REVISIT (fosterbrereton): If the name is a relative path, there may be a
                 // DW_AT_comp_dir attribute that specifies the path it is relative from.
                 // Is it worth making this path absolute?
@@ -1589,6 +1602,19 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
     // 32 bits per die is to assume a `debug_lines` offset of 0, read the file list from the
     // `debug_lines` header, and assume it is the right one. If/when a real-world instance is found
     // that breaks this assumption, we can fall back on the more memory-expensive option.
+    //
+    // The problem this hack fixes is cropping up again for a related issue. The compilation unit
+    // may include a `comp_dir` attribute, which is the path to the compilation directory used
+    // to make the compilation unit. In that case, it should be appended to all relative paths
+    // found in the remainder of the compilation unit's DWARF tree. In the case of processing all
+    // dies, this is stored in the `_cu_compilation_directory`, which is unset in the case we're
+    // only fetching one die.
+    //
+    // It would seem the proper solution for both issues is for each die to save the `debug_info`
+    // offset to its associated compilation unit die, and process it prior to calling
+    // `abbreviation_to_die`, below. That would cause both `read_lines` to run and populate
+    // `_cu_compilation_directory`. But it's still 64 bits I'm not sure I'm willing to pay.
+    //
     read_lines(0);
 
     auto die_address = _debug_info._offset + debug_info_offset;

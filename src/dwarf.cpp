@@ -1111,7 +1111,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     };
 
     const auto handle_passover = [&]() {
-        if (log_level_at_least(settings::log_level::warning)) {
+        if (!nonfatal_attribute(attr._name) && log_level_at_least(settings::log_level::warning)) {
             cout_safe([&](auto& s){
                 s << "warning: Passing over an essential attribute (" << to_string(attr._name) << ")\n";
             });

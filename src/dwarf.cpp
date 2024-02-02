@@ -1109,7 +1109,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         result.reference(static_cast<std::uint32_t>(cu_offset + offset));
     };
 
-    const auto handle_passover = [&](){
+    const auto handle_passover = [&]() {
         // We have a problem if we are passing over an attribute that is needed to determine
         // ODRVs.
         assert(nonfatal_attribute(attr._name));
@@ -1125,6 +1125,11 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         uleb,
     };
 
+    // Where the handling of an essential block takes place. We get a size amount from
+    // `maybe_handle_block` telling us how many bytes are in this block that we need to process. We
+    // read them one at a time, accumulating them in an unsigned 64-bit value. This assumes the
+    // value is both an integer, and will fit in 64 bits. If either of this is found to be false,
+    // we'll need to revisit this.
     const auto handle_block = [&](std::size_t size) {
         if (size > 8) {
             throw std::runtime_error("Unexpected block size read of essential data.");
@@ -1139,7 +1144,11 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         result.uint(value);
     };
 
-    const auto maybe_handle_block = [&](block_type type){
+    // The first level of `blockN` handling - if the attribute is nonessential, we pass over it like
+    // we were doing before. If it is essential, depending on the `blockN` form, we read some
+    // number of bytes to discover how much data this block holds. We then forward that size on to
+    // `handle_block`, above.
+    const auto maybe_handle_block = [&](block_type type) {
         if (nonfatal_attribute(attr._name)) {
             handle_passover();
         } else {

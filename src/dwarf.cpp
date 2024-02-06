@@ -439,6 +439,7 @@ struct dwarf::implementation {
     attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
     attribute_value evaluate_exprloc(std::uint32_t expression_size);
+    attribute_value evaluate_blockn(std::uint32_t size, dw::at attribute);
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
 
@@ -1077,6 +1078,46 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 }
 
 /**************************************************************************************************/
+// Where the handling of an essential block takes place. We get a size amount from
+// `maybe_handle_block` telling us how many bytes are in this block that we need to process.
+attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::at attribute) {
+    switch (attribute_encoding_class(attribute)) {
+        case dw::encoding_class::exprloc: {
+            return evaluate_exprloc(size);
+        } break;
+        // We should correctly interpret these types as real-world examples are found that fail.
+        case dw::encoding_class::address: [[fallthrough]];
+        case dw::encoding_class::block: [[fallthrough]];
+        case dw::encoding_class::constant: [[fallthrough]];
+        case dw::encoding_class::flag: [[fallthrough]];
+        case dw::encoding_class::lineptr: [[fallthrough]];
+        case dw::encoding_class::macptr: [[fallthrough]];
+        case dw::encoding_class::rangelistptr: [[fallthrough]];
+        case dw::encoding_class::reference: [[fallthrough]];
+        case dw::encoding_class::string: {
+            // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This assumes the
+            // value is both an integer, and will fit in 64 bits. If either of this is found to be false,
+            // we'll need to revisit this.
+
+            attribute_value result;
+
+            if (size > 8) {
+                throw std::runtime_error("Unexpected block size read of essential data.");
+            }
+
+            std::uint64_t value(0);
+            while (size--) {
+                value <<= 8;
+                value |= read8();
+            }
+
+            result.uint(value);
+            return result;
+        }
+    }
+}
+
+/**************************************************************************************************/
 
 attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
@@ -1129,45 +1170,26 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         uleb,
     };
 
-    // Where the handling of an essential block takes place. We get a size amount from
-    // `maybe_handle_block` telling us how many bytes are in this block that we need to process. We
-    // read them one at a time, accumulating them in an unsigned 64-bit value. This assumes the
-    // value is both an integer, and will fit in 64 bits. If either of this is found to be false,
-    // we'll need to revisit this.
-    const auto handle_block = [&](std::size_t size) {
-        if (size > 8) {
-            throw std::runtime_error("Unexpected block size read of essential data.");
-        }
-
-        std::uint64_t value(0);
-        while (size--) {
-            value <<= 8;
-            value |= read8();
-        }
-
-        result.uint(value);
-    };
-
     // The first level of `blockN` handling - if the attribute is nonessential, we pass over it like
     // we were doing before. If it is essential, depending on the `blockN` form, we read some
     // number of bytes to discover how much data this block holds. We then forward that size on to
-    // `handle_block`, above.
+    // `evaluate_blockn`, above.
     const auto maybe_handle_block = [&](block_type type) {
         if (nonfatal_attribute(attr._name)) {
             handle_passover();
         } else {
             switch (type) {
                 case block_type::one: {
-                    handle_block(read8());
+                    result = evaluate_blockn(read8(), attr._name);
                 } break;
                 case block_type::two: {
-                    handle_block(read16());
+                    result = evaluate_blockn(read16(), attr._name);
                 } break;
                 case block_type::four: {
-                    handle_block(read32());
+                    result = evaluate_blockn(read32(), attr._name);
                 } break;
                 case block_type::uleb: {
-                    handle_block(read_uleb());
+                    result = evaluate_blockn(read_uleb(), attr._name);
                 } break;
             }
         }

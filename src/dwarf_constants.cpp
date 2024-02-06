@@ -9,6 +9,7 @@
 
 // stdc++
 #include <cassert>
+#include <stdexcept>
 
 /**************************************************************************************************/
 
@@ -495,6 +496,107 @@ bool is_type(tag t) {
             return true;
         default:
             return false;
+    }
+}
+
+/**************************************************************************************************/
+
+encoding_class attribute_encoding_class(at attribute) {
+    switch (attribute) {
+        case dw::at::sibling: return encoding_class::reference;
+        case dw::at::location: return encoding_class::exprloc; // loclistptr
+        case dw::at::name: return encoding_class::string;
+        case dw::at::ordering: return encoding_class::constant;
+        case dw::at::byte_size: return encoding_class::constant; // exprloc, reference
+        case dw::at::bit_offset: return encoding_class::constant; // exprloc, reference
+        case dw::at::bit_size: return encoding_class::constant; // exprloc, reference
+        case dw::at::stmt_list: return encoding_class::lineptr;
+        case dw::at::low_pc: return encoding_class::address;
+        case dw::at::high_pc: return encoding_class::address; // constant
+        case dw::at::language: return encoding_class::constant;
+        case dw::at::discr: return encoding_class::reference;
+        case dw::at::discr_value: return encoding_class::constant;
+        case dw::at::visibility: return encoding_class::constant;
+        case dw::at::import_: return encoding_class::reference;
+        case dw::at::string_length: return encoding_class::exprloc; // loclistptr
+        case dw::at::common_reference: return encoding_class::reference;
+        case dw::at::comp_dir: return encoding_class::string;
+        case dw::at::const_value: return encoding_class::block; // constant, string
+        case dw::at::containing_type: return encoding_class::reference;
+        case dw::at::default_value: return encoding_class::reference;
+        case dw::at::inline_: return encoding_class::constant;
+        case dw::at::is_optional: return encoding_class::flag;
+        case dw::at::lower_bound: return encoding_class::constant; // exprloc, reference
+        case dw::at::producer: return encoding_class::string;
+        case dw::at::prototyped: return encoding_class::flag;
+        case dw::at::return_addr: return encoding_class::exprloc; // loclistptr
+        case dw::at::start_scope: return encoding_class::constant; // rangelistptr
+        case dw::at::bit_stride: return encoding_class::constant; // exprloc, reference
+        case dw::at::upper_bound: return encoding_class::constant; // exprloc, reference
+        case dw::at::abstract_origin: return encoding_class::reference;
+        case dw::at::accessibility: return encoding_class::constant;
+        case dw::at::address_class: return encoding_class::constant;
+        case dw::at::artificial: return encoding_class::flag;
+        case dw::at::base_types: return encoding_class::reference;
+        case dw::at::calling_convention: return encoding_class::constant;
+        case dw::at::count: return encoding_class::constant; // exprloc, reference
+        case dw::at::data_member_location: return encoding_class::exprloc; // constant, loclistptr
+        case dw::at::decl_column: return encoding_class::constant;
+        case dw::at::decl_file: return encoding_class::constant;
+        case dw::at::decl_line: return encoding_class::constant;
+        case dw::at::declaration: return encoding_class::flag;
+        case dw::at::discr_list: return encoding_class::block;
+        case dw::at::encoding: return encoding_class::constant;
+        case dw::at::external: return encoding_class::flag;
+        case dw::at::frame_base: return encoding_class::exprloc; // loclistptr
+        case dw::at::friend_: return encoding_class::reference;
+        case dw::at::identifier_case: return encoding_class::constant;
+        case dw::at::macro_info: return encoding_class::macptr;
+        case dw::at::namelist_item: return encoding_class::reference;
+        case dw::at::priority: return encoding_class::reference;
+        case dw::at::segment: return encoding_class::exprloc; // loclistptr
+        case dw::at::specification: return encoding_class::reference;
+        case dw::at::static_link: return encoding_class::exprloc; // loclistptr
+        case dw::at::type: return encoding_class::reference;
+        case dw::at::use_location: return encoding_class::exprloc; // loclistptr
+        case dw::at::variable_parameter: return encoding_class::flag;
+        case dw::at::virtuality: return encoding_class::constant;
+        case dw::at::vtable_elem_location: return encoding_class::exprloc; // loclistptr
+        case dw::at::allocated: return encoding_class::constant; // exprloc, reference
+        case dw::at::associated: return encoding_class::constant; // exprloc, reference
+        case dw::at::data_location: return encoding_class::exprloc;
+        case dw::at::byte_stride: return encoding_class::constant; // exprloc, reference
+        case dw::at::entry_pc: return encoding_class::address;
+        case dw::at::use_utf8: return encoding_class::flag;
+        case dw::at::extension: return encoding_class::reference;
+        case dw::at::ranges: return encoding_class::rangelistptr;
+        case dw::at::trampoline: return encoding_class::address; // flag, reference, string
+        case dw::at::call_column: return encoding_class::constant;
+        case dw::at::call_file: return encoding_class::constant;
+        case dw::at::call_line: return encoding_class::constant;
+        case dw::at::description: return encoding_class::string;
+        case dw::at::binary_scale: return encoding_class::constant;
+        case dw::at::decimal_scale: return encoding_class::constant;
+        case dw::at::small: return encoding_class::reference;
+        case dw::at::decimal_sign: return encoding_class::constant;
+        case dw::at::digit_count: return encoding_class::constant;
+        case dw::at::picture_string: return encoding_class::string;
+        case dw::at::mutable_: return encoding_class::flag;
+        case dw::at::threads_scaled: return encoding_class::flag;
+        case dw::at::explicit_: return encoding_class::flag;
+        case dw::at::object_pointer: return encoding_class::reference;
+        case dw::at::endianity: return encoding_class::constant;
+        case dw::at::elemental: return encoding_class::flag;
+        case dw::at::pure: return encoding_class::flag;
+        case dw::at::recursive: return encoding_class::flag;
+        case dw::at::signature: return encoding_class::reference;
+        case dw::at::main_subprogram: return encoding_class::flag;
+        case dw::at::data_bit_offset: return encoding_class::constant;
+        case dw::at::const_expr: return encoding_class::flag;
+        case dw::at::enum_class: return encoding_class::flag;
+        case dw::at::linkage_name: return encoding_class::string;
+        default:
+            throw std::runtime_error("uknown encoding class for attribute");
     }
 }
 

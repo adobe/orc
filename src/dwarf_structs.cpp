@@ -121,10 +121,24 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
 
 /**************************************************************************************************/
 
-std::ostream& operator<<(std::ostream& s, const die& x) {
-    for (const auto& ancestor : object_file_ancestry(x._ofd_index)) {
-        s << "    within: " << ancestor.allocate_path().filename().string() << ":\n";
+std::ostream& operator<<(std::ostream& s, const object_ancestry& x) {
+    bool first = true;
+    for (const auto& ancestor : x) {
+        if (first) {
+            first = false;
+        } else {
+            s << " -> ";
+        }
+
+        s << ancestor.allocate_path().filename().string() ;
     }
+    return s;
+}
+
+/**************************************************************************************************/
+
+std::ostream& operator<<(std::ostream& s, const die& x) {
+    s << "    within: " << object_file_ancestry(x._ofd_index) << ":\n";
 
     // Save for debugging so we can map what we find with dwarfdump output
 #if 0

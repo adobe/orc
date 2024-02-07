@@ -280,24 +280,24 @@ auto& work() {
 /**************************************************************************************************/
 
 void do_work(std::function<void()> f) {
-    auto doit = [](auto&& f) {
+    auto doit = [_f = std::move(f)]() {
         try {
-            f();
+            _f();
         } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) { s << error.what() << '\n'; });
+            cerr_safe([&](auto& s) { s << "task error: " << error.what() << '\n'; });
         } catch (...) {
-            cerr_safe([&](auto& s) { s << "unknown exception caught" << '\n'; });
+            cerr_safe([&](auto& s) { s << "task error: unknown\n"; });
         }
     };
 
     if (!settings::instance()._parallel_processing) {
-        doit(f);
+        doit();
         return;
     }
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
+    system([_work_token = work().working(), _doit = std::move(doit)] {
 #if ORC_FEATURE(TRACY)
         thread_local bool tracy_set_thread_name_k = []{
             TracyCSetThreadName(orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
@@ -305,7 +305,7 @@ void do_work(std::function<void()> f) {
         }();
         (void)tracy_set_thread_name_k;
 #endif // ORC_FEATURE(TRACY)
-        _doit(_f);
+        _doit();
     });
 }
 

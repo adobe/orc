@@ -302,6 +302,8 @@ struct object_ancestry {
     }
 };
 
+std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
+
 /**************************************************************************************************/
 // A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to

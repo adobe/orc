@@ -409,6 +409,7 @@ struct dwarf::implementation {
 
     bool register_sections_done();
 
+    void report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error);
     void process_all_dies();
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
     void post_process_die_attributes(attribute_sequence& attributes);
@@ -438,11 +439,13 @@ struct dwarf::implementation {
     void path_identifier_pop();
     std::string qualified_symbol_name(const die& d, const attribute_sequence& attributes) const;
 
+    pool_string make_path_canonical(pool_string candidate);
     attribute process_attribute(const attribute& attr,
                                 std::size_t cur_die_offset,
                                 process_mode mode);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
     attribute_value evaluate_exprloc(std::uint32_t expression_size);
+    attribute_value evaluate_constant(std::uint32_t size);
     attribute_value evaluate_blockn(std::uint32_t size, dw::at attribute);
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
@@ -667,6 +670,30 @@ std::string dwarf::implementation::qualified_symbol_name(
 }
 
 /**************************************************************************************************/
+// incoming path comes from e.g., `file_decl` attribute, or one of the `_file_decl` entries.
+// Given what we know of the Mach-O file, attempt to canonicalize the path, making it absolute
+// if it is relative, and we have a `_cu_compilation_directory`. This is a relatively expensive
+// operation (possibly requiring dynamic memory allocations) so should not be used during the
+// typical processing path.
+pool_string dwarf::implementation::make_path_canonical(pool_string candidate) {
+    std::filesystem::path path(candidate.view());
+
+    if (path.is_absolute()) {
+        return candidate;
+    }
+
+    // Hopefully we got `_cu_compilation_directory` from the compilation unit die
+    // processed prior to this one.
+    if (!_cu_compilation_directory) {
+        return candidate;
+    }
+
+    path = weakly_canonical(_cu_compilation_directory.view() / std::move(path));
+
+    return empool(std::move(path).string());
+}
+
+/**************************************************************************************************/
 // This "flattens" the template into an evaluated value, based on both the attribute and the
 // current read position in debug_info.
 attribute dwarf::implementation::process_attribute(const attribute& attr,
@@ -691,17 +718,10 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             pool_string decl_file = _decl_files[decl_file_index];
 
             if (mode == process_mode::single) {
-                // single mode means we're reporting; in this case we check the path and decide if
-                // it is relative or absolute. If relative, then we append the compilation
-                // directory to it (which we got from the compilation unit die which was processed
-                // before this one.)
-                std::filesystem::path path(decl_file.view());
-                if (path.is_absolute()) {
-                    result._value.string(decl_file);
-                } else {
-                    path = weakly_canonical(_cu_compilation_directory.view() / std::move(path));
-                    result._value.string(empool(std::move(path).string()));
-                }
+                // single mode means we're reporting OR resolving a type;
+                // in this case make the path canonical to supply more
+                // complete path information.
+                result._value.string(make_path_canonical(decl_file));
             } else {
                 // not even sure this is necessary?
                 result._value.string(decl_file);
@@ -1095,6 +1115,29 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 }
 
 /**************************************************************************************************/
+
+attribute_value dwarf::implementation::evaluate_constant(std::uint32_t size) {
+    // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This
+    // assumes the value is both an integer, and will fit in 64 bits. If either of this is
+    // found to be false, we'll need to revisit this.
+
+    attribute_value result;
+
+    if (size > 8) {
+        throw std::runtime_error("Unexpected block size read of essential data");
+    }
+
+    std::uint64_t value(0);
+    while (size--) {
+        value <<= 8;
+        value |= read8();
+    }
+
+    result.uint(value);
+    return result;
+}
+
+/**************************************************************************************************/
 // Where the handling of an essential block takes place. We get a size amount from
 // `maybe_handle_block` telling us how many bytes are in this block that we need to process.
 attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::at attribute) {
@@ -1102,36 +1145,20 @@ attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::a
         case dw::encoding_class::exprloc: {
             return evaluate_exprloc(size);
         } break;
+        case dw::encoding_class::constant: {
+            return evaluate_constant(size);
+        } break;
+
         // We should correctly interpret these types as real-world examples are found that fail.
-        // clang-format off
-        case dw::encoding_class::address: [[fallthrough]];
-        case dw::encoding_class::block: [[fallthrough]];
-        case dw::encoding_class::constant: [[fallthrough]];
-        case dw::encoding_class::flag: [[fallthrough]];
-        case dw::encoding_class::lineptr: [[fallthrough]];
-        case dw::encoding_class::macptr: [[fallthrough]];
-        case dw::encoding_class::rangelistptr: [[fallthrough]];
-        case dw::encoding_class::reference: [[fallthrough]];
-        // clang-format on
+        case dw::encoding_class::address:
+        case dw::encoding_class::block:
+        case dw::encoding_class::flag:
+        case dw::encoding_class::lineptr:
+        case dw::encoding_class::macptr:
+        case dw::encoding_class::rangelistptr:
+        case dw::encoding_class::reference:
         case dw::encoding_class::string: {
-            // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This
-            // assumes the value is both an integer, and will fit in 64 bits. If either of this is
-            // found to be false, we'll need to revisit this.
-
-            attribute_value result;
-
-            if (size > 8) {
-                throw std::runtime_error("Unexpected block size read of essential data.");
-            }
-
-            std::uint64_t value(0);
-            while (size--) {
-                value <<= 8;
-                value |= read8();
-            }
-
-            result.uint(value);
-            return result;
+            throw std::runtime_error("Unhandled block encoding class");
         }
     }
 }
@@ -1495,6 +1522,26 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 
 /**************************************************************************************************/
 
+void dwarf::implementation::report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error) {
+    if (!log_level_at_least(settings::log_level::warning)) return;
+
+    const auto debug_info_offset = static_cast<std::uint32_t>(die_absolute_offset - _debug_info._offset);
+
+    cerr_safe([&](auto& s) {
+        s << "warning: failed to process die\n"
+          << "    within: " << object_file_ancestry(_ofd_index) << '\n'
+          << "    debug_info offset: " << hex_print(debug_info_offset) << '\n'
+          << "    error: " << error << " \n";
+    });
+
+    // at this point we do not know where the _next_ die is in the read stream,
+    // so we have to abort processing the entire DWARF block. There is likely
+    // a way to recover from this kind of error. A problem for another time.
+    throw std::runtime_error("DWARF `debug_info` processing abort");
+}
+
+/**************************************************************************************************/
+
 void dwarf::implementation::process_all_dies() {
     if (!_ready && !register_sections_done()) return;
     assert(_ready);
@@ -1518,9 +1565,19 @@ void dwarf::implementation::process_all_dies() {
         while (true) {
             ZoneScopedN("process_one_die"); // name matters for stats tracking
 
+            const std::size_t die_absolute_offset = _s.tellg();
             die die;
             attribute_sequence attributes;
-            std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
+
+            try {
+                std::tie(die, attributes) = abbreviation_to_die(die_absolute_offset, process_mode::complete);
+            } catch (const std::exception& error) {
+                // `report_die_processing_failure` will rethrow
+                report_die_processing_failure(die_absolute_offset, error.what());
+            } catch (...) {
+                // `report_die_processing_failure` will rethrow
+                report_die_processing_failure(die_absolute_offset, "unknown");
+            }
 
             die._cu_die_address = _cu_die_address;
 

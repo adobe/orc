@@ -1199,11 +1199,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     };
 
     const auto handle_passover = [&]() {
-        if (fatal_attribute(attr._name) && log_level_at_least(settings::log_level::warning)) {
-            cout_safe([&](auto& s) {
-                s << "warning: Passing over an essential attribute (" << to_string(attr._name)
-                  << ")\n";
-            });
+        if (fatal_attribute(attr._name)) {
+            throw std::runtime_error(std::string("Passing over an essential attribute (") + to_string(attr._name) + ")");
         }
         result.passover();
         auto size = form_length(attr._form, _s);
@@ -1523,16 +1520,16 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 /**************************************************************************************************/
 
 void dwarf::implementation::report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error) {
-    if (!log_level_at_least(settings::log_level::warning)) return;
+    if (log_level_at_least(settings::log_level::warning)) {
+        const auto debug_info_offset = static_cast<std::uint32_t>(die_absolute_offset - _debug_info._offset);
 
-    const auto debug_info_offset = static_cast<std::uint32_t>(die_absolute_offset - _debug_info._offset);
-
-    cerr_safe([&](auto& s) {
-        s << "warning: failed to process die\n"
-          << "    within: " << object_file_ancestry(_ofd_index) << '\n'
-          << "    debug_info offset: " << hex_print(debug_info_offset) << '\n'
-          << "    error: " << error << " \n";
-    });
+        cerr_safe([&](auto& s) {
+            s << "warning: failed to process die\n"
+              << "    within: " << object_file_ancestry(_ofd_index) << '\n'
+              << "    debug_info offset: " << hex_print(debug_info_offset) << '\n'
+              << "    error: " << error << " \n";
+        });
+    }
 
     // at this point we do not know where the _next_ die is in the read stream,
     // so we have to abort processing the entire DWARF block. There is likely

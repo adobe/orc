@@ -410,10 +410,12 @@ struct dwarf::implementation {
     bool register_sections_done();
 
     void process_all_dies();
+    void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
+    void post_process_die_attributes(attribute_sequence& attributes);
 
     bool skip_die(die& d, const attribute_sequence& attributes);
 
-    die_pair fetch_one_die(std::size_t debug_info_offset);
+    die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
 
     template <class T>
     T read();
@@ -459,8 +461,9 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     cu_header _cu_header;
-    std::size_t _cu_address{0};
-    // pool_string _cu_compilation_directory; // disabled for now. See `fetch_one_die`.
+    std::size_t _cu_address{0}; // offset of the start of the compilation unit in _debug_info
+    std::size_t _cu_die_address{0}; // offset of the compilation unit die
+    pool_string _cu_compilation_directory;
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
@@ -681,12 +684,6 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     // decl_file comes back as a uint, but that's a debug_str offset that needs to be resolved.
     if (result._name == dw::at::decl_file) {
         auto decl_file_index = result._value.uint();
-        // We currently only process the `file_names` part of the `debug_line` section header to
-        // determine the decl_files list. However, this is only a partial list as the line number
-        // program can also contain DW_LNE_define_file ops, which we don't currently process.
-        // See https://github.com/adobe/orc/issues/67
-        // For now, we will ignore file indexes too large for our list.
-        //assert(decl_file_index < _decl_files.size());
         if (decl_file_index < _decl_files.size()) {
             result._value.string(_decl_files[decl_file_index]);
         } else {
@@ -1502,6 +1499,8 @@ void dwarf::implementation::process_all_dies() {
             attribute_sequence attributes;
             std::tie(die, attributes) = abbreviation_to_die(_s.tellg(), process_mode::complete);
 
+            die._cu_die_address = _cu_die_address;
+
 #if ORC_FEATURE(TRACY)
             const char* tag_str = to_string(die._tag);
             ZoneNameL(tag_str);
@@ -1523,38 +1522,7 @@ void dwarf::implementation::process_all_dies() {
 
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
-                // Spec (section 3.1.1) says that compilation and partial units may specify which
-                // __debug_line subsection they want to draw their decl_files list from. This also
-                // means we need to clear our current decl_files list (from index 1 to the end)
-                // whenever we do hit either of these two dies. (What's the right action to take
-                // when a unit doesn't have a stmt_list attribute? Where do we get our file names
-                // from? Or is the expectation that the DWARF information won't specify any in that
-                // case?)
-
-                assert(!_decl_files.empty());
-                _decl_files.erase(std::next(_decl_files.begin()), _decl_files.end());
-
-                if (attributes.has_uint(dw::at::stmt_list)) {
-                    read_lines(attributes.uint(dw::at::stmt_list));
-                }
-
-                // Grab the comp_dir value here, and apply it to relative paths so we can
-                // display the full path whenever necessary.
-                //
-                // Disabled for now, as we don't actually use it yet. I am concerned about
-                // memory allocations while appending this value to the locations specified
-                // in a die. See my comment in `fetch_one_die` as to what I think the proper
-                // fix should be.
-                //
-                // if (attributes.has_string(dw::at::comp_dir)) {
-                //     _cu_compilation_directory = attributes.string(dw::at::comp_dir);
-                // }
-
-                // REVISIT (fosterbrereton): If the name is a relative path, there may be a
-                // DW_AT_comp_dir attribute that specifies the path it is relative from.
-                // Is it worth making this path absolute?
-
-                _decl_files[0] = attributes.string(dw::at::name);
+                post_process_compilation_unit_die(die, attributes);
 
                 // We've seen cases in the wild where compilation units are empty, have no children,
                 // but do not have a null abbreviation code signalling their "end". In this case,
@@ -1571,10 +1539,7 @@ void dwarf::implementation::process_all_dies() {
                 path_identifier_push();
             }
 
-            if (attributes.has(dw::at::type)) {
-                attributes.get(dw::at::type)
-                    ._value.string(resolve_type(attributes.get(dw::at::type)));
-            }
+            post_process_die_attributes(attributes);
 
             die._skippable = skip_die(die, attributes);
             die._ofd_index = _ofd_index;
@@ -1607,46 +1572,73 @@ void dwarf::implementation::process_all_dies() {
 
 /**************************************************************************************************/
 
-die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset) {
+void dwarf::implementation::post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes) {
+    _cu_die_address = die._debug_info_offset;
+
+    // Spec (section 3.1.1) says that compilation and partial units may specify which
+    // __debug_line subsection they want to draw their decl_files list from. This also
+    // means we need to clear our current decl_files list (from index 1 to the end)
+    // whenever we do hit either of these two dies. (What's the right action to take
+    // when a unit doesn't have a stmt_list attribute? Where do we get our file names
+    // from? Or is the expectation that the DWARF information won't specify any in that
+    // case?)
+
+    assert(!_decl_files.empty());
+    _decl_files.erase(std::next(_decl_files.begin()), _decl_files.end());
+
+    if (attributes.has_uint(dw::at::stmt_list)) {
+        read_lines(attributes.uint(dw::at::stmt_list));
+    }
+
+    // Grab the comp_dir value here, and apply it to relative paths so we can
+    // display the full path whenever necessary.
+    if (attributes.has_string(dw::at::comp_dir)) {
+        _cu_compilation_directory = attributes.string(dw::at::comp_dir);
+    }
+
+    // REVISIT (fosterbrereton): If the name is a relative path, there may be a
+    // DW_AT_comp_dir attribute that specifies the path it is relative from.
+    // Is it worth making this path absolute?
+
+    _decl_files[0] = attributes.string(dw::at::name);
+}
+
+/**************************************************************************************************/
+
+void dwarf::implementation::post_process_die_attributes(attribute_sequence& attributes) {
+    if (attributes.has(dw::at::type)) {
+        auto& attribute = attributes.get(dw::at::type);
+        attribute._value.string(resolve_type(attribute));
+    }
+
+    if (attributes.has(dw::at::containing_type)) {
+        auto& attribute = attributes.get(dw::at::containing_type);
+        attribute._value.string(resolve_type(attribute));
+    }
+}
+
+/**************************************************************************************************/
+
+die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset, std::size_t cu_die_address) {
     ZoneScoped;
 
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
 
-    // This is a hack for https://github.com/adobe/orc/issues/72. The problem is the file
-    // declaration list is contained in a specific `debug_lines` entry, which is driven by the
-    // `stmt_list` attribute in the `compilation_unit` die that contains this die we are trying to
-    // fetch. (We have observed there can be more than one compilation unit declaration, and thus
-    // more than one `debug_lines` entry, per `debug_info`). However, the way ORC tracks die
-    // information today, we do not cross reference from the compilation unit die to this one, or
-    // give each die its own `debug_lines` offset (which would be the proper solution). The reasons
-    // I am avoiding the latter are 1) it adds an extra 32 bits per die, and 2) in all observed
-    // instances the `debug_lines` offset for user-defined symbols is 0. So, the hack here to save
-    // 32 bits per die is to assume a `debug_lines` offset of 0, read the file list from the
-    // `debug_lines` header, and assume it is the right one. If/when a real-world instance is found
-    // that breaks this assumption, we can fall back on the more memory-expensive option.
-    //
-    // The problem this hack fixes is cropping up again for a related issue. The compilation unit
-    // may include a `comp_dir` attribute, which is the path to the compilation directory used
-    // to make the compilation unit. In that case, it should be appended to all relative paths
-    // found in the remainder of the compilation unit's DWARF tree. In the case of processing all
-    // dies, this is stored in the `_cu_compilation_directory`, which is unset in the case we're
-    // only fetching one die.
-    //
-    // It would seem the proper solution for both issues is for each die to save the `debug_info`
-    // offset to its associated compilation unit die, and process it prior to calling
-    // `abbreviation_to_die`, below. That would cause both `read_lines` to run and populate
-    // `_cu_compilation_directory`. But it's still 64 bits I'm not sure I'm willing to pay.
-    //
-    read_lines(0);
+    if (cu_die_address != debug_info_offset) {
+        // This loads some state into the dwarf::implementation that makes the `abbreviation_to_die`
+        // call more meaningful for the original die we are trying to fetch.
+        die_pair cu_pair = fetch_one_die(cu_die_address, cu_die_address);
+        post_process_compilation_unit_die(std::get<0>(cu_pair), std::get<1>(cu_pair));
+    }
 
     auto die_address = _debug_info._offset + debug_info_offset;
     _s.seekg(die_address);
-    _cu_address = _debug_info._offset; // not sure if this is correct in all cases
+    _cu_address = _debug_info._offset;
+
     auto result = abbreviation_to_die(die_address, process_mode::single);
-    auto& attributes = std::get<1>(result);
-    if (attributes.has(dw::at::type)) {
-        attributes.get(dw::at::type)._value.string(resolve_type(attributes.get(dw::at::type)));
-    }
+
+    post_process_die_attributes(std::get<1>(result));
+
     return result;
 }
 
@@ -1665,8 +1657,8 @@ void dwarf::register_section(std::string name, std::size_t offset, std::size_t s
 
 void dwarf::process_all_dies() { _impl->process_all_dies(); }
 
-die_pair dwarf::fetch_one_die(std::size_t debug_info_offset) {
-    return _impl->fetch_one_die(debug_info_offset);
+die_pair dwarf::fetch_one_die(std::size_t debug_info_offset, std::size_t cu_die_address) {
+    return _impl->fetch_one_die(debug_info_offset, cu_die_address);
 }
 
 /**************************************************************************************************/

@@ -320,7 +320,7 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
     auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
 
-    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
+    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
     assert(die._tag == d._tag);
     assert(die._arch == d._arch);
     assert(die._has_children == d._has_children);

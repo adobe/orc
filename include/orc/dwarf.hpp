@@ -27,7 +27,7 @@ struct dwarf {
 
     void process_all_dies();
 
-    die_pair fetch_one_die(std::size_t debug_info_offset);
+    die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
 
 private:
     struct implementation;

@@ -438,7 +438,9 @@ struct dwarf::implementation {
     void path_identifier_pop();
     std::string qualified_symbol_name(const die& d, const attribute_sequence& attributes) const;
 
-    attribute process_attribute(const attribute& attr, std::size_t cur_die_offset);
+    attribute process_attribute(const attribute& attr,
+                                std::size_t cur_die_offset,
+                                process_mode mode);
     attribute_value process_form(const attribute& attr, std::size_t cur_die_offset);
     attribute_value evaluate_exprloc(std::uint32_t expression_size);
     attribute_value evaluate_blockn(std::uint32_t size, dw::at attribute);
@@ -461,7 +463,7 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     cu_header _cu_header;
-    std::size_t _cu_address{0}; // offset of the start of the compilation unit in _debug_info
+    std::size_t _cu_address{0};     // offset of the start of the compilation unit in _debug_info
     std::size_t _cu_die_address{0}; // offset of the compilation unit die
     pool_string _cu_compilation_directory;
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
@@ -668,7 +670,8 @@ std::string dwarf::implementation::qualified_symbol_name(
 // This "flattens" the template into an evaluated value, based on both the attribute and the
 // current read position in debug_info.
 attribute dwarf::implementation::process_attribute(const attribute& attr,
-                                                   std::size_t cur_die_offset) {
+                                                   std::size_t cur_die_offset,
+                                                   process_mode mode) {
     // clang-format off
     attribute result = attr;
 
@@ -678,14 +681,31 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         return result;
     }
 
-    // some attributes need further processing. Once we have the initial value from process_form,
-    // we can continue the work here. (Some forms, like ref_addr, have already been processed
+    // some attributes need further processing. Once we have the initial value from process_form, we
+    // can continue the work here. (Some forms, like ref_addr, have already been processed
     // completely- these are the cases when a value needs contextual interpretation. For example,
     // decl_file comes back as a uint, but that's a debug_str offset that needs to be resolved.
     if (result._name == dw::at::decl_file) {
         auto decl_file_index = result._value.uint();
         if (decl_file_index < _decl_files.size()) {
-            result._value.string(_decl_files[decl_file_index]);
+            pool_string decl_file = _decl_files[decl_file_index];
+
+            if (mode == process_mode::single) {
+                // single mode means we're reporting; in this case we check the path and decide if
+                // it is relative or absolute. If relative, then we append the compilation
+                // directory to it (which we got from the compilation unit die which was processed
+                // before this one.)
+                std::filesystem::path path(decl_file.view());
+                if (path.is_absolute()) {
+                    result._value.string(decl_file);
+                } else {
+                    path = weakly_canonical(_cu_compilation_directory.view() / std::move(path));
+                    result._value.string(empool(std::move(path).string()));
+                }
+            } else {
+                // not even sure this is necessary?
+                result._value.string(decl_file);
+            }
         } else {
             result._value.string(empool("<unsupported file index>"));
         }
@@ -1083,6 +1103,7 @@ attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::a
             return evaluate_exprloc(size);
         } break;
         // We should correctly interpret these types as real-world examples are found that fail.
+        // clang-format off
         case dw::encoding_class::address: [[fallthrough]];
         case dw::encoding_class::block: [[fallthrough]];
         case dw::encoding_class::constant: [[fallthrough]];
@@ -1091,10 +1112,11 @@ attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::a
         case dw::encoding_class::macptr: [[fallthrough]];
         case dw::encoding_class::rangelistptr: [[fallthrough]];
         case dw::encoding_class::reference: [[fallthrough]];
+        // clang-format on
         case dw::encoding_class::string: {
-            // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This assumes the
-            // value is both an integer, and will fit in 64 bits. If either of this is found to be false,
-            // we'll need to revisit this.
+            // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This
+            // assumes the value is both an integer, and will fit in 64 bits. If either of this is
+            // found to be false, we'll need to revisit this.
 
             attribute_value result;
 
@@ -1151,8 +1173,9 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
 
     const auto handle_passover = [&]() {
         if (fatal_attribute(attr._name) && log_level_at_least(settings::log_level::warning)) {
-            cout_safe([&](auto& s){
-                s << "warning: Passing over an essential attribute (" << to_string(attr._name) << ")\n";
+            cout_safe([&](auto& s) {
+                s << "warning: Passing over an essential attribute (" << to_string(attr._name)
+                  << ")\n";
             });
         }
         result.passover();
@@ -1350,7 +1373,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
                        // If the attribute is nonfatal, we'll pass over it in `process_attribute`.
-                       return process_attribute(x, die._debug_info_offset);
+                       return process_attribute(x, die._debug_info_offset, mode);
                    });
 
     if (mode == process_mode::complete) {
@@ -1572,7 +1595,8 @@ void dwarf::implementation::process_all_dies() {
 
 /**************************************************************************************************/
 
-void dwarf::implementation::post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes) {
+void dwarf::implementation::post_process_compilation_unit_die(
+    const die& die, const attribute_sequence& attributes) {
     _cu_die_address = die._debug_info_offset;
 
     // Spec (section 3.1.1) says that compilation and partial units may specify which
@@ -1619,7 +1643,8 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
 
 /**************************************************************************************************/
 
-die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset, std::size_t cu_die_address) {
+die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset,
+                                              std::size_t cu_die_address) {
     ZoneScoped;
 
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");

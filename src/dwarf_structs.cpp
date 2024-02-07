@@ -66,7 +66,16 @@ std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
 
     if (x.has(attribute_value::type::string)) {
         first_space();
+
+        if (x.has(attribute_value::type::reference)) {
+            s << '`';
+        }
+
         s << x.string();
+
+        if (x.has(attribute_value::type::reference)) {
+            s << '`';
+        }
     }
 
     if (x.has(attribute_value::type::uint)) {

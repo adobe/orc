@@ -91,16 +91,6 @@ struct attribute_value {
         return _uint;
     }
 
-    void die(const struct die& d) {
-        _type |= type::die;
-        _die = &d;
-    }
-
-    const auto& die() const {
-        assert(has(type::die));
-        return *_die;
-    }
-
     std::size_t hash() const;
 
     auto type() const { return _type; }
@@ -111,7 +101,6 @@ struct attribute_value {
     bool has_sint() const { return has(type::sint); }
     bool has_string() const { return has(type::string); }
     bool has_reference() const { return has(type::reference); }
-    bool has_die() const { return has(type::die); }
 
 private:
     friend bool operator==(const attribute_value& x, const attribute_value& y);
@@ -120,7 +109,6 @@ private:
     std::uint64_t _uint{0};
     std::int64_t _int{0};
     pool_string _string;
-    const struct die* _die{nullptr};
 };
 
 inline bool operator==(const attribute_value& x, const attribute_value& y) {
@@ -157,7 +145,6 @@ struct attribute {
     const auto& string() const { return _value.string(); }
     auto uint() const { return _value.uint(); }
     auto string_hash() const { return _value.string_hash(); }
-    const auto& die() const { return _value.die(); }
 };
 
 inline bool operator==(const attribute& x, const attribute& y) {
@@ -315,6 +302,8 @@ struct object_ancestry {
     }
 };
 
+std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
+
 /**************************************************************************************************/
 // A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to
@@ -329,6 +318,7 @@ struct die {
     std::size_t _hash{0};
     std::size_t _fatal_attribute_hash{0};
     std::uint32_t _ofd_index{0}; // object file descriptor index
+    std::size_t _cu_die_address{0}; // address of associated compilation unit die entry
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};

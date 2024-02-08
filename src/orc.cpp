@@ -280,24 +280,24 @@ auto& work() {
 /**************************************************************************************************/
 
 void do_work(std::function<void()> f) {
-    auto doit = [](auto&& f) {
+    auto doit = [_f = std::move(f)]() {
         try {
-            f();
+            _f();
         } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) { s << error.what() << '\n'; });
+            cerr_safe([&](auto& s) { s << "task error: " << error.what() << '\n'; });
         } catch (...) {
-            cerr_safe([&](auto& s) { s << "unknown exception caught" << '\n'; });
+            cerr_safe([&](auto& s) { s << "task error: unknown\n"; });
         }
     };
 
     if (!settings::instance()._parallel_processing) {
-        doit(f);
+        doit();
         return;
     }
 
     static orc::task_system system;
 
-    system([_work_token = work().working(), _doit = doit, _f = std::move(f)] {
+    system([_work_token = work().working(), _doit = std::move(doit)] {
 #if ORC_FEATURE(TRACY)
         thread_local bool tracy_set_thread_name_k = []{
             TracyCSetThreadName(orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
@@ -305,7 +305,7 @@ void do_work(std::function<void()> f) {
         }();
         (void)tracy_set_thread_name_k;
 #endif // ORC_FEATURE(TRACY)
-        _doit(_f);
+        _doit();
     });
 }
 
@@ -320,7 +320,7 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
     auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
 
-    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset);
+    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
     assert(die._tag == d._tag);
     assert(die._arch == d._arch);
     assert(die._has_children == d._has_children);

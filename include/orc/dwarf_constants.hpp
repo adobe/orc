@@ -725,6 +725,34 @@ enum class op : std::uint8_t {
 };
 
 /**************************************************************************************************/
+// Section 7, Figure 20 of the DWARF4 spec lists possible encodings for data stored for given
+// attributes. What a mess. This means the form of the attribute value isn't _necessarily_
+// indicative of how to interpret the data. For example, `vtable_elem_location` should be
+// interpreted as an exprloc, even if the form of the data is stored as a `blockN`.
+
+enum class encoding_class {
+    address,
+    block,
+    constant,
+    exprloc,
+    flag,
+    lineptr,
+    macptr,
+    rangelistptr,
+    reference,
+    string,
+};
+
+// return the best-fit encoding for an attribute's value, regardless of the form the data takes.
+// Right now we're only using this for `blockN` interpretation, of which we have really found only
+// two different classes: constant, or exprloc. (This is all handled in `evaluate_blockn`.)
+//
+// Note that there are several possible attribute encodings for some fields. For now we'll pick one,
+// and hope it's the right one for the use case.
+
+encoding_class attribute_encoding_class(at attribute);
+
+/**************************************************************************************************/
 
 } // namespace dw
 

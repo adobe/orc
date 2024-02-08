@@ -1115,46 +1115,6 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
 }
 
 /**************************************************************************************************/
-// Where the handling of an essential block takes place. We get a size amount from
-// `maybe_handle_block` telling us how many bytes are in this block that we need to process.
-attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::at attribute) {
-    switch (attribute_encoding_class(attribute)) {
-        case dw::encoding_class::exprloc: {
-            return evaluate_exprloc(size);
-        } break;
-        // We should correctly interpret these types as real-world examples are found that fail.
-        case dw::encoding_class::address: [[fallthrough]];
-        case dw::encoding_class::block: [[fallthrough]];
-        case dw::encoding_class::constant: [[fallthrough]];
-        case dw::encoding_class::flag: [[fallthrough]];
-        case dw::encoding_class::lineptr: [[fallthrough]];
-        case dw::encoding_class::macptr: [[fallthrough]];
-        case dw::encoding_class::rangelistptr: [[fallthrough]];
-        case dw::encoding_class::reference: [[fallthrough]];
-        case dw::encoding_class::string: {
-            // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This assumes the
-            // value is both an integer, and will fit in 64 bits. If either of this is found to be false,
-            // we'll need to revisit this.
-
-            attribute_value result;
-
-            if (size > 8) {
-                throw std::runtime_error("Unexpected block size read of essential data.");
-            }
-
-            std::uint64_t value(0);
-            while (size--) {
-                value <<= 8;
-                value |= read8();
-            }
-
-            result.uint(value);
-            return result;
-        }
-    }
-}
-
-/**************************************************************************************************/
 
 attribute_value dwarf::implementation::evaluate_constant(std::uint32_t size) {
     // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This

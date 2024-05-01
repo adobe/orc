@@ -9,6 +9,8 @@
 
 // mach-o
 #include <mach-o/loader.h>
+#include <mach-o/nlist.h>
+#include <mach-o/stab.h>
 
 // tbb
 #include <tbb/concurrent_map.h>
@@ -111,25 +113,50 @@ void read_lc_rpath(freader& s, const file_details& details, dwarf& dwarf) {
 }
 
 /**************************************************************************************************/
-
-struct symtab_command {
-	std::uint32_t cmd;
-	std::uint32_t cmdsize;
-	std::uint32_t symoff;
-	std::uint32_t nsyms;
-	std::uint32_t stroff;
-	std::uint32_t strsize;
-};
-
 /*
-    The symtab_command contains the offsets and sizes of the link-edit 4.3BSD
-    "stab" style symbol table information as described in the header files
-    <nlist.h> and <stab.h>.
+    See https://sourceware.org/gdb/current/onlinedocs/stabs.html/
 */
 void read_stabs(freader& s,
                 const file_details& details,
                 dwarf& dwarf,
-                std::uint32_t symbol_count) {
+                std::uint32_t symbol_count,
+                std::uint32_t string_offset) {
+    if (!details._is_64_bit) throw std::runtime_error("Need support for non-64-bit STABs.");
+    std::vector<std::filesystem::path> additional_object_files;
+    while (symbol_count--) {
+        auto entry = read_pod<nlist_64>(s);
+        if (entry.n_type != N_OSO) continue;
+        // TODO: Comparing the modified file time ensures the object file has not changed
+        // since the application binary was linked. We should compare this time given to
+        // us against the modified time of the file on-disk.
+        // const auto modified_time = entry.n_value;
+
+        std::filesystem::path path = temp_seek(s, details._offset + string_offset + entry.n_un.n_strx, [&](){
+            return s.read_c_string_view();
+        });
+
+        // Some entries have been observed to contain the `.o` file as a parenthetical to the
+        // `.a` file that contains it. e.g., `/path/to/bar.a(foo.o)`. For our purposes we'll
+        // trim off the parenthetical and include the entire `.a` file. Although this could
+        // introduce extra symbols, they are likely to be included by other STAB entries
+        // anyhow.
+        //
+        // TL;DR: If the filename has an open parentheses in it, remove it and all that
+        // comes after it.
+        std::string filename = path.filename().string();
+        if (const auto pos = filename.find('('); pos != std::string::npos) {
+            path = path.parent_path() / filename.substr(0, pos);
+        }
+
+        additional_object_files.push_back(std::move(path));
+    }
+    // don't think I need these here, as we should sort/make unique the total set
+    // of additional object files within `orc_process`. Saving until I'm sure.
+    //
+    // std::sort(additional_object_files.begin(), additional_object_files.end());
+    // auto new_end = std::unique(additional_object_files.begin(), additional_object_files.end());
+    // additional_object_files.erase(new_end, additional_object_files.end());
+    dwarf.register_additional_object_files(std::move(additional_object_files));
 }
 
 void read_lc_symtab(freader& s, const file_details& details, dwarf& dwarf) {
@@ -143,8 +170,8 @@ void read_lc_symtab(freader& s, const file_details& details, dwarf& dwarf) {
         endian_swap(lc.strsize);
     }
 
-    temp_seek(s, lc.symoff, [&](){
-        read_stabs(s, details, dwarf, lc.nsyms);
+    temp_seek(s, details._offset + lc.symoff, [&](){
+        read_stabs(s, details, dwarf, lc.nsyms, lc.stroff);
     });
 }
 
@@ -157,7 +184,7 @@ struct load_command {
 
 /**************************************************************************************************/
 
-void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
+void read_load_command(freader& s, const file_details& details, dwarf& dwarf, bool derive_dylib_mode) {
     auto command = temp_seek(s, [&] {
         auto command = read_pod<load_command>(s);
         if (details._needs_byteswap) {
@@ -168,20 +195,27 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf) {
     });
 
     switch (command.cmd) {
-        case LC_SEGMENT_64:
+        case LC_SEGMENT_64: {
             read_lc_segment_64(s, details, dwarf);
-            break;
-        case LC_LOAD_DYLIB:
-            read_lc_load_dylib(s, details, dwarf);
-            break;
-        case LC_RPATH:
-            read_lc_rpath(s, details, dwarf);
-            break;
-        case LC_SYMTAB:
-            read_lc_symtab(s, details, dwarf);
-            break;
-        default:
+        } break;
+        case LC_LOAD_DYLIB: {
+            if (derive_dylib_mode) {
+                read_lc_load_dylib(s, details, dwarf);
+            }
+        } break;
+        case LC_RPATH: {
+            if (derive_dylib_mode) {
+                read_lc_rpath(s, details, dwarf);
+            }
+        } break;
+        case LC_SYMTAB: {
+            if (derive_dylib_mode) {
+                read_lc_symtab(s, details, dwarf);
+            }
+        } break;
+        default: {
             s.seekg(command.cmdsize, std::ios::cur);
+        } break;
     }
 }
 
@@ -215,6 +249,8 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index,
                        file_details&& details,
                        callbacks&& callbacks) {
     std::size_t load_command_sz{0};
+    // TODO: The Mach-O reader really needs its own context/state machine to hold this kind of stuff.
+    const bool derive_dylib_mode = static_cast<bool>(callbacks._derived_dependency);
 
     if (details._is_64_bit) {
         auto header = read_pod<mach_header_64>(s);
@@ -245,11 +281,12 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index,
 
     // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
     // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
-    // is found? A problem for later...
+    // is found? Or maybe `read_load_command` should be a member function of `dwarf`?
+    // A problem for another time...
     dwarf dwarf(ofd_index, copy(s), copy(details), std::move(callbacks));
 
     for (std::size_t i = 0; i < load_command_sz; ++i) {
-        read_load_command(s, details, dwarf);
+        read_load_command(s, details, dwarf, derive_dylib_mode);
     }
 
     return dwarf;
@@ -269,6 +306,7 @@ void read_macho(object_ancestry&& ancestry,
     callbacks._do_work([_ancestry = std::move(ancestry), _s = std::move(s),
                         _details = std::move(details),
                         _callbacks = callbacks]() mutable {
+        // TODO: The Mach-O reader really needs its own context/state machine to hold this kind of stuff.
         const bool process_die_mode = static_cast<bool>(_callbacks._register_die);
         const bool derive_dylib_mode = static_cast<bool>(_callbacks._derived_dependency);
 

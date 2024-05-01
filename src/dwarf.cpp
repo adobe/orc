@@ -495,6 +495,10 @@ struct dwarf::implementation {
         _rpaths.emplace_back(std::move(s));
     }
 
+    void register_additional_object_files(std::vector<std::filesystem::path>&& paths) {
+        _callbacks._derived_dependency(std::move(paths));
+    }
+
     void derive_dependencies() {
         // See https://itwenty.me/posts/01-understanding-rpath/
         // `@executable_path` resolves to the path of the directory containing the executable.
@@ -1824,6 +1828,10 @@ void dwarf::register_dylib(std::string&& s) {
 
 void dwarf::register_rpath(std::string&& s) {
     _impl->register_rpath(std::move(s));
+}
+
+void dwarf::register_additional_object_files(std::vector<std::filesystem::path>&& paths) {
+    _impl->register_additional_object_files(std::move(paths));
 }
 
 void dwarf::derive_dependencies() {

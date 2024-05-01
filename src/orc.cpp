@@ -283,10 +283,9 @@ void do_work(std::function<void()> f) {
     auto doit = [_f = std::move(f)]() {
         try {
             _f();
-        } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) { s << "task error: " << error.what() << '\n'; });
         } catch (...) {
-            cerr_safe([&](auto& s) { s << "task error: unknown\n"; });
+            assert(!"The program is ill-structured. Catch exceptions before they hit here.");
+            std::terminate();
         }
     };
 
@@ -488,11 +487,17 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
 
     work().wait();
 
+    // eliminate duplicate object files, if any
+    std::sort(file_list.begin(), file_list.end());
+    auto new_end = std::unique(file_list.begin(), file_list.end());
+    file_list.erase(new_end, file_list.end());
+
     // Second stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
-                throw std::runtime_error("file " + _input_path.string() + " does not exist");
+                cerr_safe([&](auto& s) { s << "file " << _input_path.string() << " does not exist\n"; });
+                return;
             }
 
             freader input(_input_path);

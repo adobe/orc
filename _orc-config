@@ -49,6 +49,14 @@ log_level = 'warning'
 
 standalone_mode = false
 
+# Scan the binary passed in to the command line for its Mach-O dependencies, specifically any
+# dylibs it depends on (and rpaths where they might be found.) Then perform a scan over that
+# collection as if it were runtime-linked.
+#
+# The default value is `false`.
+
+dylib_scan_mode = false
+
 # If defined, ORC will log output to the specified file. (Normal stream output 
 # is unaffected by the `output_file`.) 
 # 

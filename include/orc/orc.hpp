@@ -46,7 +46,7 @@ bool filter_report(const odrv_report& report);
 
 /**************************************************************************************************/
 
-std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>&);
+std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&&);
 
 void orc_reset();
 

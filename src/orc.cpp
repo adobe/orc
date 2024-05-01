@@ -453,8 +453,42 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
 /**************************************************************************************************/
 
-std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
-    // First stage: process all the DIEs
+std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
+    std::mutex macho_derived_dependencies_mutex;
+
+    // First stage: dependency/dylib preprocessing
+    if (settings::instance()._dylib_scan_mode) {
+        // dylib scan mode involves a pre-processing step where we parse the file list
+        // and from those Mach-O files, derive additional files they depend upon.
+        // Instead, we should be collecting additional files to process in the next
+        // stage.
+        for (const auto& input_path : file_list) {
+            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = file_list] {
+                if (!exists(_input_path)) {
+                    throw std::runtime_error("file " + _input_path.string() + " does not exist");
+                }
+
+                freader input(_input_path);
+                callbacks callbacks = {
+                    register_dies_callback(),
+                    do_work,
+                    [&](std::vector<std::filesystem::path>&& p){
+                        std::lock_guard<std::mutex> m(_mutex);
+                        _list.insert(_list.end(),
+                                     std::move_iterator(p.begin()),
+                                     std::move_iterator(p.end()));
+                    }
+                };
+
+                parse_file(_input_path.string(), object_ancestry(), input, input.size(),
+                           std::move(callbacks));
+            });
+        }
+    }
+
+    work().wait();
+
+    // Second stage: process all the DIEs
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -465,6 +499,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
             callbacks callbacks = {
                 register_dies,
                 do_work,
+                derived_dependency_callback(),
             };
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
@@ -474,7 +509,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Second stage: review DIEs for ODRVs
+    // Third stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
 
     // We now subdivide the work. We do so by looking at the total number of entries

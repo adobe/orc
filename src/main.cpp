@@ -70,8 +70,7 @@ std::string exec(const char* cmd) {
     return result;
 }
 
-void open_output_file(const std::string& a, const std::string& b)
-{
+void open_output_file(const std::string& a, const std::string& b) {
     std::filesystem::path path(b);
     if (!a.empty()) {
         path = a + '.' + b;
@@ -82,7 +81,6 @@ void open_output_file(const std::string& a, const std::string& b)
 /**************************************************************************************************/
 
 void process_orc_config_file(const char* bin_path_string) {
-
     std::filesystem::path pwd(std::filesystem::current_path());
     std::filesystem::path bin_path(pwd / bin_path_string);
     std::filesystem::path config_path;
@@ -121,6 +119,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._max_violation_count = settings["max_error_count"].value_or(0);
             app_settings._forward_to_linker = settings["forward_to_linker"].value_or(true);
             app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
+            app_settings._dylib_scan_mode = settings["dylib_scan_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
@@ -149,6 +148,14 @@ void process_orc_config_file(const char* bin_path_string) {
                         s << "warning: Unknown log level (using verbose)\n";
                     });
                 }
+            }
+
+            if (app_settings._standalone_mode && app_settings._dylib_scan_mode) {
+                throw std::logic_error("Both standalone and dylib scanning mode are enabled. Pick one.");
+            }
+
+            if (app_settings._dylib_scan_mode) {
+                app_settings._forward_to_linker = false;
             }
 
             auto read_string_list = [&_settings = settings](const char* name) {
@@ -259,7 +266,7 @@ cmdline_results process_command_line(int argc, char** argv) {
         });
     }
 
-    if (settings::instance()._standalone_mode) {
+    if (settings::instance()._standalone_mode || settings::instance()._dylib_scan_mode) {
         for (std::size_t i{1}; i < argc; ++i) {
             result._file_object_list.push_back(argv[i]);
         }
@@ -498,10 +505,9 @@ int main(int argc, char** argv) try {
     process_orc_config_file(argv[0]);
 
     cmdline_results cmdline = process_command_line(argc, argv);
-    const auto& file_list = cmdline._file_object_list;
 
     if (settings::instance()._print_object_file_list) {
-        for (const auto& input_path : file_list) {
+        for (const auto& input_path : cmdline._file_object_list) {
             cout_safe([&](auto& s){
                 s << input_path.string() << '\n';
             });
@@ -512,11 +518,11 @@ int main(int argc, char** argv) try {
 
     maybe_forward_to_linker(argc, argv, cmdline);
 
-    if (file_list.empty()) {
+    if (cmdline._file_object_list.empty()) {
         throw std::runtime_error("ORC could not find files to process");
     }
 
-    std::vector<odrv_report> reports = orc_process(file_list);
+    std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));
     std::vector<odrv_report> violations;
 
     for (const auto& report : reports) {

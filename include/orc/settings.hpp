@@ -33,6 +33,7 @@ struct settings {
     bool _forward_to_linker{true};
     log_level _log_level{log_level::silent};
     bool _standalone_mode{false};
+    bool _dylib_scan_mode{false};
     bool _print_object_file_list{false};
     std::vector<std::string> _symbol_ignore;
     std::vector<std::string> _violation_report;

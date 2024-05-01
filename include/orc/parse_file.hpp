@@ -228,11 +228,12 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
 
 using register_dies_callback = std::function<void(dies)>;
 using do_work_callback = std::function<void(std::function<void()>)>;
-using empool_callback = std::function<pool_string(std::string_view)>;
+using derived_dependency_callback = std::function<void(std::vector<std::filesystem::path>&&)>;
 
 struct callbacks {
     register_dies_callback _register_die;
     do_work_callback _do_work;
+    derived_dependency_callback _derived_dependency;
 };
 
 void parse_file(std::string_view object_name,

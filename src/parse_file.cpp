@@ -19,10 +19,13 @@
 #include <sys/mman.h>
 #include <unistd.h> // close
 
+// mach-o
+#include <mach-o/loader.h>
+#include <mach-o/fat.h>
+
 // application
 #include "orc/ar.hpp"
 #include "orc/fat.hpp"
-#include "orc/mach_types.hpp"
 #include "orc/macho.hpp"
 #include "orc/orc.hpp"
 

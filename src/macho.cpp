@@ -41,14 +41,12 @@ struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
                  freader&& s,
                  file_details&& details,
-                 callbacks&& callbacks) :
-        _process_die_mode(static_cast<bool>(callbacks._register_die)),
-        _derive_dylib_mode(static_cast<bool>(callbacks._derived_dependency)),
-        _ofd_index(ofd_index),
-        _s(std::move(s)),
-        _details(std::move(details)),
-        _derived_dependency(std::move(callbacks._derived_dependency)),
-        _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
+                 callbacks&& callbacks)
+        : _process_die_mode(static_cast<bool>(callbacks._register_die)),
+          _derive_dylib_mode(static_cast<bool>(callbacks._derived_dependency)),
+          _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
+          _derived_dependency(std::move(callbacks._derived_dependency)),
+          _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
         if (_process_die_mode ^ _derive_dylib_mode) {
             cerr_safe([&](auto& s) { s << "Exactly one of die or dylib scanning is allowed.\n"; });
             std::terminate();
@@ -56,8 +54,12 @@ struct macho_reader {
         populate_dwarf();
     }
 
-    struct dwarf& dwarf() & { return _dwarf; }
-    struct dwarf&& dwarf() && { return std::move(_dwarf); }
+    struct dwarf& dwarf() & {
+        return _dwarf;
+    }
+    struct dwarf&& dwarf() && {
+        return std::move(_dwarf);
+    }
 
     void derive_dependencies();
 
@@ -141,7 +143,7 @@ void macho_reader::read_lc_load_dylib() {
         endian_swap(lc.cmdsize);
         endian_swap(lc.dylib.name.offset);
         endian_swap(lc.dylib.timestamp);
-        endian_swap(lc.dylib.current_version); // sufficient?
+        endian_swap(lc.dylib.current_version);       // sufficient?
         endian_swap(lc.dylib.compatibility_version); // sufficient?
     }
 
@@ -198,9 +200,9 @@ void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_o
         // us against the modified time of the file on-disk.
         // const auto modified_time = entry.n_value;
 
-        std::filesystem::path path = temp_seek(_s, _details._offset + string_offset + entry.n_un.n_strx, [&](){
-            return _s.read_c_string_view();
-        });
+        std::filesystem::path path =
+            temp_seek(_s, _details._offset + string_offset + entry.n_un.n_strx,
+                      [&]() { return _s.read_c_string_view(); });
 
         // Some entries have been observed to contain the `.o` file as a parenthetical to the
         // `.a` file that contains it. e.g., `/path/to/bar.a(foo.o)`. For our purposes we'll
@@ -237,9 +239,7 @@ void macho_reader::read_lc_symtab() {
         endian_swap(lc.strsize);
     }
 
-    temp_seek(_s, _details._offset + lc.symoff, [&](){
-        read_stabs(lc.nsyms, lc.stroff);
-    });
+    temp_seek(_s, _details._offset + lc.symoff, [&]() { read_stabs(lc.nsyms, lc.stroff); });
 }
 
 /**************************************************************************************************/
@@ -300,7 +300,8 @@ std::filesystem::path resolve_dylib(std::string raw_path,
         for (const auto& rpath : rpaths) {
             std::string tmp = raw_path;
             tmp.replace(0, rpath_k.size(), rpath);
-            std::filesystem::path candidate = resolve_dylib(tmp, executable_path, loader_path, rpaths);
+            std::filesystem::path candidate =
+                resolve_dylib(tmp, executable_path, loader_path, rpaths);
             if (exists(candidate)) {
                 return candidate;
             }
@@ -322,12 +323,14 @@ void macho_reader::derive_dependencies() {
     // If so, that means we'll need to track the originating file and use it as
     // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
 
-    std::filesystem::path executable_path = object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
+    std::filesystem::path executable_path =
+        object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
     std::filesystem::path loader_path = executable_path;
     std::vector<std::filesystem::path> resolved_dylibs;
-    std::transform(_unresolved_dylibs.begin(), _unresolved_dylibs.end(), std::back_inserter(resolved_dylibs), [&](const auto& raw_dylib){
-        return resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
-    });
+    std::transform(_unresolved_dylibs.begin(), _unresolved_dylibs.end(),
+                   std::back_inserter(resolved_dylibs), [&](const auto& raw_dylib) {
+                       return resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
+                   });
 
     // Send these back to the main engine for ODR scanning processing.
     _derived_dependency(std::move(resolved_dylibs));
@@ -382,9 +385,9 @@ void read_macho(object_ancestry&& ancestry,
                 file_details details,
                 callbacks callbacks) {
     callbacks._do_work([_ancestry = std::move(ancestry), _s = std::move(s),
-                        _details = std::move(details),
-                        _callbacks = callbacks]() mutable {
-        std::uint32_t ofd_index = static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
+                        _details = std::move(details), _callbacks = callbacks]() mutable {
+        std::uint32_t ofd_index =
+            static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
         macho_reader macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
 
         if (macho._process_die_mode) {
@@ -407,11 +410,12 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
 
     s.seekg(entry._details._offset);
 
-    callbacks callbacks {
+    callbacks callbacks{
         std::move(callback),
     };
 
-    return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(callbacks)).dwarf();
+    return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(callbacks))
+        .dwarf();
 }
 
 /**************************************************************************************************/
@@ -427,10 +431,7 @@ std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::pa
     callbacks callbacks = {
         register_dies_callback(),
         stlab::immediate_executor, // don't subdivide or reschedule sub-work during this scan.
-        [&_result = result](std::vector<std::filesystem::path>&& p){
-            move_append(_result, p);
-        }
-    };
+        [&_result = result](std::vector<std::filesystem::path>&& p) { move_append(_result, p); }};
 
     parse_file(root_binary.string(), object_ancestry(), input, input.size(), std::move(callbacks));
 

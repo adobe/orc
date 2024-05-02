@@ -21,6 +21,7 @@
 // application
 #include "orc/dwarf.hpp"
 #include "orc/object_file_registry.hpp"
+#include "orc/orc.hpp" // for cerr_safe
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
 
@@ -40,8 +41,8 @@ struct macho_reader {
         _ofd_index(ofd_index),
         _s(std::move(s)),
         _details(std::move(details)),
-        _derived_dependency(_derive_dylib_mode ? callbacks._derived_dependency : derived_dependency_callback()),
-        _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks)) {
+        _derived_dependency(std::move(callbacks._derived_dependency)),
+        _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
         populate_dwarf();
     }
 
@@ -159,7 +160,22 @@ void macho_reader::read_lc_rpath() {
 
 /**************************************************************************************************/
 /*
-    See https://sourceware.org/gdb/current/onlinedocs/stabs.html/
+    This is specifically in relation to the dylib scanning mode, where we're looking at a final
+    linked artifact that enumerates the dylibs it depends upon.
+
+    Debug builds on macOS do not embed symbol information into the binary by default. Rather, there
+    are "debug maps" that link from the artifact to the `.o` files used to make it where the symbol
+    information resides. At the time the application is debugged, the debug maps are used to derive
+    the symbols of the application by pulling them from the relevant object files.
+
+    Because of this funky artifact->debug map->object file relationship, ORC must also support debug
+    maps in order to derive and scan the symbols present in a linked artifact. This also means the
+    final linked binary is not sufficient for a scan; you _also_ need its associated object files
+    present, _and_ in the location specified by the debug map.
+
+    Apple's "Lazy" DWARF Scheme: https://wiki.dwarfstd.org/Apple%27s_%22Lazy%22_DWARF_Scheme.md
+    See: https://stackoverflow.com/a/12827463/153535
+    See: https://sourceware.org/gdb/current/onlinedocs/stabs.html/
 */
 void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_offset) {
     if (!_details._is_64_bit) throw std::runtime_error("Need support for non-64-bit STABs.");
@@ -389,13 +405,13 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
 /**************************************************************************************************/
 
 std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::path& root_binary) {
-    std::vector<std::filesystem::path> result;
-
     if (!exists(root_binary)) {
-        throw std::runtime_error("file " + root_binary.string() + " does not exist");
+        cerr_safe([&](auto& s) { s << "file " << root_binary.string() << " does not exist\n"; });
+        return std::vector<std::filesystem::path>();
     }
 
     freader input(root_binary);
+    std::vector<std::filesystem::path> result;
     callbacks callbacks = {
         register_dies_callback(),
         stlab::immediate_executor, // don't subdivide or reschedule sub-work during this scan.

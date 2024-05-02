@@ -21,7 +21,7 @@ struct dwarf {
     dwarf(std::uint32_t ofd_index,
           freader&& s,
           file_details&& details,
-          callbacks&& callbacks);
+          register_dies_callback&& callback);
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
 

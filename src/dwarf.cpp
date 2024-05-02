@@ -401,8 +401,8 @@ struct dwarf::implementation {
     implementation(std::uint32_t ofd_index,
                    freader&& s,
                    file_details&& details,
-                   callbacks&& callbacks)
-        : _s(std::move(s)), _details(std::move(details)), _callbacks(std::move(callbacks)),
+                   register_dies_callback&& callback)
+        : _s(std::move(s)), _details(std::move(details)), _register_dies(std::move(callback)),
           _ofd_index(ofd_index) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
@@ -459,7 +459,7 @@ struct dwarf::implementation {
 
     freader _s;
     file_details _details;
-    callbacks _callbacks;
+    register_dies_callback _register_dies;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
     std::vector<pool_string> _decl_files;
@@ -1538,25 +1538,7 @@ void dwarf::implementation::report_die_processing_failure(std::size_t die_absolu
 }
 
 /**************************************************************************************************/
-/*
-    Not sure where to put this, so it's going here. This is specifically in relation to the
-    dylib scanning mode, where we're looking at a final linked artifact that enumerates the
-    dylibs it depends upon.
 
-    Debug builds on macOS do not embed symbol information into the binary by default.
-    Rather, there are "debug maps" that link from the artifact to the `.o` files used to
-    make it where the symbol information resides. At the time the application is debugged,
-    the debug maps are used to derive the symbols of the application by pulling them from
-    the relevant object files.
-
-    Because of this funky artifact->debug map->object file relationship, ORC must also
-    support debug maps in order to derive and scan the symbols present in a linked artifact.
-    This also means the final linked binary is not sufficient for a scan; you _also_ need
-    its associated object files present, _and_ in the location specified by the debug map.
-
-    Apple's "Lazy" DWARF Scheme: https://wiki.dwarfstd.org/Apple%27s_%22Lazy%22_DWARF_Scheme.md
-    See: https://stackoverflow.com/a/12827463/153535
-*/
 void dwarf::implementation::process_all_dies() {
     if (!_ready && !register_sections_done()) return;
     assert(_ready);
@@ -1662,7 +1644,7 @@ void dwarf::implementation::process_all_dies() {
 
     dies.shrink_to_fit();
 
-    _callbacks._register_die(std::move(dies));
+    _register_dies(std::move(dies));
 }
 
 /**************************************************************************************************/
@@ -1744,8 +1726,8 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset,
 dwarf::dwarf(std::uint32_t ofd_index,
              freader&& s,
              file_details&& details,
-             callbacks&& callbacks)
-    : _impl(new implementation(ofd_index, std::move(s), std::move(details), std::move(callbacks)),
+             register_dies_callback&& callback)
+    : _impl(new implementation(ofd_index, std::move(s), std::move(details), std::move(callback)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

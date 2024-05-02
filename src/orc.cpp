@@ -463,6 +463,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
         for (const auto& input_path : file_list) {
             do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = macho_derived_dependencies] {
                 auto dylibs = macho_derive_dylibs(_input_path);
+                if (dylibs.empty()) return;
                 std::lock_guard<std::mutex> m(_mutex);
                 move_append(_list, dylibs);
             });

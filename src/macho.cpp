@@ -15,9 +15,6 @@
 // tbb
 #include <tbb/concurrent_map.h>
 
-// stlab
-#include <stlab/concurrency/immediate_executor.hpp>
-
 // application
 #include "orc/async.hpp"
 #include "orc/dwarf.hpp"
@@ -38,8 +35,8 @@ namespace {
     based on the callbacks it is given. Since die scanning and dylib scanning are mutually
     exclusive, the callbacks provided determine which path the `macho_reader` should take. There is
     actually a third mode, which is during the ODRV reporting. In that mode we are neither scanning
-    for dylibs nor DIEs, but are gathering more details about DIEs that we need to report on issues.
-    In that case, both `_register_die_mode` and `_derive_dylib_mode` will be false.
+    for dylibs nor DIEs, but are gathering more details about DIEs that we need to report on. In
+    that case, both `_register_die_mode` and `_derive_dylib_mode` will be `false`.
 */
 struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
@@ -314,7 +311,7 @@ std::optional<std::filesystem::path> resolve_dylib(std::string raw_path,
             }
         }
 
-        cerr_safe([&](auto& s){ s << "Could not find dependent library: " + raw_path + "\n"; });
+        cerr_safe([&](auto& s) { s << "Could not find dependent library: " + raw_path + "\n"; });
         return std::nullopt;
     }
 
@@ -331,6 +328,8 @@ void macho_reader::derive_dependencies() {
     // TODO: (fosterbrereton) We're going to have to nest this search, aren't we?
     // If so, that means we'll need to track the originating file and use it as
     // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
+
+#warning `executable_path` somehow needs to make its way from `macho_derive_dylibs` to here.
 
     std::filesystem::path executable_path =
         object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
@@ -395,8 +394,8 @@ void read_macho(object_ancestry&& ancestry,
                 std::istream::pos_type end_pos,
                 file_details details,
                 callbacks callbacks) {
-    orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s),
-                        _details = std::move(details), _callbacks = callbacks]() mutable {
+    orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s), _details = std::move(details),
+                  _callbacks = callbacks]() mutable {
         std::uint32_t ofd_index =
             static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
         macho_reader macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
@@ -437,9 +436,7 @@ namespace {
 
 template <typename C>
 void move_append(C& dst, C&& src) {
-    dst.insert(dst.end(),
-               std::move_iterator(src.begin()),
-               std::move_iterator(src.end()));
+    dst.insert(dst.end(), std::move_iterator(src.begin()), std::move_iterator(src.end()));
     src.clear();
 }
 
@@ -476,25 +473,25 @@ std::vector<std::filesystem::path> recursive_dylib_scan(std::vector<std::filesys
 #endif
 /**************************************************************************************************/
 
-void macho_derive_dylibs(const std::filesystem::path& root_binary,
+void macho_derive_dylibs(const std::filesystem::path& executable_path,
                          std::mutex& mutex,
                          std::vector<std::filesystem::path>& result) {
-    if (!exists(root_binary)) {
-        cerr_safe([&](auto& s) { s << "file " << root_binary.string() << " does not exist\n"; });
+    if (!exists(executable_path)) {
+        cerr_safe(
+            [&](auto& s) { s << "file " << executable_path.string() << " does not exist\n"; });
         return;
     }
 
-    freader input(root_binary);
-    callbacks callbacks = {
-        register_dies_callback(),
-        [&_mutex = mutex, &_result = result](std::vector<std::filesystem::path>&& p) {
-            if (p.empty()) return;
-            std::lock_guard<std::mutex> m(_mutex);
-            move_append(_result, std::move(p));
-        }
-    };
+    freader input(executable_path);
+    callbacks callbacks = {register_dies_callback(), [&_mutex = mutex, &_result = result](
+                                                         std::vector<std::filesystem::path>&& p) {
+                               if (p.empty()) return;
+                               std::lock_guard<std::mutex> m(_mutex);
+                               move_append(_result, std::move(p));
+                           }};
 
-    parse_file(root_binary.string(), object_ancestry(), input, input.size(), std::move(callbacks));
+    parse_file(executable_path.string(), object_ancestry(), input, input.size(),
+               std::move(callbacks));
 }
 
 /**************************************************************************************************/
@@ -503,7 +500,8 @@ void macho_derive_dylibs(const std::filesystem::path& root_binary,
 
 /**************************************************************************************************/
 
-std::vector<std::filesystem::path> macho_derive_dylibs(const std::vector<std::filesystem::path>& root_binaries) {
+std::vector<std::filesystem::path> macho_derive_dylibs(
+    const std::vector<std::filesystem::path>& root_binaries) {
     std::mutex result_mutex;
     std::vector<std::filesystem::path> result = root_binaries;
 

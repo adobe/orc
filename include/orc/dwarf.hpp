@@ -25,7 +25,7 @@ struct dwarf {
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
 
-    void process_all_dies(); // assumes register die mode
+    void process_all_dies();
 
     die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
 

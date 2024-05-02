@@ -32,6 +32,7 @@
 #include <tbb/concurrent_unordered_map.h>
 
 // application
+#include "orc/async.hpp"
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
@@ -41,7 +42,6 @@
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
-#include "orc/task_system.hpp"
 #include "orc/tracy.hpp"
 
 /**************************************************************************************************/
@@ -211,110 +211,6 @@ struct cmdline_results {
 
 /**************************************************************************************************/
 
-struct work_counter {
-    struct state {
-        void increment() {
-            {
-                std::lock_guard<std::mutex> lock(_m);
-                ++_n;
-            }
-            _c.notify_all();
-        }
-
-        void decrement() {
-            {
-                std::lock_guard<std::mutex> lock(_m);
-                --_n;
-            }
-            _c.notify_all();
-        }
-
-        void wait() {
-            std::unique_lock<std::mutex> lock(_m);
-            if (_n == 0) return;
-            _c.wait(lock, [&] { return _n == 0; });
-        }
-
-        std::mutex _m;
-        std::condition_variable _c;
-        std::size_t _n{0};
-    };
-
-    using shared_state = std::shared_ptr<state>;
-
-    friend struct token;
-
-public:
-    work_counter() : _impl{std::make_shared<state>()} {}
-
-    struct token {
-        token(shared_state w) : _w(std::move(w)) { _w->increment(); }
-        token(const token& t) : _w{t._w} { _w->increment(); }
-        token(token&& t) = default;
-        ~token() {
-            if (_w) _w->decrement();
-        }
-
-    private:
-        shared_state _w;
-    };
-
-    auto working() { return token(_impl); }
-
-    void wait() { _impl->wait(); }
-
-private:
-    shared_state _impl;
-
-    void increment() { _impl->increment(); }
-    void decrement() { _impl->decrement(); }
-};
-
-/**************************************************************************************************/
-
-auto& work() {
-    static work_counter _work;
-    return _work;
-}
-
-/**************************************************************************************************/
-
-void do_work(std::function<void()> f) {
-    auto doit = [_f = std::move(f)]() {
-        try {
-            _f();
-        } catch (...) {
-            // I changed my opinion on this: an unhandled background task exception should terminate
-            // the application. This mimics the behavior of an unhandled exception on the main
-            // thread. Now (like main thread exceptions) background task exceptions must be
-            // handled before they hit this point.
-            assert(!"unhandled background task exception");
-            std::terminate();
-        }
-    };
-
-    if (!settings::instance()._parallel_processing) {
-        doit();
-        return;
-    }
-
-    static orc::task_system system;
-
-    system([_work_token = work().working(), _doit = std::move(doit)] {
-#if ORC_FEATURE(TRACY)
-        thread_local bool tracy_set_thread_name_k = [] {
-            TracyCSetThreadName(
-                orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
-            return true;
-        }();
-        (void)tracy_set_thread_name_k;
-#endif // ORC_FEATURE(TRACY)
-        _doit();
-    });
-}
-
-/**************************************************************************************************/
-
 const char* problem_prefix() { return settings::instance()._graceful_exit ? "warning" : "error"; }
 
 /**************************************************************************************************/
@@ -458,36 +354,19 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
-    std::mutex macho_derived_dependencies_mutex;
-    std::vector<std::filesystem::path> macho_derived_dependencies;
-
     // First stage: (optional) dependency/dylib preprocessing
     if (settings::instance()._dylib_scan_mode) {
         // dylib scan mode involves a pre-processing step where we parse the file list
-        // and discover any dylibs those Mach-O files depend upon.
-        for (const auto& input_path : file_list) {
-            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex,
-                     &_list = macho_derived_dependencies] {
-                auto dylibs = macho_derive_dylibs(_input_path);
-                if (dylibs.empty()) return;
-                std::lock_guard<std::mutex> m(_mutex);
-                move_append(_list, dylibs);
-            });
-        }
+        // and discover any dylibs those Mach-O files depend upon. Note that we're
+        // glomming all these dependencies together, so if there are multiple
+        // files in `file_list`, we could be "finding" ODRVs across independent
+        // artifact+dylib groups that really do not exist.
+        file_list = macho_derive_dylibs(std::move(file_list));
     }
-
-    work().wait();
-
-    move_append(file_list, macho_derived_dependencies);
-
-    // eliminate duplicate object files, if any
-    std::sort(file_list.begin(), file_list.end());
-    auto new_end = std::unique(file_list.begin(), file_list.end());
-    file_list.erase(new_end, file_list.end());
 
     // Second stage: process all the DIEs
     for (const auto& input_path : file_list) {
-        do_work([_input_path = input_path] {
+        orc::do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
                 cerr_safe(
                     [&](auto& s) { s << "file " << _input_path.string() << " does not exist\n"; });
@@ -495,14 +374,13 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
             }
 
             freader input(_input_path);
-            callbacks callbacks = {register_dies, do_work};
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       std::move(callbacks));
+                       callbacks{register_dies});
         });
     }
 
-    work().wait();
+    orc::block_on_work();
 
     // Third stage: review DIEs for ODRVs
     std::vector<odrv_report> result;
@@ -526,7 +404,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
         // The last one could be up to (chunk_count - 1) smaller.
         const auto next_chunk_size = std::min(chunk_size, work_size - cur_work);
         const auto last = std::next(first, next_chunk_size);
-        do_work([_first = first, _last = last, &result]() mutable {
+        orc::do_work([_first = first, _last = last, &result]() mutable {
             for (; _first != _last; ++_first) {
                 _first->second = enforce_odrv_for_die_list(_first->second, result);
             }
@@ -535,7 +413,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
         first = last;
     }
 
-    work().wait();
+    orc::block_on_work();
 
     // Sort the ordrv_report
     std::sort(result.begin(), result.end(),

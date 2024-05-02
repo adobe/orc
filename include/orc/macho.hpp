@@ -15,10 +15,11 @@
 /**************************************************************************************************/
 
 template <typename C>
-void move_append(C& dst, C& src) {
+void move_append(C& dst, C&& src) {
     dst.insert(dst.end(),
                std::move_iterator(src.begin()),
                std::move_iterator(src.end()));
+    src.clear();
 }
 
 /**************************************************************************************************/
@@ -35,6 +36,6 @@ struct dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& 
 
 /**************************************************************************************************/
 
-std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::path& root_binary);
+std::vector<std::filesystem::path> macho_derive_dylibs(const std::vector<std::filesystem::path>& root_binaries);
 
 /**************************************************************************************************/

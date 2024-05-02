@@ -122,8 +122,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._dylib_scan_mode = settings["dylib_scan_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
-            app_settings._print_object_file_list =
-                settings["print_object_file_list"].value_or(false);
+            app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
             app_settings._relative_output_file = settings["relative_output_file"].value_or("");
             app_settings._resource_metrics = settings["resource_metrics"].value_or(false);
 
@@ -265,6 +264,14 @@ cmdline_results process_command_line(int argc, char** argv) {
     if (settings::instance()._standalone_mode || settings::instance()._dylib_scan_mode) {
         for (std::size_t i{1}; i < argc; ++i) {
             result._file_object_list.push_back(argv[i]);
+        }
+
+        if (settings::instance()._dylib_scan_mode &&
+            result._file_object_list.size() != 1 &&
+            log_level_at_least(settings::log_level::warning)) {
+            cout_safe([&](auto& s) {
+                s << "warning: dylib scanning with more than one top-level artifact may yield false positives.\n";
+            });
         }
     } else {
         std::vector<std::filesystem::path> library_search_paths;

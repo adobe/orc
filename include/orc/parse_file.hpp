@@ -232,7 +232,6 @@ using derived_dependency_callback = std::function<void(std::vector<std::filesyst
 
 struct callbacks {
     register_dies_callback _register_die;
-    do_work_callback _do_work;
     derived_dependency_callback _derived_dependency;
 };
 

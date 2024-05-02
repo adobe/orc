@@ -19,6 +19,7 @@
 #include <stlab/concurrency/immediate_executor.hpp>
 
 // application
+#include "orc/async.hpp"
 #include "orc/dwarf.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/orc.hpp" // for cerr_safe
@@ -35,20 +36,23 @@ namespace {
     dwarf field (for die processing within `dwarf.cpp`, or 2) derive dylib dependencies enumerated
     in the Mach-O segments of the file being read. The "switch" for which mode the reader is in is
     based on the callbacks it is given. Since die scanning and dylib scanning are mutually
-    exclusive, the callbacks provided determine which path the `macho_reader` should take.
+    exclusive, the callbacks provided determine which path the `macho_reader` should take. There is
+    actually a third mode, which is during the ODRV reporting. In that mode we are neither scanning
+    for dylibs nor DIEs, but are gathering more details about DIEs that we need to report on issues.
+    In that case, both `_register_die_mode` and `_derive_dylib_mode` will be false.
 */
 struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
                  freader&& s,
                  file_details&& details,
                  callbacks&& callbacks)
-        : _process_die_mode(static_cast<bool>(callbacks._register_die)),
+        : _register_die_mode(static_cast<bool>(callbacks._register_die)),
           _derive_dylib_mode(static_cast<bool>(callbacks._derived_dependency)),
           _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
           _derived_dependency(std::move(callbacks._derived_dependency)),
           _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
-        if (_process_die_mode ^ _derive_dylib_mode) {
-            cerr_safe([&](auto& s) { s << "Exactly one of die or dylib scanning is allowed.\n"; });
+        if (_register_die_mode && _derive_dylib_mode) {
+            cerr_safe([&](auto& s) { s << "Only one of die or dylib scanning is allowed.\n"; });
             std::terminate();
         }
         populate_dwarf();
@@ -63,7 +67,7 @@ struct macho_reader {
 
     void derive_dependencies();
 
-    const bool _process_die_mode{false};
+    const bool _register_die_mode{false};
     const bool _derive_dylib_mode{false};
 
 private:
@@ -190,18 +194,28 @@ void macho_reader::read_lc_rpath() {
     See: https://sourceware.org/gdb/current/onlinedocs/stabs.html/
 */
 void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_offset) {
-    if (!_details._is_64_bit) throw std::runtime_error("Need support for non-64-bit STABs.");
     std::vector<std::filesystem::path> additional_object_files;
+
     while (symbol_count--) {
-        auto entry = read_pod<nlist_64>(_s);
-        if (entry.n_type != N_OSO) continue;
+        std::uint32_t entry_string_offset{0};
+
+        if (_details._is_64_bit) {
+            auto entry = read_pod<nlist_64>(_s);
+            if (entry.n_type != N_OSO) continue;
+            entry_string_offset = entry.n_un.n_strx;
+        } else {
+            auto entry = read_pod<struct nlist>(_s);
+            if (entry.n_type != N_OSO) continue;
+            entry_string_offset = entry.n_un.n_strx;
+        }
+
         // TODO: Comparing the modified file time ensures the object file has not changed
         // since the application binary was linked. We should compare this time given to
         // us against the modified time of the file on-disk.
         // const auto modified_time = entry.n_value;
 
         std::filesystem::path path =
-            temp_seek(_s, _details._offset + string_offset + entry.n_un.n_strx,
+            temp_seek(_s, _details._offset + string_offset + entry_string_offset,
                       [&]() { return _s.read_c_string_view(); });
 
         // Some entries have been observed to contain the `.o` file as a parenthetical to the
@@ -219,12 +233,7 @@ void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_o
 
         additional_object_files.push_back(std::move(path));
     }
-    // don't think I need these here, as we should sort/make unique the total set
-    // of additional object files within `orc_process`. Saving until I'm sure.
-    //
-    // std::sort(additional_object_files.begin(), additional_object_files.end());
-    // auto new_end = std::unique(additional_object_files.begin(), additional_object_files.end());
-    // additional_object_files.erase(new_end, additional_object_files.end());
+
     _derived_dependency(std::move(additional_object_files));
 }
 
@@ -256,9 +265,7 @@ void macho_reader::read_load_command() {
 
     switch (command.cmd) {
         case LC_SEGMENT_64: {
-            if (_process_die_mode) {
-                read_lc_segment_64();
-            }
+            read_lc_segment_64();
         } break;
         case LC_LOAD_DYLIB: {
             if (_derive_dylib_mode) {
@@ -283,10 +290,10 @@ void macho_reader::read_load_command() {
 
 /**************************************************************************************************/
 
-std::filesystem::path resolve_dylib(std::string raw_path,
-                                    const std::filesystem::path& executable_path,
-                                    const std::filesystem::path& loader_path,
-                                    const std::vector<std::string>& rpaths) {
+std::optional<std::filesystem::path> resolve_dylib(std::string raw_path,
+                                                   const std::filesystem::path& executable_path,
+                                                   const std::filesystem::path& loader_path,
+                                                   const std::vector<std::string>& rpaths) {
     constexpr std::string_view executable_path_k = "@executable_path";
     constexpr std::string_view loader_path_k = "@loader_path";
     constexpr std::string_view rpath_k = "@rpath";
@@ -300,13 +307,15 @@ std::filesystem::path resolve_dylib(std::string raw_path,
         for (const auto& rpath : rpaths) {
             std::string tmp = raw_path;
             tmp.replace(0, rpath_k.size(), rpath);
-            std::filesystem::path candidate =
+            std::optional<std::filesystem::path> candidate =
                 resolve_dylib(tmp, executable_path, loader_path, rpaths);
-            if (exists(candidate)) {
+            if (candidate && exists(*candidate)) {
                 return candidate;
             }
         }
-        throw std::runtime_error("Could not find dependent library: " + raw_path);
+
+        cerr_safe([&](auto& s){ s << "Could not find dependent library: " + raw_path + "\n"; });
+        return std::nullopt;
     }
 
     return raw_path;
@@ -326,11 +335,13 @@ void macho_reader::derive_dependencies() {
     std::filesystem::path executable_path =
         object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
     std::filesystem::path loader_path = executable_path;
+
     std::vector<std::filesystem::path> resolved_dylibs;
-    std::transform(_unresolved_dylibs.begin(), _unresolved_dylibs.end(),
-                   std::back_inserter(resolved_dylibs), [&](const auto& raw_dylib) {
-                       return resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
-                   });
+    for (const auto& raw_dylib : _unresolved_dylibs) {
+        auto resolved = resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
+        if (!resolved) continue;
+        resolved_dylibs.emplace_back(std::move(*resolved));
+    }
 
     // Send these back to the main engine for ODR scanning processing.
     _derived_dependency(std::move(resolved_dylibs));
@@ -384,13 +395,13 @@ void read_macho(object_ancestry&& ancestry,
                 std::istream::pos_type end_pos,
                 file_details details,
                 callbacks callbacks) {
-    callbacks._do_work([_ancestry = std::move(ancestry), _s = std::move(s),
+    orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s),
                         _details = std::move(details), _callbacks = callbacks]() mutable {
         std::uint32_t ofd_index =
             static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
         macho_reader macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
 
-        if (macho._process_die_mode) {
+        if (macho._register_die_mode) {
             ++globals::instance()._object_file_count;
             macho.dwarf().process_all_dies();
         } else if (macho._derive_dylib_mode) {
@@ -420,22 +431,79 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
 
 /**************************************************************************************************/
 
-std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::path& root_binary) {
+namespace {
+
+/**************************************************************************************************/
+
+std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesystem::path>&& files) {
+    // eliminate duplicate object files, if any. The discovered order of these things shouldn't
+    // matter for the purposes of additional dylib scans or the ODR scan at the end.
+    std::sort(files.begin(), files.end());
+    auto new_end = std::unique(files.begin(), files.end());
+    files.erase(new_end, files.end());
+    return files;
+}
+
+/**************************************************************************************************/
+// We have to assume that dependencies will circle back on themselves at some point, so we must have
+// a criteria to know when we are "done". The way we do this is to check the size of the file list
+// on every iteration. The moment the resulting list stops growing, we know we're done.
+#if 0
+std::vector<std::filesystem::path> recursive_dylib_scan(std::vector<std::filesystem::path>&& files) {
+    std::vector<std::filesystem::path> result = files;
+    std::vector<std::filesystem::path> last_pass = std::move(files);
+
+    while (true) {
+        last_pass = macho_derive_dylibs(last_pass);
+        const auto last_result_size = result.size();
+        move_append(result, copy(last_pass));
+        result = make_sorted_unique(std::move(result));
+        if (result.size() == last_result_size) break;
+    }
+
+    return result;
+}
+#endif
+/**************************************************************************************************/
+
+void macho_derive_dylibs(const std::filesystem::path& root_binary,
+                         std::mutex& mutex,
+                         std::vector<std::filesystem::path>& result) {
     if (!exists(root_binary)) {
         cerr_safe([&](auto& s) { s << "file " << root_binary.string() << " does not exist\n"; });
-        return std::vector<std::filesystem::path>();
+        return;
     }
 
     freader input(root_binary);
-    std::vector<std::filesystem::path> result;
     callbacks callbacks = {
         register_dies_callback(),
-        stlab::immediate_executor, // don't subdivide or reschedule sub-work during this scan.
-        [&_result = result](std::vector<std::filesystem::path>&& p) { move_append(_result, p); }};
+        [&_mutex = mutex, &_result = result](std::vector<std::filesystem::path>&& p) {
+            if (p.empty()) return;
+            std::lock_guard<std::mutex> m(_mutex);
+            move_append(_result, std::move(p));
+        }
+    };
 
     parse_file(root_binary.string(), object_ancestry(), input, input.size(), std::move(callbacks));
+}
 
-    return result;
+/**************************************************************************************************/
+
+} // namespace
+
+/**************************************************************************************************/
+
+std::vector<std::filesystem::path> macho_derive_dylibs(const std::vector<std::filesystem::path>& root_binaries) {
+    std::mutex result_mutex;
+    std::vector<std::filesystem::path> result = root_binaries;
+
+    for (const auto& input_path : root_binaries) {
+        macho_derive_dylibs(input_path, result_mutex, result);
+    }
+
+    orc::block_on_work();
+
+    return make_sorted_unique(std::move(result));
 }
 
 /**************************************************************************************************/

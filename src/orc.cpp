@@ -284,7 +284,11 @@ void do_work(std::function<void()> f) {
         try {
             _f();
         } catch (...) {
-            assert(!"The program is ill-structured. Catch exceptions before they hit here.");
+            // I changed my opinion on this: an unhandled background task exception should terminate
+            // the application. This mimics the behavior of an unhandled exception on the main
+            // thread. Now (like main thread exceptions) background task exceptions must be
+            // handled before they hit this point.
+            assert(!"unhandled background task exception");
             std::terminate();
         }
     };
@@ -298,8 +302,9 @@ void do_work(std::function<void()> f) {
 
     system([_work_token = work().working(), _doit = std::move(doit)] {
 #if ORC_FEATURE(TRACY)
-        thread_local bool tracy_set_thread_name_k = []{
-            TracyCSetThreadName(orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
+        thread_local bool tracy_set_thread_name_k = [] {
+            TracyCSetThreadName(
+                orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
             return true;
         }();
         (void)tracy_set_thread_name_k;
@@ -443,8 +448,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     static TracyLockable(std::mutex, odrv_report_mutex);
     {
-    std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
-    results.push_back(report);
+        std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
+        results.push_back(report);
     }
 
     return dies.front();
@@ -461,7 +466,8 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
         // dylib scan mode involves a pre-processing step where we parse the file list
         // and discover any dylibs those Mach-O files depend upon.
         for (const auto& input_path : file_list) {
-            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = macho_derived_dependencies] {
+            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex,
+                     &_list = macho_derived_dependencies] {
                 auto dylibs = macho_derive_dylibs(_input_path);
                 if (dylibs.empty()) return;
                 std::lock_guard<std::mutex> m(_mutex);
@@ -483,16 +489,13 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
-                cerr_safe([&](auto& s) { s << "file " << _input_path.string() << " does not exist\n"; });
+                cerr_safe(
+                    [&](auto& s) { s << "file " << _input_path.string() << " does not exist\n"; });
                 return;
             }
 
             freader input(_input_path);
-            callbacks callbacks = {
-                register_dies,
-                do_work,
-                derived_dependency_callback(),
-            };
+            callbacks callbacks = {register_dies, do_work};
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
                        std::move(callbacks));

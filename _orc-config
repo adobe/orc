@@ -55,7 +55,7 @@ standalone_mode = false
 #
 # The default value is `false`.
 
-dylib_scan_mode = false
+dylib_scan_mode = true
 
 # If defined, ORC will log output to the specified file. (Normal stream output 
 # is unaffected by the `output_file`.) 

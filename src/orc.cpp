@@ -454,38 +454,24 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
     std::mutex macho_derived_dependencies_mutex;
+    std::vector<std::filesystem::path> macho_derived_dependencies;
 
-    // First stage: dependency/dylib preprocessing
+    // First stage: (optional) dependency/dylib preprocessing
     if (settings::instance()._dylib_scan_mode) {
         // dylib scan mode involves a pre-processing step where we parse the file list
         // and from those Mach-O files, derive additional files they depend upon.
-        // Instead, we should be collecting additional files to process in the next
-        // stage.
         for (const auto& input_path : file_list) {
-            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = file_list] {
-                if (!exists(_input_path)) {
-                    throw std::runtime_error("file " + _input_path.string() + " does not exist");
-                }
-
-                freader input(_input_path);
-                callbacks callbacks = {
-                    register_dies_callback(),
-                    do_work,
-                    [&](std::vector<std::filesystem::path>&& p){
-                        std::lock_guard<std::mutex> m(_mutex);
-                        _list.insert(_list.end(),
-                                     std::move_iterator(p.begin()),
-                                     std::move_iterator(p.end()));
-                    }
-                };
-
-                parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                           std::move(callbacks));
+            do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = macho_derived_dependencies] {
+                auto dylibs = macho_derive_dylibs(_input_path);
+                std::lock_guard<std::mutex> m(_mutex);
+                move_append(_list, dylibs);
             });
         }
     }
 
     work().wait();
+
+    move_append(file_list, macho_derived_dependencies);
 
     // eliminate duplicate object files, if any
     std::sort(file_list.begin(), file_list.end());

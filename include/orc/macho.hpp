@@ -14,6 +14,15 @@
 
 /**************************************************************************************************/
 
+template <typename C>
+void move_append(C& dst, C& src) {
+    dst.insert(dst.end(),
+               std::move_iterator(src.begin()),
+               std::move_iterator(src.end()));
+}
+
+/**************************************************************************************************/
+
 void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
@@ -23,5 +32,9 @@ void read_macho(object_ancestry&& ancestry,
 /**************************************************************************************************/
 
 struct dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback);
+
+/**************************************************************************************************/
+
+std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::path& root_binary);
 
 /**************************************************************************************************/

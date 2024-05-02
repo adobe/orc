@@ -15,6 +15,9 @@
 // tbb
 #include <tbb/concurrent_map.h>
 
+// stlab
+#include <stlab/concurrency/immediate_executor.hpp>
+
 // application
 #include "orc/dwarf.hpp"
 #include "orc/object_file_registry.hpp"
@@ -27,9 +30,53 @@ namespace {
 
 /**************************************************************************************************/
 
-void read_lc_segment_64_section(freader& s, const file_details& details, dwarf& dwarf) {
-    auto section = read_pod<section_64>(s);
-    if (details._needs_byteswap) {
+struct macho_reader {
+    macho_reader(std::uint32_t ofd_index,
+                 freader&& s,
+                 file_details&& details,
+                 callbacks&& callbacks) :
+        _process_die_mode(static_cast<bool>(callbacks._register_die)),
+        _derive_dylib_mode(static_cast<bool>(callbacks._derived_dependency)),
+        _ofd_index(ofd_index),
+        _s(std::move(s)),
+        _details(std::move(details)),
+        _derived_dependency(_derive_dylib_mode ? callbacks._derived_dependency : derived_dependency_callback()),
+        _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks)) {
+        populate_dwarf();
+    }
+
+    struct dwarf& dwarf() & { return _dwarf; }
+    struct dwarf&& dwarf() && { return std::move(_dwarf); }
+
+    void derive_dependencies();
+
+    const bool _process_die_mode{false};
+    const bool _derive_dylib_mode{false};
+
+private:
+    void populate_dwarf();
+    void read_load_command();
+    void read_lc_segment_64();
+    void read_lc_segment_64_section();
+    void read_lc_load_dylib();
+    void read_lc_rpath();
+    void read_lc_symtab();
+    void read_stabs(std::uint32_t symbol_count, std::uint32_t string_offset);
+
+    const std::uint32_t _ofd_index{0};
+    freader _s;
+    const file_details _details;
+    derived_dependency_callback _derived_dependency;
+    std::vector<std::string> _unresolved_dylibs;
+    std::vector<std::string> _rpaths;
+    struct dwarf _dwarf; // must be last
+};
+
+/**************************************************************************************************/
+
+void macho_reader::read_lc_segment_64_section() {
+    auto section = read_pod<section_64>(_s);
+    if (_details._needs_byteswap) {
         // endian_swap(section.sectname[16]);
         // endian_swap(section.segname[16]);
         endian_swap(section.addr);
@@ -46,15 +93,15 @@ void read_lc_segment_64_section(freader& s, const file_details& details, dwarf& 
 
     if (rstrip(section.segname) != "__DWARF") return;
 
-    dwarf.register_section(rstrip(section.sectname), details._offset + section.offset,
-                           section.size);
+    _dwarf.register_section(rstrip(section.sectname), _details._offset + section.offset,
+                            section.size);
 }
 
 /**************************************************************************************************/
 
-void read_lc_segment_64(freader& s, const file_details& details, dwarf& dwarf) {
-    auto lc = read_pod<segment_command_64>(s);
-    if (details._needs_byteswap) {
+void macho_reader::read_lc_segment_64() {
+    auto lc = read_pod<segment_command_64>(_s);
+    if (_details._needs_byteswap) {
         endian_swap(lc.cmd);
         endian_swap(lc.cmdsize);
         // endian_swap(lc.segname);
@@ -69,16 +116,16 @@ void read_lc_segment_64(freader& s, const file_details& details, dwarf& dwarf) {
     }
 
     for (std::size_t i = 0; i < lc.nsects; ++i) {
-        read_lc_segment_64_section(s, details, dwarf);
+        read_lc_segment_64_section();
     }
 }
 
 /**************************************************************************************************/
 
-void read_lc_load_dylib(freader& s, const file_details& details, dwarf& dwarf) {
-    const auto command_start = s.tellg();
-    auto lc = read_pod<dylib_command>(s);
-    if (details._needs_byteswap) {
+void macho_reader::read_lc_load_dylib() {
+    const auto command_start = _s.tellg();
+    auto lc = read_pod<dylib_command>(_s);
+    if (_details._needs_byteswap) {
         endian_swap(lc.cmd);
         endian_swap(lc.cmdsize);
         endian_swap(lc.dylib.name.offset);
@@ -87,52 +134,46 @@ void read_lc_load_dylib(freader& s, const file_details& details, dwarf& dwarf) {
         endian_swap(lc.dylib.compatibility_version); // sufficient?
     }
 
-    const std::string_view dylib_path = s.read_c_string_view();
-    dwarf.register_dylib(std::string(dylib_path));
+    _unresolved_dylibs.emplace_back(_s.read_c_string_view());
 
-    const auto padding = lc.cmdsize - (s.tellg() - command_start);
-    s.seekg(padding, std::ios::cur);
+    const auto padding = lc.cmdsize - (_s.tellg() - command_start);
+    _s.seekg(padding, std::ios::cur);
 }
 
 /**************************************************************************************************/
 
-void read_lc_rpath(freader& s, const file_details& details, dwarf& dwarf) {
-    const auto command_start = s.tellg();
-    auto lc = read_pod<rpath_command>(s);
-    if (details._needs_byteswap) {
+void macho_reader::read_lc_rpath() {
+    const auto command_start = _s.tellg();
+    auto lc = read_pod<rpath_command>(_s);
+    if (_details._needs_byteswap) {
         endian_swap(lc.cmd);
         endian_swap(lc.cmdsize);
         endian_swap(lc.path.offset);
     }
 
-    const std::string_view dylib_path = s.read_c_string_view();
-    dwarf.register_rpath(std::string(dylib_path));
+    _rpaths.emplace_back(_s.read_c_string_view());
 
-    const auto padding = lc.cmdsize - (s.tellg() - command_start);
-    s.seekg(padding, std::ios::cur);
+    const auto padding = lc.cmdsize - (_s.tellg() - command_start);
+    _s.seekg(padding, std::ios::cur);
 }
 
 /**************************************************************************************************/
 /*
     See https://sourceware.org/gdb/current/onlinedocs/stabs.html/
 */
-void read_stabs(freader& s,
-                const file_details& details,
-                dwarf& dwarf,
-                std::uint32_t symbol_count,
-                std::uint32_t string_offset) {
-    if (!details._is_64_bit) throw std::runtime_error("Need support for non-64-bit STABs.");
+void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_offset) {
+    if (!_details._is_64_bit) throw std::runtime_error("Need support for non-64-bit STABs.");
     std::vector<std::filesystem::path> additional_object_files;
     while (symbol_count--) {
-        auto entry = read_pod<nlist_64>(s);
+        auto entry = read_pod<nlist_64>(_s);
         if (entry.n_type != N_OSO) continue;
         // TODO: Comparing the modified file time ensures the object file has not changed
         // since the application binary was linked. We should compare this time given to
         // us against the modified time of the file on-disk.
         // const auto modified_time = entry.n_value;
 
-        std::filesystem::path path = temp_seek(s, details._offset + string_offset + entry.n_un.n_strx, [&](){
-            return s.read_c_string_view();
+        std::filesystem::path path = temp_seek(_s, _details._offset + string_offset + entry.n_un.n_strx, [&](){
+            return _s.read_c_string_view();
         });
 
         // Some entries have been observed to contain the `.o` file as a parenthetical to the
@@ -156,12 +197,12 @@ void read_stabs(freader& s,
     // std::sort(additional_object_files.begin(), additional_object_files.end());
     // auto new_end = std::unique(additional_object_files.begin(), additional_object_files.end());
     // additional_object_files.erase(new_end, additional_object_files.end());
-    dwarf.register_additional_object_files(std::move(additional_object_files));
+    _derived_dependency(std::move(additional_object_files));
 }
 
-void read_lc_symtab(freader& s, const file_details& details, dwarf& dwarf) {
-    auto lc = read_pod<symtab_command>(s);
-    if (details._needs_byteswap) {
+void macho_reader::read_lc_symtab() {
+    auto lc = read_pod<symtab_command>(_s);
+    if (_details._needs_byteswap) {
         endian_swap(lc.cmd);
         endian_swap(lc.cmdsize);
         endian_swap(lc.symoff);
@@ -170,24 +211,17 @@ void read_lc_symtab(freader& s, const file_details& details, dwarf& dwarf) {
         endian_swap(lc.strsize);
     }
 
-    temp_seek(s, details._offset + lc.symoff, [&](){
-        read_stabs(s, details, dwarf, lc.nsyms, lc.stroff);
+    temp_seek(_s, _details._offset + lc.symoff, [&](){
+        read_stabs(lc.nsyms, lc.stroff);
     });
 }
 
 /**************************************************************************************************/
 
-struct load_command {
-    std::uint32_t cmd{0};
-    std::uint32_t cmdsize{0};
-};
-
-/**************************************************************************************************/
-
-void read_load_command(freader& s, const file_details& details, dwarf& dwarf, bool derive_dylib_mode) {
-    auto command = temp_seek(s, [&] {
-        auto command = read_pod<load_command>(s);
-        if (details._needs_byteswap) {
+void macho_reader::read_load_command() {
+    auto command = temp_seek(_s, [&] {
+        auto command = read_pod<load_command>(_s);
+        if (_details._needs_byteswap) {
             endian_swap(command.cmd);
             endian_swap(command.cmdsize);
         }
@@ -196,65 +230,89 @@ void read_load_command(freader& s, const file_details& details, dwarf& dwarf, bo
 
     switch (command.cmd) {
         case LC_SEGMENT_64: {
-            read_lc_segment_64(s, details, dwarf);
+            read_lc_segment_64();
         } break;
         case LC_LOAD_DYLIB: {
-            if (derive_dylib_mode) {
-                read_lc_load_dylib(s, details, dwarf);
+            if (_derive_dylib_mode) {
+                read_lc_load_dylib();
             }
         } break;
         case LC_RPATH: {
-            if (derive_dylib_mode) {
-                read_lc_rpath(s, details, dwarf);
+            if (_derive_dylib_mode) {
+                read_lc_rpath();
             }
         } break;
         case LC_SYMTAB: {
-            if (derive_dylib_mode) {
-                read_lc_symtab(s, details, dwarf);
+            if (_derive_dylib_mode) {
+                read_lc_symtab();
             }
         } break;
         default: {
-            s.seekg(command.cmdsize, std::ios::cur);
+            _s.seekg(command.cmdsize, std::ios::cur);
         } break;
     }
 }
 
 /**************************************************************************************************/
 
-struct mach_header_64 {
-    std::uint32_t magic{0};
-    cpu_type_t cputype{0};
-    cpu_subtype_t cpusubtype{0};
-    std::uint32_t filetype{0};
-    std::uint32_t ncmds{0};
-    std::uint32_t sizeofcmds{0};
-    std::uint32_t flags{0};
-    std::uint32_t reserved{0};
-};
+std::filesystem::path resolve_dylib(std::string raw_path,
+                                    const std::filesystem::path& executable_path,
+                                    const std::filesystem::path& loader_path,
+                                    const std::vector<std::string>& rpaths) {
+    constexpr std::string_view executable_path_k = "@executable_path";
+    constexpr std::string_view loader_path_k = "@loader_path";
+    constexpr std::string_view rpath_k = "@rpath";
 
-struct mach_header {
-    std::uint32_t magic;
-    cpu_type_t cputype;
-    cpu_subtype_t cpusubtype;
-    std::uint32_t filetype;
-    std::uint32_t ncmds;
-    std::uint32_t sizeofcmds;
-    std::uint32_t flags;
-};
+    if (raw_path.starts_with(executable_path_k)) {
+        raw_path.replace(0, executable_path_k.size(), executable_path.string());
+    } else if (raw_path.starts_with(loader_path_k)) {
+        raw_path.replace(0, loader_path_k.size(), loader_path.string());
+    } else if (raw_path.starts_with(rpath_k)) {
+        // search rpaths until the desired dylib is actually found.
+        for (const auto& rpath : rpaths) {
+            std::string tmp = raw_path;
+            tmp.replace(0, rpath_k.size(), rpath);
+            std::filesystem::path candidate = resolve_dylib(tmp, executable_path, loader_path, rpaths);
+            if (exists(candidate)) {
+                return candidate;
+            }
+        }
+        throw std::runtime_error("Could not find dependent library: " + raw_path);
+    }
+
+    return raw_path;
+}
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(std::uint32_t ofd_index,
-                       freader&& s,
-                       file_details&& details,
-                       callbacks&& callbacks) {
-    std::size_t load_command_sz{0};
-    // TODO: The Mach-O reader really needs its own context/state machine to hold this kind of stuff.
-    const bool derive_dylib_mode = static_cast<bool>(callbacks._derived_dependency);
+void macho_reader::derive_dependencies() {
+    // See https://itwenty.me/posts/01-understanding-rpath/
+    // `@executable_path` resolves to the path of the directory containing the executable.
+    // `@loader_path` resolves to the path of the client doing the loading.
+    // For executables, `@loader_path` and `@executable_path` mean the same thing.
+    // TODO: (fosterbrereton) We're going to have to nest this search, aren't we?
+    // If so, that means we'll need to track the originating file and use it as
+    // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
 
-    if (details._is_64_bit) {
-        auto header = read_pod<mach_header_64>(s);
-        if (details._needs_byteswap) {
+    std::filesystem::path executable_path = object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
+    std::filesystem::path loader_path = executable_path;
+    std::vector<std::filesystem::path> resolved_dylibs;
+    std::transform(_unresolved_dylibs.begin(), _unresolved_dylibs.end(), std::back_inserter(resolved_dylibs), [&](const auto& raw_dylib){
+        return resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
+    });
+
+    // Send these back to the main engine for ODR scanning processing.
+    _derived_dependency(std::move(resolved_dylibs));
+}
+
+/**************************************************************************************************/
+
+void macho_reader::populate_dwarf() {
+    std::size_t load_command_sz{0};
+
+    if (_details._is_64_bit) {
+        auto header = read_pod<mach_header_64>(_s);
+        if (_details._needs_byteswap) {
             endian_swap(header.magic);
             endian_swap(header.cputype);
             endian_swap(header.cpusubtype);
@@ -266,8 +324,8 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index,
         }
         load_command_sz = header.ncmds;
     } else {
-        auto header = read_pod<mach_header>(s);
-        if (details._needs_byteswap) {
+        auto header = read_pod<mach_header>(_s);
+        if (_details._needs_byteswap) {
             endian_swap(header.magic);
             endian_swap(header.cputype);
             endian_swap(header.cpusubtype);
@@ -279,17 +337,9 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index,
         load_command_sz = header.ncmds;
     }
 
-    // REVISIT: (fbrereto) I'm not happy that dwarf is an out-arg to read_load_command.
-    // Maybe pass in some kind of lambda that'll get called when a relevant DWARF section
-    // is found? Or maybe `read_load_command` should be a member function of `dwarf`?
-    // A problem for another time...
-    dwarf dwarf(ofd_index, copy(s), copy(details), std::move(callbacks));
-
     for (std::size_t i = 0; i < load_command_sz; ++i) {
-        read_load_command(s, details, dwarf, derive_dylib_mode);
+        read_load_command();
     }
-
-    return dwarf;
 }
 
 /**************************************************************************************************/
@@ -306,21 +356,14 @@ void read_macho(object_ancestry&& ancestry,
     callbacks._do_work([_ancestry = std::move(ancestry), _s = std::move(s),
                         _details = std::move(details),
                         _callbacks = callbacks]() mutable {
-        // TODO: The Mach-O reader really needs its own context/state machine to hold this kind of stuff.
-        const bool process_die_mode = static_cast<bool>(_callbacks._register_die);
-        const bool derive_dylib_mode = static_cast<bool>(_callbacks._derived_dependency);
-
-        if (process_die_mode) {
-            ++globals::instance()._object_file_count;
-        }
-
         std::uint32_t ofd_index = static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
-        dwarf dwarf = dwarf_from_macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
+        macho_reader macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
 
-        if (process_die_mode) {
-            dwarf.process_all_dies();
-        } else if (derive_dylib_mode) {
-            dwarf.derive_dependencies();
+        if (macho._process_die_mode) {
+            ++globals::instance()._object_file_count;
+            macho.dwarf().process_all_dies();
+        } else if (macho._derive_dylib_mode) {
+            macho.derive_dependencies();
         } else {
             // If we're here, Something Bad has happened.
             std::terminate();
@@ -340,14 +383,30 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
         std::move(callback),
     };
 
-    return dwarf_from_macho(ofd_index, std::move(s), copy(entry._details),
-                            std::move(callbacks));
+    return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(callbacks)).dwarf();
 }
 
 /**************************************************************************************************/
 
 std::vector<std::filesystem::path> macho_derive_dylibs(const std::filesystem::path& root_binary) {
-    return std::vector<std::filesystem::path>();
+    std::vector<std::filesystem::path> result;
+
+    if (!exists(root_binary)) {
+        throw std::runtime_error("file " + root_binary.string() + " does not exist");
+    }
+
+    freader input(root_binary);
+    callbacks callbacks = {
+        register_dies_callback(),
+        stlab::immediate_executor, // don't subdivide or reschedule sub-work during this scan.
+        [&_result = result](std::vector<std::filesystem::path>&& p){
+            move_append(_result, p);
+        }
+    };
+
+    parse_file(root_binary.string(), object_ancestry(), input, input.size(), std::move(callbacks));
+
+    return result;
 }
 
 /**************************************************************************************************/

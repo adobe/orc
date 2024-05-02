@@ -393,36 +393,6 @@ enum class process_mode {
 
 /**************************************************************************************************/
 
-std::filesystem::path resolve_dylib(std::string raw_path,
-                                    const std::filesystem::path& executable_path,
-                                    const std::filesystem::path& loader_path,
-                                    const std::vector<std::string>& rpaths) {
-    constexpr std::string_view executable_path_k = "@executable_path";
-    constexpr std::string_view loader_path_k = "@loader_path";
-    constexpr std::string_view rpath_k = "@rpath";
-
-    if (raw_path.starts_with(executable_path_k)) {
-        raw_path.replace(0, executable_path_k.size(), executable_path.string());
-    } else if (raw_path.starts_with(loader_path_k)) {
-        raw_path.replace(0, loader_path_k.size(), loader_path.string());
-    } else if (raw_path.starts_with(rpath_k)) {
-        // search rpaths until the desired dylib is actually found.
-        for (const auto& rpath : rpaths) {
-            std::string tmp = raw_path;
-            tmp.replace(0, rpath_k.size(), rpath);
-            std::filesystem::path candidate = resolve_dylib(tmp, executable_path, loader_path, rpaths);
-            if (exists(candidate)) {
-                return candidate;
-            }
-        }
-        throw std::runtime_error("Could not find dependent library: " + raw_path);
-    }
-
-    return raw_path;
-}
-
-/**************************************************************************************************/
-
 } // namespace
 
 /**************************************************************************************************/
@@ -487,46 +457,12 @@ struct dwarf::implementation {
 
     die_pair abbreviation_to_die(std::size_t die_address, process_mode mode);
 
-    void register_dylib(std::string&& s) {
-        _dylibs.emplace_back(std::move(s));
-    }
-
-    void register_rpath(std::string&& s) {
-        _rpaths.emplace_back(std::move(s));
-    }
-
-    void register_additional_object_files(std::vector<std::filesystem::path>&& paths) {
-        _callbacks._derived_dependency(std::move(paths));
-    }
-
-    void derive_dependencies() {
-        // See https://itwenty.me/posts/01-understanding-rpath/
-        // `@executable_path` resolves to the path of the directory containing the executable.
-        // `@loader_path` resolves to the path of the client doing the loading.
-        // For executables, `@loader_path` and `@executable_path` mean the same thing.
-        // TODO: (fosterbrereton) We're going to have to nest this search, aren't we?
-        // If so, that means we'll need to track the originating file and use it as
-        // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
-
-        std::filesystem::path executable_path = object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
-        std::filesystem::path loader_path = executable_path;
-        std::vector<std::filesystem::path> resolved_dylibs;
-        std::transform(_dylibs.begin(), _dylibs.end(), std::back_inserter(resolved_dylibs), [&](const auto& raw_dylib){
-            return resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
-        });
-
-        // Send these back to the main engine for ODR scanning processing.
-        _callbacks._derived_dependency(std::move(resolved_dylibs));
-    }
-
     freader _s;
     file_details _details;
     callbacks _callbacks;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
     std::vector<pool_string> _decl_files;
-    std::vector<std::string> _dylibs; // unresolved
-    std::vector<std::string> _rpaths; // unresolved
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     cu_header _cu_header;
@@ -1820,22 +1756,6 @@ void dwarf::process_all_dies() { _impl->process_all_dies(); }
 
 die_pair dwarf::fetch_one_die(std::size_t debug_info_offset, std::size_t cu_die_address) {
     return _impl->fetch_one_die(debug_info_offset, cu_die_address);
-}
-
-void dwarf::register_dylib(std::string&& s) {
-    _impl->register_dylib(std::move(s));
-}
-
-void dwarf::register_rpath(std::string&& s) {
-    _impl->register_rpath(std::move(s));
-}
-
-void dwarf::register_additional_object_files(std::vector<std::filesystem::path>&& paths) {
-    _impl->register_additional_object_files(std::move(paths));
-}
-
-void dwarf::derive_dependencies() {
-    _impl->derive_dependencies();
 }
 
 /**************************************************************************************************/

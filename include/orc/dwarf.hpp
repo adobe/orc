@@ -29,12 +29,6 @@ struct dwarf {
 
     die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
 
-    void register_dylib(std::string&&);
-    void register_rpath(std::string&&);
-    void register_additional_object_files(std::vector<std::filesystem::path>&&);
-
-    void derive_dependencies(); // assumes dylib scan mode
-
 private:
     struct implementation;
     std::unique_ptr<implementation, void (*)(implementation*)> _impl{nullptr,

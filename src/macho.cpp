@@ -435,6 +435,16 @@ namespace {
 
 /**************************************************************************************************/
 
+template <typename C>
+void move_append(C& dst, C&& src) {
+    dst.insert(dst.end(),
+               std::move_iterator(src.begin()),
+               std::move_iterator(src.end()));
+    src.clear();
+}
+
+/**************************************************************************************************/
+
 std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesystem::path>&& files) {
     // eliminate duplicate object files, if any. The discovered order of these things shouldn't
     // matter for the purposes of additional dylib scans or the ODR scan at the end.

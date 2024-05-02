@@ -14,16 +14,6 @@
 
 /**************************************************************************************************/
 
-template <typename C>
-void move_append(C& dst, C&& src) {
-    dst.insert(dst.end(),
-               std::move_iterator(src.begin()),
-               std::move_iterator(src.end()));
-    src.clear();
-}
-
-/**************************************************************************************************/
-
 void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,

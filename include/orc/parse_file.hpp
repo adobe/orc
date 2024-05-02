@@ -227,7 +227,6 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
 /**************************************************************************************************/
 
 using register_dies_callback = std::function<void(dies)>;
-using do_work_callback = std::function<void(std::function<void()>)>;
 using derived_dependency_callback = std::function<void(std::vector<std::filesystem::path>&&)>;
 
 struct callbacks {

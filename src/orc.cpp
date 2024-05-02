@@ -459,7 +459,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
     // First stage: (optional) dependency/dylib preprocessing
     if (settings::instance()._dylib_scan_mode) {
         // dylib scan mode involves a pre-processing step where we parse the file list
-        // and from those Mach-O files, derive additional files they depend upon.
+        // and discover any dylibs those Mach-O files depend upon.
         for (const auto& input_path : file_list) {
             do_work([_input_path = input_path, &_mutex = macho_derived_dependencies_mutex, &_list = macho_derived_dependencies] {
                 auto dylibs = macho_derive_dylibs(_input_path);

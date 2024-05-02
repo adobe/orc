@@ -30,7 +30,13 @@
 namespace {
 
 /**************************************************************************************************/
-
+/*
+    This structure holds state while the Mach-O files are being read. Its goal is to 1) populate its
+    dwarf field (for die processing within `dwarf.cpp`, or 2) derive dylib dependencies enumerated
+    in the Mach-O segments of the file being read. The "switch" for which mode the reader is in is
+    based on the callbacks it is given. Since die scanning and dylib scanning are mutually
+    exclusive, the callbacks provided determine which path the `macho_reader` should take.
+*/
 struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
                  freader&& s,
@@ -43,6 +49,10 @@ struct macho_reader {
         _details(std::move(details)),
         _derived_dependency(std::move(callbacks._derived_dependency)),
         _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
+        if (_process_die_mode ^ _derive_dylib_mode) {
+            cerr_safe([&](auto& s) { s << "Exactly one of die or dylib scanning is allowed.\n"; });
+            std::terminate();
+        }
         populate_dwarf();
     }
 
@@ -246,7 +256,9 @@ void macho_reader::read_load_command() {
 
     switch (command.cmd) {
         case LC_SEGMENT_64: {
-            read_lc_segment_64();
+            if (_process_die_mode) {
+                read_lc_segment_64();
+            }
         } break;
         case LC_LOAD_DYLIB: {
             if (_derive_dylib_mode) {

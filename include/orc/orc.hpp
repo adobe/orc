@@ -48,13 +48,18 @@ bool filter_report(const odrv_report& report);
 
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&&);
 
+namespace orc {
+
+void register_dies(dies die_vector);
+
+} // namespace orc
+
 void orc_reset();
 
 // The returned char* is good until the next call to demangle() on the same thread.
 const char* demangle(const char* x);
 
 /**************************************************************************************************/
-
 
 std::mutex& ostream_safe_mutex();
 
@@ -76,3 +81,5 @@ template <class F>
 void cerr_safe(F&& f) {
     ostream_safe(std::cerr, std::forward<F>(f));
 }
+
+/**************************************************************************************************/

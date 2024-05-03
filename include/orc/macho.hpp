@@ -18,11 +18,11 @@ void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
-                callbacks callbacks);
+                macho_params params);
 
 /**************************************************************************************************/
 
-struct dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback);
+struct dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params);
 
 /**************************************************************************************************/
 

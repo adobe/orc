@@ -20,8 +20,7 @@ using die_pair = std::tuple<die, attribute_sequence>;
 struct dwarf {
     dwarf(std::uint32_t ofd_index,
           freader&& s,
-          file_details&& details,
-          register_dies_callback&& callback);
+          file_details&& details);
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
 

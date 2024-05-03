@@ -44,7 +44,7 @@ void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
-              callbacks callbacks) {
+              macho_params params) {
     auto header = read_pod<fat_header>(s);
     if (details._needs_byteswap) {
         endian_swap(header.magic);
@@ -88,7 +88,7 @@ void read_fat(object_ancestry&& ancestry,
 
         temp_seek(s, offset, [&] {
             parse_file(cputype_to_string(cputype), ancestry, s,
-                       s.tellg() + static_cast<std::streamoff>(size), callbacks);
+                       s.tellg() + static_cast<std::streamoff>(size), params);
         });
     }
 }

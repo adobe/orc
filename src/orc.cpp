@@ -148,61 +148,6 @@ auto& global_die_map() {
 
 /**************************************************************************************************/
 
-void register_dies(dies die_vector) {
-    ZoneScoped;
-
-    globals::instance()._die_processed_count += die_vector.size();
-
-    // pre-process the vector of dies by partitioning them into those that are skippable and those
-    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
-    // cause a reallocation and copying of only the necessary dies into a vector whose memory
-    // consumption is exactly what's needed.
-
-    auto unskipped_end =
-        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
-
-    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
-
-    die_vector.erase(unskipped_end, die_vector.end());
-    die_vector.shrink_to_fit();
-
-    // This is a list so the die vectors don't move about. The dies become pretty entangled as they
-    // point to one another by reference, and the odr_map itself stores const pointers to the dies
-    // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
-    // pointers we use will stay valid for the lifetime of the application.
-    dies& dies = *with_global_die_collection([&](auto& collection) {
-        collection.push_back(std::move(die_vector));
-        return --collection.end();
-    });
-
-    for (auto& d : dies) {
-        assert(!d._skippable);
-
-        //
-        // At this point we know we're going to register the die. Hereafter belongs
-        // work exclusive to DIEs getting registered/odr-enforced.
-        //
-
-        auto result = global_die_map().insert(std::make_pair(d._hash, &d));
-        if (result.second) {
-            ++globals::instance()._unique_symbol_count;
-            continue;
-        }
-
-        constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
-        static std::mutex mutexes_s[mutex_count_k];
-        std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
-
-        die& d_in_map = *result.first->second;
-        d._next_die = d_in_map._next_die;
-        d_in_map._next_die = &d;
-    }
-
-    globals::instance()._die_skipped_count += skip_count;
-}
-
-/**************************************************************************************************/
-
 struct cmdline_results {
     std::vector<std::filesystem::path> _file_object_list;
     bool _ld_mode{false};
@@ -218,7 +163,7 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 attribute_sequence fetch_attributes_for_die(const die& d) {
     ZoneScoped;
 
-    auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
+    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{ macho_reader_mode::odrv_reporting });
 
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
     assert(die._tag == d._tag);
@@ -376,7 +321,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
             freader input(_input_path);
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       callbacks{register_dies});
+                       macho_params{macho_reader_mode::register_dies});
         });
     }
 
@@ -421,6 +366,69 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
 
     return result;
 }
+
+/**************************************************************************************************/
+
+namespace orc {
+
+/**************************************************************************************************/
+
+void register_dies(dies die_vector) {
+    ZoneScoped;
+
+    globals::instance()._die_processed_count += die_vector.size();
+
+    // pre-process the vector of dies by partitioning them into those that are skippable and those
+    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
+    // cause a reallocation and copying of only the necessary dies into a vector whose memory
+    // consumption is exactly what's needed.
+
+    auto unskipped_end =
+        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
+
+    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
+
+    die_vector.erase(unskipped_end, die_vector.end());
+    die_vector.shrink_to_fit();
+
+    // This is a list so the die vectors don't move about. The dies become pretty entangled as they
+    // point to one another by reference, and the odr_map itself stores const pointers to the dies
+    // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
+    // pointers we use will stay valid for the lifetime of the application.
+    dies& dies = *with_global_die_collection([&](auto& collection) {
+        collection.push_back(std::move(die_vector));
+        return --collection.end();
+    });
+
+    for (auto& d : dies) {
+        assert(!d._skippable);
+
+        //
+        // At this point we know we're going to register the die. Hereafter belongs
+        // work exclusive to DIEs getting registered/odr-enforced.
+        //
+
+        auto result = global_die_map().insert(std::make_pair(d._hash, &d));
+        if (result.second) {
+            ++globals::instance()._unique_symbol_count;
+            continue;
+        }
+
+        constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
+        static std::mutex mutexes_s[mutex_count_k];
+        std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
+
+        die& d_in_map = *result.first->second;
+        d._next_die = d_in_map._next_die;
+        d_in_map._next_die = &d;
+    }
+
+    globals::instance()._die_skipped_count += skip_count;
+}
+
+/**************************************************************************************************/
+
+} // namespace orc
 
 /**************************************************************************************************/
 

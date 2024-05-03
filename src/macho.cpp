@@ -42,14 +42,12 @@ struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
                  freader&& s,
                  file_details&& details,
-                 callbacks&& callbacks)
-        : _register_die_mode(static_cast<bool>(callbacks._register_die)),
-          _derive_dylib_mode(static_cast<bool>(callbacks._derived_dependency)),
-          _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
-          _derived_dependency(std::move(callbacks._derived_dependency)),
-          _dwarf(ofd_index, copy(_s), copy(_details), std::move(callbacks._register_die)) {
-        if (_register_die_mode && _derive_dylib_mode) {
-            cerr_safe([&](auto& s) { s << "Only one of die or dylib scanning is allowed.\n"; });
+                 macho_params&& params)
+        : _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
+          _params(std::move(params)),
+          _dwarf(ofd_index, copy(_s), copy(_details)) {
+        if (params._mode == macho_reader_mode::invalid) {
+            cerr_safe([&](auto& s) { s << "Invalid reader mode.\n"; });
             std::terminate();
         }
         populate_dwarf();
@@ -62,10 +60,11 @@ struct macho_reader {
         return std::move(_dwarf);
     }
 
-    void derive_dependencies();
+    bool register_dies_mode() const { return _params._mode == macho_reader_mode::register_dies; }
+    bool derive_dylibs_mode() const { return _params._mode == macho_reader_mode::derive_dylibs; }
+    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting; }
 
-    const bool _register_die_mode{false};
-    const bool _derive_dylib_mode{false};
+    void derive_dependencies();
 
 private:
     void populate_dwarf();
@@ -80,7 +79,7 @@ private:
     const std::uint32_t _ofd_index{0};
     freader _s;
     const file_details _details;
-    derived_dependency_callback _derived_dependency;
+    const macho_params _params;
     std::vector<std::string> _unresolved_dylibs;
     std::vector<std::string> _rpaths;
     struct dwarf _dwarf; // must be last
@@ -231,7 +230,7 @@ void macho_reader::read_stabs(std::uint32_t symbol_count, std::uint32_t string_o
         additional_object_files.push_back(std::move(path));
     }
 
-    _derived_dependency(std::move(additional_object_files));
+    _params._register_dependencies(std::move(additional_object_files));
 }
 
 void macho_reader::read_lc_symtab() {
@@ -260,28 +259,19 @@ void macho_reader::read_load_command() {
         return command;
     });
 
-    switch (command.cmd) {
-        case LC_SEGMENT_64: {
-            read_lc_segment_64();
-        } break;
-        case LC_LOAD_DYLIB: {
-            if (_derive_dylib_mode) {
-                read_lc_load_dylib();
-            }
-        } break;
-        case LC_RPATH: {
-            if (_derive_dylib_mode) {
-                read_lc_rpath();
-            }
-        } break;
-        case LC_SYMTAB: {
-            if (_derive_dylib_mode) {
-                read_lc_symtab();
-            }
-        } break;
-        default: {
-            _s.seekg(command.cmdsize, std::ios::cur);
-        } break;
+    if (derive_dylibs_mode()) {
+        switch (command.cmd) {
+            case LC_SEGMENT_64: { read_lc_segment_64(); } break;
+            case LC_LOAD_DYLIB: { read_lc_load_dylib(); } break;
+            case LC_RPATH: { read_lc_rpath(); } break;
+            case LC_SYMTAB: { read_lc_symtab(); } break;
+            default: { _s.seekg(command.cmdsize, std::ios::cur); } break;
+        }
+    } else {
+        switch (command.cmd) {
+            case LC_SEGMENT_64: { read_lc_segment_64(); } break;
+            default: { _s.seekg(command.cmdsize, std::ios::cur); } break;
+        }
     }
 }
 
@@ -329,11 +319,11 @@ void macho_reader::derive_dependencies() {
     // If so, that means we'll need to track the originating file and use it as
     // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
 
-#warning `executable_path` somehow needs to make its way from `macho_derive_dylibs` to here.
-
-    std::filesystem::path executable_path =
+    const std::filesystem::path loader_path =
         object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
-    std::filesystem::path loader_path = executable_path;
+
+#warning `executable_path` somehow needs to make its way from `macho_derive_dylibs` to here.
+    const std::filesystem::path executable_path = loader_path;
 
     std::vector<std::filesystem::path> resolved_dylibs;
     for (const auto& raw_dylib : _unresolved_dylibs) {
@@ -343,7 +333,7 @@ void macho_reader::derive_dependencies() {
     }
 
     // Send these back to the main engine for ODR scanning processing.
-    _derived_dependency(std::move(resolved_dylibs));
+    _params._register_dependencies(std::move(resolved_dylibs));
 }
 
 /**************************************************************************************************/
@@ -393,17 +383,17 @@ void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
-                callbacks callbacks) {
+                macho_params params) {
     orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s), _details = std::move(details),
-                  _callbacks = callbacks]() mutable {
+                  _params = std::move(params)]() mutable {
         std::uint32_t ofd_index =
             static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
-        macho_reader macho(ofd_index, std::move(_s), std::move(_details), copy(_callbacks));
+        macho_reader macho(ofd_index, std::move(_s), std::move(_details), std::move(_params));
 
-        if (macho._register_die_mode) {
+        if (macho.register_dies_mode()) {
             ++globals::instance()._object_file_count;
             macho.dwarf().process_all_dies();
-        } else if (macho._derive_dylib_mode) {
+        } else if (macho.derive_dylibs_mode()) {
             macho.derive_dependencies();
         } else {
             // If we're here, Something Bad has happened.
@@ -414,18 +404,13 @@ void read_macho(object_ancestry&& ancestry,
 
 /**************************************************************************************************/
 
-dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callback) {
+dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params) {
     const auto& entry = object_file_fetch(ofd_index);
     freader s(entry._ancestry.begin()->allocate_path());
 
     s.seekg(entry._details._offset);
 
-    callbacks callbacks{
-        std::move(callback),
-    };
-
-    return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(callbacks))
-        .dwarf();
+    return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(params)).dwarf();
 }
 
 /**************************************************************************************************/
@@ -483,15 +468,18 @@ void macho_derive_dylibs(const std::filesystem::path& executable_path,
     }
 
     freader input(executable_path);
-    callbacks callbacks = {register_dies_callback(), [&_mutex = mutex, &_result = result](
-                                                         std::vector<std::filesystem::path>&& p) {
-                               if (p.empty()) return;
-                               std::lock_guard<std::mutex> m(_mutex);
-                               move_append(_result, std::move(p));
-                           }};
+    macho_params params;
+    params._mode = macho_reader_mode::derive_dylibs;
+    params._executable_path = executable_path;
+    params._register_dependencies =
+        [&_mutex = mutex, &_result = result](std::vector<std::filesystem::path>&& p) {
+            if (p.empty()) return;
+            std::lock_guard<std::mutex> m(_mutex);
+            move_append(_result, std::move(p));
+        };
 
     parse_file(executable_path.string(), object_ancestry(), input, input.size(),
-               std::move(callbacks));
+               std::move(params));
 }
 
 /**************************************************************************************************/

@@ -454,7 +454,7 @@ void run_battery_test(const std::filesystem::path& home) {
     auto object_files = compile_compilation_units(home, settings, compilation_units);
 
     orc_reset();
-    auto reports = orc_process(object_files);
+    auto reports = orc_process(std::move(object_files));
 
     console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
 

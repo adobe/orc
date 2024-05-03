@@ -322,12 +322,9 @@ void macho_reader::derive_dependencies() {
     const std::filesystem::path loader_path =
         object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
 
-#warning `executable_path` somehow needs to make its way from `macho_derive_dylibs` to here.
-    const std::filesystem::path executable_path = loader_path;
-
     std::vector<std::filesystem::path> resolved_dylibs;
     for (const auto& raw_dylib : _unresolved_dylibs) {
-        auto resolved = resolve_dylib(raw_dylib, executable_path, loader_path, _rpaths);
+        auto resolved = resolve_dylib(raw_dylib, _params._executable_path, loader_path, _rpaths);
         if (!resolved) continue;
         resolved_dylibs.emplace_back(std::move(*resolved));
     }
@@ -470,7 +467,7 @@ void macho_derive_dylibs(const std::filesystem::path& executable_path,
     freader input(executable_path);
     macho_params params;
     params._mode = macho_reader_mode::derive_dylibs;
-    params._executable_path = executable_path;
+    params._executable_path = executable_path.parent_path();
     params._register_dependencies =
         [&_mutex = mutex, &_result = result](std::vector<std::filesystem::path>&& p) {
             if (p.empty()) return;

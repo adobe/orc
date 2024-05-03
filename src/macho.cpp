@@ -44,8 +44,7 @@ struct macho_reader {
                  file_details&& details,
                  macho_params&& params)
         : _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
-          _params(std::move(params)),
-          _dwarf(ofd_index, copy(_s), copy(_details)) {
+          _params(std::move(params)), _dwarf(ofd_index, copy(_s), copy(_details)) {
         if (params._mode == macho_reader_mode::invalid) {
             cerr_safe([&](auto& s) { s << "Invalid reader mode.\n"; });
             std::terminate();
@@ -62,7 +61,8 @@ struct macho_reader {
 
     bool register_dies_mode() const { return _params._mode == macho_reader_mode::register_dies; }
     bool derive_dylibs_mode() const { return _params._mode == macho_reader_mode::derive_dylibs; }
-    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting; }
+    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting;
+    // }
 
     void derive_dependencies();
 
@@ -259,6 +259,7 @@ void macho_reader::read_load_command() {
         return command;
     });
 
+    // clang-format off
     if (derive_dylibs_mode()) {
         switch (command.cmd) {
             case LC_SEGMENT_64: { read_lc_segment_64(); } break;
@@ -273,6 +274,7 @@ void macho_reader::read_load_command() {
             default: { _s.seekg(command.cmdsize, std::ios::cur); } break;
         }
     }
+    // clang-format on
 }
 
 /**************************************************************************************************/
@@ -301,7 +303,11 @@ std::optional<std::filesystem::path> resolve_dylib(std::string raw_path,
             }
         }
 
-        cerr_safe([&](auto& s) { s << "Could not find dependent library: " + raw_path + "\n"; });
+        if (log_level_at_least(settings::log_level::verbose)) {
+            cerr_safe(
+                [&](auto& s) { s << "Could not find dependent library: " + raw_path + "\n"; });
+        }
+
         return std::nullopt;
     }
 
@@ -415,11 +421,15 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params) {
 namespace {
 
 /**************************************************************************************************/
-
+// Append `src` to the end of `dst` by destructively moving the items out of `src`.
+// Preconditions:
+//     - `dst` and `src` are not the same container.
+// Postconditions:
+//     - All elements in `src` will be moved-from.
+//     - `src` itself will still be valid, even if the elements within it are not.
 template <typename C>
 void move_append(C& dst, C&& src) {
     dst.insert(dst.end(), std::move_iterator(src.begin()), std::move_iterator(src.end()));
-    src.clear();
 }
 
 /**************************************************************************************************/
@@ -434,49 +444,92 @@ std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesyste
 }
 
 /**************************************************************************************************/
-// We have to assume that dependencies will circle back on themselves at some point, so we must have
-// a criteria to know when we are "done". The way we do this is to check the size of the file list
-// on every iteration. The moment the resulting list stops growing, we know we're done.
-#if 0
-std::vector<std::filesystem::path> recursive_dylib_scan(std::vector<std::filesystem::path>&& files) {
-    std::vector<std::filesystem::path> result = files;
-    std::vector<std::filesystem::path> last_pass = std::move(files);
-
-    while (true) {
-        last_pass = macho_derive_dylibs(last_pass);
-        const auto last_result_size = result.size();
-        move_append(result, copy(last_pass));
-        result = make_sorted_unique(std::move(result));
-        if (result.size() == last_result_size) break;
+// For an incoming `input_path`, this scans just that input and returns any dylibs it depends on.
+// It does not scan those dylibs for additional dependencies. It also does not include `input_path`
+// as one of the returned dependencies.
+std::vector<std::filesystem::path> derive_immediate_dylibs(
+    const std::filesystem::path& executable_path, const std::filesystem::path& input_path) {
+    // `input_path` is not `loader_path` because it points to the binary to be scanned.
+    // `loader_path` should be the directory that contains `input_path`.
+    if (!exists(input_path)) {
+        if (log_level_at_least(settings::log_level::verbose)) {
+            cerr_safe([&](auto& s) {
+                s << "verbose: file " << input_path.string() << " does not exist\n";
+            });
+        }
+        return std::vector<std::filesystem::path>();
     }
+
+    std::mutex result_mutex;
+    std::vector<std::filesystem::path> result;
+    freader input(input_path);
+    macho_params params;
+    params._mode = macho_reader_mode::derive_dylibs;
+    params._executable_path = executable_path;
+    params._register_dependencies = [&](std::vector<std::filesystem::path>&& p) {
+        if (p.empty()) return;
+        std::lock_guard<std::mutex> m(result_mutex);
+        move_append(result, std::move(p));
+    };
+
+    parse_file(input_path.string(), object_ancestry(), input, input.size(), std::move(params));
+
+    orc::block_on_work();
 
     return result;
 }
-#endif
-/**************************************************************************************************/
 
-void macho_derive_dylibs(const std::filesystem::path& executable_path,
-                         std::mutex& mutex,
-                         std::vector<std::filesystem::path>& result) {
-    if (!exists(executable_path)) {
-        cerr_safe(
-            [&](auto& s) { s << "file " << executable_path.string() << " does not exist\n"; });
-        return;
+/**************************************************************************************************/
+// We have to assume that dependencies will circle back on themselves at some point, so we must have
+// a criteria to know when we are "done". The way we do this is to check the size of the file list
+// on every iteration. The moment the resulting list stops growing, we know we're done.
+std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path& binary) {
+    const auto executable_path = binary.parent_path();
+    std::vector<std::filesystem::path> result;
+    std::vector<std::filesystem::path> last_pass = derive_immediate_dylibs(executable_path, binary);
+    auto prev_result_size = result.size();
+
+    if (log_level_at_least(settings::log_level::info)) {
+        cout_safe([&](auto& s) {
+            s << "info: scanning for dependencies of " << binary.filename() << "\n";
+        });
     }
 
-    freader input(executable_path);
-    macho_params params;
-    params._mode = macho_reader_mode::derive_dylibs;
-    params._executable_path = executable_path.parent_path();
-    params._register_dependencies =
-        [&_mutex = mutex, &_result = result](std::vector<std::filesystem::path>&& p) {
-            if (p.empty()) return;
-            std::lock_guard<std::mutex> m(_mutex);
-            move_append(_result, std::move(p));
-        };
+    while (true) {
+        // store a copy of last_pass in the result and get the new size.
+        move_append(result, copy(last_pass));
+        result = make_sorted_unique(std::move(result));
 
-    parse_file(executable_path.string(), object_ancestry(), input, input.size(),
-               std::move(params));
+        // If the size of the result hasn't changed with the appending
+        // of the latest set of derived dependencies, then we know we
+        // have found all of them, and can stop.
+        const auto cur_result_size = result.size();
+        if (cur_result_size == prev_result_size) break;
+
+        if (log_level_at_least(settings::log_level::info)) {
+            cout_safe([&](auto& s) {
+                const auto count = cur_result_size - prev_result_size;
+                s << "info: found " << count << " more dependencies...\n";
+            });
+        }
+
+        prev_result_size = cur_result_size;
+
+        // Otherwise, gather a new set of dependencies from those in last_pass
+        // and set them to `last_pass` for the next round.
+        std::vector<std::filesystem::path> next_pass;
+        for (const auto& dependency : last_pass) {
+            move_append(next_pass, derive_immediate_dylibs(executable_path, dependency));
+        }
+        last_pass = make_sorted_unique(std::move(next_pass));
+    }
+
+    if (log_level_at_least(settings::log_level::info)) {
+        cout_safe(
+            [&](auto& s) { s << "info: found " << result.size() << " total dependencies\n"; });
+    }
+
+    return result;
 }
 
 /**************************************************************************************************/
@@ -486,15 +539,19 @@ void macho_derive_dylibs(const std::filesystem::path& executable_path,
 /**************************************************************************************************/
 
 std::vector<std::filesystem::path> macho_derive_dylibs(
-    const std::vector<std::filesystem::path>& root_binaries) {
-    std::mutex result_mutex;
-    std::vector<std::filesystem::path> result = root_binaries;
+    const std::vector<std::filesystem::path>& binaries) {
+    std::vector<std::filesystem::path> result = binaries;
 
-    for (const auto& input_path : root_binaries) {
-        macho_derive_dylibs(input_path, result_mutex, result);
+    // For the purpose of the executable_path/loader_path relationships, we treat each binary
+    // as independent of the others. That is, each root binary will be the `executable_path` for
+    // its tree of dependencies.
+    //
+    // Then, yes, we smash them all together and treat them as one large binary with all its
+    // dependencies. Otherwise we'd have to add a way to conduct multiple ORC scans per session,
+    // which the app is not set up to do. We did warn the user we would do this, though.
+    for (const auto& binary : binaries) {
+        move_append(result, derive_all_dylibs(binary));
     }
-
-    orc::block_on_work();
 
     return make_sorted_unique(std::move(result));
 }

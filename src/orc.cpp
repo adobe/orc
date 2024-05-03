@@ -163,7 +163,7 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 attribute_sequence fetch_attributes_for_die(const die& d) {
     ZoneScoped;
 
-    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{ macho_reader_mode::odrv_reporting });
+    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
 
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
     assert(die._tag == d._tag);
@@ -313,8 +313,11 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
     for (const auto& input_path : file_list) {
         orc::do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
-                cerr_safe(
-                    [&](auto& s) { s << "file " << _input_path.string() << " does not exist\n"; });
+                if (log_level_at_least(settings::log_level::verbose)) {
+                    cerr_safe([&](auto& s) {
+                        s << "file " << _input_path.string() << " does not exist\n";
+                    });
+                }
                 return;
             }
 

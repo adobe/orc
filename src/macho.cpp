@@ -321,9 +321,6 @@ void macho_reader::derive_dependencies() {
     // `@executable_path` resolves to the path of the directory containing the executable.
     // `@loader_path` resolves to the path of the client doing the loading.
     // For executables, `@loader_path` and `@executable_path` mean the same thing.
-    // TODO: (fosterbrereton) We're going to have to nest this search, aren't we?
-    // If so, that means we'll need to track the originating file and use it as
-    // `executable_path`, and then `loader_path` will follow wherever the nesting goes.
 
     const std::filesystem::path loader_path =
         object_file_ancestry(_ofd_index)._ancestors[0].allocate_path().parent_path();
@@ -335,7 +332,7 @@ void macho_reader::derive_dependencies() {
         resolved_dylibs.emplace_back(std::move(*resolved));
     }
 
-    // Send these back to the main engine for ODR scanning processing.
+    // Send these new-found dependencies to the main engine for ODR scanning.
     _params._register_dependencies(std::move(resolved_dylibs));
 }
 

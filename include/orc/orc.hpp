@@ -25,8 +25,10 @@ struct odrv_report {
     std::string category() const;
 
     struct conflict_details {
-        const die* _die{nullptr};
+        dw::tag _tag{dw::tag::none};
         attribute_sequence _attributes;
+        std::vector<std::string> _locations;
+        std::size_t _count{0}; // may be different than _locations.size()
     };
 
     const auto& conflict_map() const { return _conflict_map; }

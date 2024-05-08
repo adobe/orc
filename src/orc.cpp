@@ -342,14 +342,25 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
 
     // Construct a map of unique definitions of the conflicting symbol.
 
-    if (_conflict_map.empty()) {
-        for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
-            std::size_t hash = next_die->_fatal_attribute_hash;
-            if (_conflict_map.count(hash)) continue;
-            conflict_details details;
-            details._die = next_die;
-            details._attributes = fetch_attributes_for_die(*details._die);
-            _conflict_map[hash] = std::move(details);
+    for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
+        const std::size_t hash = next_die->_fatal_attribute_hash;
+        const bool new_conflict = _conflict_map.count(hash) == 0;
+        auto& conflict = _conflict_map[hash];
+        auto attributes = fetch_attributes_for_die(*next_die);
+
+        ++conflict._count;
+
+        if (const auto location = derive_definition_location(attributes)) {
+            std::stringstream ss;
+            ss << object_file_ancestry(next_die->_ofd_index) << " (" << std::move(*location) << ")";
+            conflict._locations.emplace_back(std::move(ss).str());
+        }
+
+        if (new_conflict) {
+            // The fatal attribute hash should be the same for all instances
+            // of this `conflict`, so we only need to set its attributes once.
+            conflict._attributes = std::move(attributes);
+            conflict._tag = next_die->_tag;
         }
     }
 
@@ -365,11 +376,12 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
 /**************************************************************************************************/
 
 std::string odrv_report::category() const {
-    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") +
+    return to_string(_conflict_map.begin()->second._tag) + std::string(":") +
            to_string(_name);
 }
 
 /**************************************************************************************************/
+
 bool filter_report(const odrv_report& report) {
     std::string odrv_category = report.category();
 
@@ -399,7 +411,18 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : report.conflict_map()) {
-        s << (*entry.second._die) << entry.second._attributes << '\n';
+        const auto& conflict = entry.second;
+        auto locations = conflict._locations;
+        std::sort(locations.begin(), locations.end());
+        const auto new_end = std::unique(locations.begin(), locations.end());
+        locations.erase(new_end, locations.end());
+
+        s << conflict._attributes;
+        s << "    locations (" << conflict._count << "):\n";
+        for (const auto& loc : locations) {
+            s << "            " << loc << '\n';
+        }
+        s << '\n';
     }
     s << "\n";
 

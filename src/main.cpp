@@ -520,16 +520,16 @@ int main(int argc, char** argv) try {
     std::vector<odrv_report> violations;
 
     for (const auto& report : reports) {
-        if (filter_report(report)) {
-            violations.push_back(report);
+        if (!filter_report(report)) continue;
 
-            // Administrivia
-            ++globals::instance()._odrv_count;
+        violations.push_back(report);
 
-            if (settings::instance()._max_violation_count > 0 &&
-                globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-                throw std::runtime_error("ODRV limit reached");
-            }
+        // Administrivia
+        ++globals::instance()._odrv_count;
+
+        if (settings::instance()._max_violation_count > 0 &&
+            globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
+            throw std::runtime_error("ODRV limit reached");
         }
     }
     assert(globals::instance()._odrv_count == violations.size());

@@ -10,6 +10,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -249,6 +250,8 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
+
+std::optional<std::string> derive_definition_location(const attribute_sequence& x);
 
 /**************************************************************************************************/
 

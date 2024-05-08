@@ -94,21 +94,31 @@ std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute& x) {
-    return s << "        " << to_string(x._name) << ": " << x._value;
+    return s << "    " << to_string(x._name) << ": " << x._value;
+}
+
+/**************************************************************************************************/
+
+std::optional<std::string> derive_definition_location(const attribute_sequence& x) {
+    if (!x.has_string(dw::at::decl_file)) {
+        return std::nullopt;
+    }
+
+    std::string result = x.string(dw::at::decl_file).allocate_string();
+
+    if (x.has_uint(dw::at::decl_line)) {
+        result += ":" + std::to_string(x.uint(dw::at::decl_line));
+    }
+
+    return result;
 }
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
-    if (x.has_string(dw::at::decl_file)) {
-        s << "        definition location: " << x.string(dw::at::decl_file);
-
-        if (x.has_uint(dw::at::decl_line)) {
-            s << ":" + std::to_string(x.uint(dw::at::decl_line));
-        }
-
-        s << '\n';
-    }
+    // if (const auto location = derive_definition_location(x)) {
+    //     s << "        definition location: " << *location << '\n';
+    // }
 
     for (const auto& attr : x) {
         if (attr._name == dw::at::decl_file) continue;
@@ -136,7 +146,7 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x) {
 }
 
 /**************************************************************************************************/
-
+#if 0
 std::ostream& operator<<(std::ostream& s, const die& x) {
     s << "    within: " << object_file_ancestry(x._ofd_index) << ":\n";
 
@@ -147,7 +157,7 @@ std::ostream& operator<<(std::ostream& s, const die& x) {
 
     return s;
 }
-
+#endif
 /**************************************************************************************************/
 
 bool nonfatal_attribute(dw::at at) {

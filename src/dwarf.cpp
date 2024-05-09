@@ -342,7 +342,7 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
     // We only hash the attributes that could contribute to an ODRV. We also sort that set of
     // attributes by name to make sure the hashing is consistent regardless of attribute order.
     constexpr const std::size_t max_names_k{32};
-    std::array<dw::at, max_names_k> names;
+    std::array<dw::at, max_names_k> names{dw::at::none};
     std::size_t count{0};
 
     for (const auto& attr : attributes) {
@@ -356,14 +356,16 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
 
     std::size_t h{0};
 
-    std::for_each_n(&names[0], count, [&](const auto& name) {
+    for (std::size_t i{0}; i < count; ++i) {
         // If this assert fires, it means an attribute's value was passed over during evaluation,
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
+        const auto name = names[i];
         const auto& attribute = attributes.get(name);
         assert(!attributes.has(name, attribute_value::type::passover));
-        h = orc::hash_combine(h, attribute._value.hash());
-    });
+        const auto attribute_hash = attribute._value.hash();
+        h = orc::hash_combine(h, attribute_hash);
+    }
 
     return h;
 }

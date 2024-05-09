@@ -67,41 +67,59 @@ std::string_view path_to_symbol(std::string_view path) {
 }
 
 /**************************************************************************************************/
+
 bool type_equivalent(const attribute& x, const attribute& y);
-dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
+
+bool attributes_conflict(dw::at name, const attribute& x, const attribute& y) {
+    if (name == dw::at::type && type_equivalent(x, y)) {
+        return false;
+    }
+
+    return x != y;
+}
+
+std::vector<dw::at> fatal_attribute_names(const attribute_sequence& x) {
+    std::vector<dw::at> result;
+    for (const auto& entry : x) {
+        if (nonfatal_attribute(entry._name)) continue;
+        result.push_back(entry._name);
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
     ZoneScoped;
 
-    auto yfirst = y.begin();
-    auto ylast = y.end();
+    const auto x_names = fatal_attribute_names(x);
+    const auto y_names = fatal_attribute_names(y);
 
-    for (const auto& xattr : x) {
-        auto name = xattr._name;
-        if (nonfatal_attribute(name)) continue;
+    std::vector<dw::at> result;
+    std::vector<dw::at> intersection;
 
-        auto yfound = std::find_if(yfirst, ylast, [&](auto& x) { return name == x._name; });
-        if (yfound == ylast) return name;
+    std::set_symmetric_difference(x_names.begin(), x_names.end(),
+                                  y_names.begin(), y_names.end(),
+                                  std::back_inserter(result));
 
-        const auto& yattr = *yfound;
+    std::set_intersection(x_names.begin(), x_names.end(),
+                          y_names.begin(), y_names.end(),
+                          std::back_inserter(intersection));
 
-        if (name == dw::at::type && type_equivalent(xattr, yattr))
-            continue;
-        else if (xattr == yattr)
-            continue;
+    const auto xf = x.begin();
+    const auto xl = x.end();
+    const auto yf = y.begin();
+    const auto yl = y.end();
 
-        return name;
+    for (const auto name : intersection) {
+        auto xfound = std::find_if(xf, xl, [&](auto& x) { return name == x._name; });
+        auto yfound = std::find_if(yf, yl, [&](auto& y) { return name == y._name; });
+        assert(xfound != xl);
+        assert(yfound != yl);
+        if (!attributes_conflict(name, *xfound, *yfound)) continue;
+        result.push_back(name);
     }
 
-    // Find and flag any nonfatal attributes that exist in y but not in x
-    const auto xfirst = x.begin();
-    const auto xlast = x.end();
-    for (; yfirst != ylast; ++yfirst) {
-        const auto& name = yfirst->_name;
-        if (nonfatal_attribute(name)) continue;
-        auto xfound = std::find_if(xfirst, xlast, [&](auto& x) { return name == x._name; });
-        if (xfound == xlast) return name;
-    }
-
-    return dw::at::none; // they're "the same"
+    return result;
 }
 
 /**************************************************************************************************/
@@ -110,14 +128,12 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
 
-    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference) &&
-        x.reference() == y.reference()) {
-        return true;
+    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string)) {
+        return x.string_hash() == y.string_hash();
     }
 
-    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string) &&
-        x.string_hash() == y.string_hash()) {
-        return true;
+    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference)) {
+        return x.reference() == y.reference();
     }
 
     // Type mismatch.
@@ -352,8 +368,8 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
 
         if (const auto location = derive_definition_location(attributes)) {
             std::stringstream ss;
-            ss << object_file_ancestry(next_die->_ofd_index) << " (" << std::move(*location) << ")";
-            conflict._locations.emplace_back(std::move(ss).str());
+            ss << object_file_ancestry(next_die->_ofd_index);
+            conflict._locations[*location].emplace_back(std::move(ss).str());
         }
 
         if (new_conflict) {
@@ -366,61 +382,142 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
 
     assert(_conflict_map.size() > 1);
 
-    // Derive the ODRV category.
+    // Derive the ODRV categories.
+    const auto conflict_first = _conflict_map.begin();
+    const auto conflict_last = _conflict_map.end();
 
-    auto& front = _conflict_map.begin()->second;
-    auto& back = (--_conflict_map.end())->second;
-    _name = find_attribute_conflict(front._attributes, back._attributes);
+    for (auto x = conflict_first; x != conflict_last; ++x) {
+        for (auto y = std::next(x); y != conflict_last; ++y) {
+            auto conflicts = find_attribute_conflict(x->second._attributes, y->second._attributes);
+            _conflicting_attributes.insert(_conflicting_attributes.end(), conflicts.begin(), conflicts.end());
+        }
+    }
+
+    sort_unique(_conflicting_attributes);
 }
 
 /**************************************************************************************************/
 
-std::string odrv_report::category() const {
+bool should_report_category(const std::string& category) {
+    auto& settings = settings::instance();
+
+    if (!settings._violation_ignore.empty()) {
+        // Report everything except the stuff on the ignore list (denylist)
+        return !sorted_has(settings._violation_ignore, category);
+    } else if (!settings._violation_report.empty()) {
+        // Report nothing except the the stuff on the report list (allowlist)
+        return sorted_has(settings._violation_report, category);
+    }
+
+    return true;
+}
+
+/**************************************************************************************************/
+
+std::string odrv_report::filtered_categories() const {
+    std::string result;
+    bool first = true;
+
+    for (std::size_t i = 0; i < category_count(); ++i) {
+        auto c = category(i);
+        if (should_report_category(c)) continue;
+
+        if (first) {
+            first = false;
+        } else {
+            result += ", ";
+        }
+
+        result += std::move(c);
+    }
+
+    return result;
+}
+
+/**************************************************************************************************/
+
+std::string odrv_report::reporting_categories() const {
+    std::string result;
+    bool first = true;
+
+    for (std::size_t i = 0; i < category_count(); ++i) {
+        auto c = category(i);
+        if (!should_report_category(c)) continue;
+
+        if (first) {
+            first = false;
+        } else {
+            result += ", ";
+        }
+
+        result += std::move(c);
+    }
+
+    return result;
+}
+
+/**************************************************************************************************/
+
+std::string odrv_report::category(std::size_t n) const {
     return to_string(_conflict_map.begin()->second._tag) + std::string(":") +
-           to_string(_name);
+           (_conflicting_attributes.empty() ? "<none>" : to_string(_conflicting_attributes[n]));
 }
 
 /**************************************************************************************************/
 
 bool filter_report(const odrv_report& report) {
-    std::string odrv_category = report.category();
-
-    // Decide if we should report or ignore.
-
-    auto& settings = settings::instance();
-    bool do_report{true};
-
-    if (!settings._violation_ignore.empty()) {
-        // Report everything except the stuff on the ignore list
-        do_report = !sorted_has(settings._violation_ignore, odrv_category);
-    } else if (!settings._violation_report.empty()) {
-        // Report nothing except the the stuff on the report list
-        do_report = sorted_has(settings._violation_report, odrv_category);
+    std::vector<std::string> categories;
+    for (std::size_t i = 0; i < report.category_count(); ++i) {
+        categories.push_back(report.category(i));
     }
 
-    return do_report;
-}
+    // The general rule here is that if any category is
+    // marked "report", we issue the ODRV report.
+    for (const auto& category : categories) {
+        if (should_report_category(category)) {
+            return true;
+        }
+    }
 
+    return false;
+}
 
 /**************************************************************************************************/
 
+template <class MapType>
+auto keys(const MapType& map) {
+    std::vector<typename MapType::key_type> result;
+    for (const auto& entry : map) {
+        result.emplace_back(entry.first);
+    }
+    return result;
+}
+
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    std::string odrv_category = report.category();
 
-    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+    s << problem_prefix() << ": ODRV (" << report.reporting_categories() << "); " << report.conflict_map().size() << " conflicts with `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     for (const auto& entry : report.conflict_map()) {
         const auto& conflict = entry.second;
-        auto locations = conflict._locations;
-        std::sort(locations.begin(), locations.end());
-        const auto new_end = std::unique(locations.begin(), locations.end());
-        locations.erase(new_end, locations.end());
+        const auto& locations = conflict._locations;
 
         s << conflict._attributes;
-        s << "    locations (" << conflict._count << "):\n";
-        for (const auto& loc : locations) {
-            s << "            " << loc << '\n';
+        s << "    locations:\n";
+        for (const auto& entry : keys(locations)) {
+            const auto& instances = locations.at(entry);
+            s << "        " << entry << "(" << instances.size() << "):\n";
+            s << "            ";
+            bool first = true;
+            for (const auto& instance : instances) {
+                if (first) {
+                    first = false;
+                } else {
+                    s << ", ";
+                }
+                s << instance;
+            }
+            s << '\n';
         }
         s << '\n';
     }

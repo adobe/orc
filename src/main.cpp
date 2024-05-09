@@ -518,9 +518,13 @@ int main(int argc, char** argv) try {
 
     std::vector<odrv_report> reports = orc_process(file_list);
     std::vector<odrv_report> violations;
+    std::vector<std::string> filtered_categories;
 
     for (const auto& report : reports) {
-        if (!filter_report(report)) continue;
+        if (!filter_report(report)) {
+            filtered_categories.push_back(report.filtered_categories());
+            continue;
+        }
 
         violations.push_back(report);
 
@@ -529,6 +533,8 @@ int main(int argc, char** argv) try {
 
         if (settings::instance()._max_violation_count > 0 &&
             globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
+            // TODO: (fosterbrereton) This doesn't look right. Throwing here will report
+            // nothing. Instead we should issue a warning and break from the loop.
             throw std::runtime_error("ODRV limit reached");
         }
     }
@@ -536,7 +542,19 @@ int main(int argc, char** argv) try {
 
     for (const auto& report : violations) {
         cout_safe([&](auto& s){
-            s << report;   // important to NOT add the '\n', because lots of reports are empty, and it creates a lot of blank lines
+            s << report; // important to NOT add the '\n' because lots of reports are empty and it creates a lot of blank lines
+        });
+    }
+
+    if (!filtered_categories.empty()) {
+        const auto count = filtered_categories.size();
+        sort_unique(filtered_categories);
+        cout_safe([&](auto& s){
+            s << "Filtered out " << count << " ODRVs in the following categories:\n";
+            for (const auto& category : filtered_categories) {
+                s << "    " << category << '\n';
+            }
+            s << "\n";
         });
     }
 

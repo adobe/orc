@@ -503,21 +503,10 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         const auto& locations = conflict._locations;
 
         s << conflict._attributes;
-        s << "    locations:\n";
+        s << "    symbol defintion location(s):\n";
         for (const auto& entry : keys(locations)) {
             const auto& instances = locations.at(entry);
-            s << "        " << entry << "(" << instances.size() << "):\n";
-            s << "            ";
-            bool first = true;
-            for (const auto& instance : instances) {
-                if (first) {
-                    first = false;
-                } else {
-                    s << ", ";
-                }
-                s << instance;
-            }
-            s << '\n';
+            s << "        " << entry << " (used by `" << instances.front() << "` and " << (instances.size() - 1) << " others)\n";
         }
         s << '\n';
     }

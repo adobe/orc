@@ -47,7 +47,7 @@ log_level = 'warning'
 #
 # The default value is `false`.
 
-standalone_mode = true
+standalone_mode = false
 
 # If defined, ORC will log output to the specified file. (Normal stream output 
 # is unaffected by the `output_file`.) 

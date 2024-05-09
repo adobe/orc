@@ -78,7 +78,7 @@ print_object_file_list = false
 #
 # The default value is `true`.
 
-parallel_processing = false
+parallel_processing = true
 
 # `resource_metrics`, when true, will cause ORC to emit various metrics regarding resource
 # (time, memory, etc.) consumption.

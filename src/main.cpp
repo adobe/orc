@@ -516,9 +516,10 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("ORC could not find files to process");
     }
 
-    std::vector<odrv_report> reports = orc_process(file_list);
+    std::vector<odrv_report> reports = orc_process(file_list); // `orc_process` sorts the reports
     std::vector<odrv_report> violations;
     std::vector<std::string> filtered_categories;
+    const auto max_odrv_count = settings::instance()._max_violation_count;
 
     for (const auto& report : reports) {
         if (!filter_report(report)) {
@@ -531,13 +532,16 @@ int main(int argc, char** argv) try {
         // Administrivia
         ++globals::instance()._odrv_count;
 
-        if (settings::instance()._max_violation_count > 0 &&
-            globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-            // TODO: (fosterbrereton) This doesn't look right. Throwing here will report
-            // nothing. Instead we should issue a warning and break from the loop.
-            throw std::runtime_error("ODRV limit reached");
+        if (max_odrv_count > 0 && globals::instance()._odrv_count >= max_odrv_count) {
+            if (log_level_at_least(settings::log_level::warning)) {
+                cout_safe([&](auto& s){
+                    s << "warning: ODRV limit reached\n";
+                });
+            }
+            break;
         }
     }
+
     assert(globals::instance()._odrv_count == violations.size());
 
     for (const auto& report : violations) {

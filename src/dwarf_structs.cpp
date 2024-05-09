@@ -116,10 +116,7 @@ std::optional<std::string> derive_definition_location(const attribute_sequence& 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
-    // if (const auto location = derive_definition_location(x)) {
-    //     s << "        definition location: " << *location << '\n';
-    // }
-
+    // file and line are covered by the `odrv_report`, so should be skipped here.
     for (const auto& attr : x) {
         if (attr._name == dw::at::decl_file) continue;
         if (attr._name == dw::at::decl_line) continue;
@@ -145,19 +142,6 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x) {
     return s;
 }
 
-/**************************************************************************************************/
-#if 0
-std::ostream& operator<<(std::ostream& s, const die& x) {
-    s << "    within: " << object_file_ancestry(x._ofd_index) << ":\n";
-
-    // Save for debugging so we can map what we find with dwarfdump output
-#if 0
-    s << "        debug_info offset: " << hex_print(x._debug_info_offset) << '\n';
-#endif
-
-    return s;
-}
-#endif
 /**************************************************************************************************/
 
 bool nonfatal_attribute(dw::at at) {

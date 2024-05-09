@@ -413,7 +413,7 @@ bool should_report_category(const std::string& category) {
 }
 
 /**************************************************************************************************/
-
+// Returns a comma-separated serialization of categories NOT considered when determining an ODRV.
 std::string odrv_report::filtered_categories() const {
     std::string result;
     bool first = true;
@@ -435,7 +435,7 @@ std::string odrv_report::filtered_categories() const {
 }
 
 /**************************************************************************************************/
-
+// Returns a comma-separated serialization of categories considered when determining an ODRV.
 std::string odrv_report::reporting_categories() const {
     std::string result;
     bool first = true;
@@ -457,14 +457,15 @@ std::string odrv_report::reporting_categories() const {
 }
 
 /**************************************************************************************************/
-
+// Generates a category "slug" based on this symbol's kind + the category (e.g. member:type).
 std::string odrv_report::category(std::size_t n) const {
     return to_string(_conflict_map.begin()->second._tag) + std::string(":") +
            (_conflicting_attributes.empty() ? "<none>" : to_string(_conflicting_attributes[n]));
 }
 
 /**************************************************************************************************/
-
+// Here we have an ODRV report, but need to decide if the ODRV's categories are ones we should
+// report for, or if we should filter this ODRV out of the report.
 bool filter_report(const odrv_report& report) {
     std::vector<std::string> categories;
     for (std::size_t i = 0; i < report.category_count(); ++i) {
@@ -485,26 +486,30 @@ bool filter_report(const odrv_report& report) {
 /**************************************************************************************************/
 
 template <class MapType>
-auto keys(const MapType& map) {
+auto sorted_keys(const MapType& map) {
     std::vector<typename MapType::key_type> result;
     for (const auto& entry : map) {
         result.emplace_back(entry.first);
     }
+    std::sort(result.begin(), result.end());
     return result;
 }
+
+/**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
 
     s << problem_prefix() << ": ODRV (" << report.reporting_categories() << "); " << report.conflict_map().size() << " conflicts with `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
-    for (const auto& entry : report.conflict_map()) {
-        const auto& conflict = entry.second;
+    const auto& conflicts = report.conflict_map();
+    for (const auto& entry : sorted_keys(conflicts)) {
+        const auto& conflict = conflicts.at(entry);
         const auto& locations = conflict._locations;
 
         s << conflict._attributes;
         s << "    symbol defintion location(s):\n";
-        for (const auto& entry : keys(locations)) {
+        for (const auto& entry : sorted_keys(locations)) {
             const auto& instances = locations.at(entry);
             s << "        " << entry << " (used by `" << instances.front() << "` and " << (instances.size() - 1) << " others)\n";
         }

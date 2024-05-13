@@ -381,7 +381,7 @@ std::vector<expected_odrv> derive_expected_odrvs(const std::filesystem::path& ho
 /**************************************************************************************************/
 
 bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
-    if (odrv.category() != report.category()) {
+    if (odrv.category() != report.reporting_categories()) {
         return false;
     }
 
@@ -480,7 +480,7 @@ void run_battery_test(const std::filesystem::path& home) {
                 break;
             }
 
-            console() << "    Found expected ODRV: " << report.category() << "\n";
+            console() << "    Found expected ODRV: " << report.reporting_categories() << "\n";
         }
     }
 

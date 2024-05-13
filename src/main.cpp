@@ -522,7 +522,7 @@ int main(int argc, char** argv) try {
     const auto max_odrv_count = settings::instance()._max_violation_count;
 
     for (const auto& report : reports) {
-        if (!filter_report(report)) {
+        if (!emit_report(report)) {
             filtered_categories.push_back(report.filtered_categories());
             continue;
         }

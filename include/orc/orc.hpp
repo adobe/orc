@@ -50,8 +50,8 @@ private:
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);
 
-// Return `true` if an ODRV
-bool filter_report(const odrv_report& report);
+// Return `true` if the ODRV report is one we should emit
+bool emit_report(const odrv_report& report);
 
 /**************************************************************************************************/
 

@@ -463,18 +463,13 @@ std::string odrv_report::category(std::size_t n) const {
 }
 
 /**************************************************************************************************/
-// Here we have an ODRV report, but need to decide if the ODRV's categories are ones we should
-// report for, or if we should filter this ODRV out of the report.
-bool filter_report(const odrv_report& report) {
-    std::vector<std::string> categories;
-    for (std::size_t i = 0; i < report.category_count(); ++i) {
-        categories.push_back(report.category(i));
-    }
-
+// Given an ODRV report, we need to decide if the report's categories are ones we should
+// report for, or if we should filter this report out.
+bool emit_report(const odrv_report& report) {
     // The general rule here is that if any category is
     // marked "report", we issue the ODRV report.
-    for (const auto& category : categories) {
-        if (should_report_category(category)) {
+    for (std::size_t i = 0; i < report.category_count(); ++i) {
+        if (should_report_category(report.category(i))) {
             return true;
         }
     }
@@ -532,7 +527,7 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
         ++count;
     }
 
-    ZoneValue(count);
+    // ZoneValue(count);
 
     if (count == 1) return base;
 

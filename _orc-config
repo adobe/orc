@@ -106,7 +106,8 @@ resource_metrics = false
 violation_report = [
     'class:byte_size',
     'member:data_member_location',
-    'member:type',
+    'member:alignment',
+#     'member:type',
     'structure:byte_size',
     'subprogram:virtuality',
     'subprogram:vtable_elem_location'

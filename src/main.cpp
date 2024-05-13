@@ -11,8 +11,8 @@
 #include <filesystem>
 #include <fstream>
 #include <list>
-#include <numeric>
 #include <mutex>
+#include <numeric>
 #include <set>
 #include <thread>
 #include <unordered_map>
@@ -70,8 +70,7 @@ std::string exec(const char* cmd) {
     return result;
 }
 
-void open_output_file(const std::string& a, const std::string& b)
-{
+void open_output_file(const std::string& a, const std::string& b) {
     std::filesystem::path path(b);
     if (!a.empty()) {
         path = a + '.' + b;
@@ -82,7 +81,6 @@ void open_output_file(const std::string& a, const std::string& b)
 /**************************************************************************************************/
 
 void process_orc_config_file(const char* bin_path_string) {
-
     std::filesystem::path pwd(std::filesystem::current_path());
     std::filesystem::path bin_path(pwd / bin_path_string);
     std::filesystem::path config_path;
@@ -145,9 +143,8 @@ void process_orc_config_file(const char* bin_path_string) {
                 } else {
                     // not a known value. Switch to verbose!
                     app_settings._log_level = settings::log_level::verbose;
-                    cout_safe([&](auto& s){
-                        s << "warning: Unknown log level (using verbose)\n";
-                    });
+                    cout_safe(
+                        [&](auto& s) { s << "warning: Unknown log level (using verbose)\n"; });
                 }
             }
 
@@ -171,7 +168,7 @@ void process_orc_config_file(const char* bin_path_string) {
             if (!app_settings._violation_report.empty() &&
                 !app_settings._violation_ignore.empty()) {
                 if (log_level_at_least(settings::log_level::warning)) {
-                    cout_safe([&](auto& s){
+                    cout_safe([&](auto& s) {
                         s << "warning: Both `violation_report` and `violation_ignore` lists found\n";
                         s << "warning: `violation_report` will be ignored in favor of `violation_ignore`\n";
                     });
@@ -180,20 +177,16 @@ void process_orc_config_file(const char* bin_path_string) {
 
 
             if (log_level_at_least(settings::log_level::info)) {
-                cout_safe([&](auto& s){
-                   s << "info: ORC config file: " << config_path.string() << "\n";
+                cout_safe([&](auto& s) {
+                    s << "info: ORC config file: " << config_path.string() << "\n";
                 });
             }
         } catch (const toml::parse_error& err) {
-            cerr_safe([&](auto& s) {
-                s << "Parsing failed:\n" << err << "\n";
-            });
+            cerr_safe([&](auto& s) { s << "Parsing failed:\n" << err << "\n"; });
             throw std::runtime_error("configuration parsing error");
         }
     } else {
-        cerr_safe([&](auto& s){
-           s << "ORC config file: not found\n";
-        });
+        cerr_safe([&](auto& s) { s << "ORC config file: not found\n"; });
     }
 }
 
@@ -247,11 +240,10 @@ struct cmdline_results {
 /**************************************************************************************************/
 
 cmdline_results process_command_line(int argc, char** argv) {
-
     cmdline_results result;
 
     if (log_level_at_least(settings::log_level::verbose)) {
-        cout_safe([&](auto& s){
+        cout_safe([&](auto& s) {
             s << "verbose: arguments:\n";
             for (std::size_t i{0}; i < argc; ++i) {
                 s << "  " << argv[i] << '\n';
@@ -274,7 +266,7 @@ cmdline_results process_command_line(int argc, char** argv) {
             std::string_view arg = argv[i];
             if (arg == "-o" || arg == "--output") {
                 std::string filename(argv[++i]);
-                
+
                 if (!settings::instance()._relative_output_file.empty()) {
                     open_output_file(filename, settings::instance()._relative_output_file);
                 }
@@ -286,16 +278,13 @@ cmdline_results process_command_line(int argc, char** argv) {
                     if (filename.ends_with(".a")) {
                         result._libtool_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            cout_safe([&](auto& s){ 
-                                s << "verbose: mode: libtool (by filename)\n";
-                            });
+                            cout_safe(
+                                [&](auto& s) { s << "verbose: mode: libtool (by filename)\n"; });
                         }
                     } else {
                         result._ld_mode = true;
                         if (log_level_at_least(settings::log_level::verbose)) {
-                            cout_safe([&](auto& s){
-                                s << "verbose: mode: ld (by filename)\n";
-                            });
+                            cout_safe([&](auto& s) { s << "verbose: mode: ld (by filename)\n"; });
                         }
                     }
                 }
@@ -309,17 +298,13 @@ cmdline_results process_command_line(int argc, char** argv) {
                 result._libtool_mode = true;
                 assert(!result._ld_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    cout_safe([&](auto& s){
-                        s << "verbose: mode: libtool (static)\n";
-                    });
+                    cout_safe([&](auto& s) { s << "verbose: mode: libtool (static)\n"; });
                 }
             } else if (arg == "-target") {
                 result._ld_mode = true;
                 assert(!result._libtool_mode);
                 if (log_level_at_least(settings::log_level::verbose)) {
-                    cout_safe([&](auto& s){
-                        s << "verbose: mode: ld (target)\n";
-                    });
+                    cout_safe([&](auto& s) { s << "verbose: mode: ld (target)\n"; });
                 }
             } else if (arg == "-lc++") {
                 // ignore the C++ standard library
@@ -393,22 +378,24 @@ auto epilogue(bool exception) {
         const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0ull);
         const auto pool_wasted = string_pool_wasted();
         const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
-        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) * sizeof(die));
+        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) *
+                                        sizeof(die));
 
         cout_safe([&](auto& s) {
             s << "Resource metrics:\n"
               << "  String pool size / waste:\n";
 
             for (std::size_t i(0); i < string_pool_count_k; ++i) {
-                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i] << ") / "
-                  << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
+                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i]
+                  << ") / " << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
                   << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "\n";
             }
 
             s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
               << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
               << format_pct(total_pool_wasted, total_pool_size) << "\n";
-            s << "  die footprint: " << format_size(die_memory_footprint) << " (" << die_memory_footprint << ") \n";
+            s << "  die footprint: " << format_size(die_memory_footprint) << " ("
+              << die_memory_footprint << ") \n";
         });
     }
 
@@ -454,7 +441,7 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
         executable_path /= "libtool";
     } else {
         if (log_level_at_least(settings::log_level::warning)) {
-            cout_safe([&](auto& s){
+            cout_safe([&](auto& s) {
                 s << "warning: libtool/ld mode could not be derived; forwarding to linker disabled\n";
             });
         }
@@ -465,9 +452,8 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
     if (!exists(executable_path)) {
         throw std::runtime_error("Could not forward to linker: " + executable_path.string());
     } else if (log_level_at_least(settings::log_level::verbose)) {
-        cout_safe([&](auto& s){
-            s << "verbose: forwarding to " + executable_path.string() + "\n";
-        });
+        cout_safe(
+            [&](auto& s) { s << "verbose: forwarding to " + executable_path.string() + "\n"; });
     }
 
     std::string arguments = executable_path.string();
@@ -479,9 +465,7 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
     // REVISIT: (fbrereto) We may need to capture/forward stderr here as well.
     // Also, if the execution of the linker ended in a failure, we need to bubble
     // that up immediately, and preempt ORC processing.
-    cout_safe([&](auto& s){
-        s << exec(arguments.c_str());
-    });
+    cout_safe([&](auto& s) { s << exec(arguments.c_str()); });
 }
 
 /**************************************************************************************************/
@@ -502,9 +486,7 @@ int main(int argc, char** argv) try {
 
     if (settings::instance()._print_object_file_list) {
         for (const auto& input_path : file_list) {
-            cout_safe([&](auto& s){
-                s << input_path.string() << '\n';
-            });
+            cout_safe([&](auto& s) { s << input_path.string() << '\n'; });
         }
 
         return EXIT_SUCCESS;
@@ -534,9 +516,7 @@ int main(int argc, char** argv) try {
 
         if (max_odrv_count > 0 && globals::instance()._odrv_count >= max_odrv_count) {
             if (log_level_at_least(settings::log_level::warning)) {
-                cout_safe([&](auto& s){
-                    s << "warning: ODRV limit reached\n";
-                });
+                cout_safe([&](auto& s) { s << "warning: ODRV limit reached\n"; });
             }
             break;
         }
@@ -545,16 +525,17 @@ int main(int argc, char** argv) try {
     assert(globals::instance()._odrv_count == violations.size());
 
     for (const auto& report : violations) {
-        cout_safe([&](auto& s){
-            s << report; // important to NOT add the '\n' because lots of reports are empty and it creates a lot of blank lines
+        cout_safe([&](auto& s) {
+            s << report; // important to NOT add the '\n' because lots of reports are empty and it
+                         // creates a lot of blank lines
         });
     }
 
     if (!filtered_categories.empty()) {
         const auto count = filtered_categories.size();
         sort_unique(filtered_categories);
-        cout_safe([&](auto& s){
-            s << "Filtered out " << count << " ODRVs in the following categories:\n";
+        cout_safe([&](auto& s) {
+            s << "Filtered out " << count << " reports in the following categories:\n";
             for (const auto& category : filtered_categories) {
                 s << "    " << category << '\n';
             }
@@ -564,14 +545,10 @@ int main(int argc, char** argv) try {
 
     return epilogue(false);
 } catch (const std::exception& error) {
-    cerr_safe([&](auto& s) {
-        s << "Fatal error: " << error.what() << '\n';
-    });
+    cerr_safe([&](auto& s) { s << "Fatal error: " << error.what() << '\n'; });
     return epilogue(true);
 } catch (...) {
-    cerr_safe([&](auto& s) {
-        s << "Fatal error: unknown\n";
-    });
+    cerr_safe([&](auto& s) { s << "Fatal error: unknown\n"; });
     return epilogue(false);
 }
 

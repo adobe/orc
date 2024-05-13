@@ -78,9 +78,7 @@ file_details detect_file(freader& s) {
             } else if (cputype == CPU_TYPE_ARM64_32) {
                 result._arch = arch::arm64;
             } else {
-                cerr_safe([&](auto& s) {
-                    s << "WARN: Unknown Mach-O cputype\n";
-                });
+                cerr_safe([&](auto& s) { s << "WARN: Unknown Mach-O cputype\n"; });
             }
         }
 

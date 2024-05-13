@@ -38,7 +38,9 @@ namespace {
 
 /**************************************************************************************************/
 
-std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length())); }
+std::size_t string_view_hash(std::string_view s) {
+    return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length()));
+}
 
 /**************************************************************************************************/
 
@@ -103,9 +105,9 @@ struct pool {
 /**************************************************************************************************/
 
 #if ORC_FEATURE(PROFILE_POOL_MUTEXES)
-    using string_pool_mutex = LockableBase(std::mutex);
+using string_pool_mutex = LockableBase(std::mutex);
 #else
-    using string_pool_mutex = std::mutex;
+using string_pool_mutex = std::mutex;
 #endif // ORC_FEATURE(PROFILE_POOL_MUTEXES)
 
 /**************************************************************************************************/
@@ -121,10 +123,11 @@ auto& pool_mutex(std::size_t index) {
     // in place, which makes them very difficult to construct as a contiguous collection. So
     // we allocate them dynamically and collect their pointers as a contiguous sequence, then
     // index and dereference one of the pointers.
-    static string_pool_mutex** mutexes = []{
+    static string_pool_mutex** mutexes = [] {
         static std::vector<string_pool_mutex*> result;
         for (std::size_t i(0); i < string_pool_count_k; ++i) {
-            static constexpr tracy::SourceLocationData srcloc { nullptr, "pool_mutex", TracyFile, TracyLine, 0 };
+            static constexpr tracy::SourceLocationData srcloc{nullptr, "pool_mutex", TracyFile,
+                                                              TracyLine, 0};
             result.emplace_back(new string_pool_mutex(&srcloc));
         }
         return &result[0];
@@ -137,7 +140,7 @@ auto& pool_mutex(std::size_t index) {
 }
 
 auto& pool(std::size_t index) {
-    static struct pool* pools = []{
+    static struct pool* pools = [] {
         static struct pool result[string_pool_count_k];
 
 #if ORC_FEATURE(PROFILE_POOL_MEMORY)

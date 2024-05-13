@@ -88,19 +88,18 @@ std::vector<dw::at> fatal_attribute_names(const attribute_sequence& x) {
     return result;
 }
 
-std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
+std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x,
+                                            const attribute_sequence& y) {
     const auto x_names = fatal_attribute_names(x);
     const auto y_names = fatal_attribute_names(y);
 
     std::vector<dw::at> result;
     std::vector<dw::at> intersection;
 
-    std::set_symmetric_difference(x_names.begin(), x_names.end(),
-                                  y_names.begin(), y_names.end(),
+    std::set_symmetric_difference(x_names.begin(), x_names.end(), y_names.begin(), y_names.end(),
                                   std::back_inserter(result));
 
-    std::set_intersection(x_names.begin(), x_names.end(),
-                          y_names.begin(), y_names.end(),
+    std::set_intersection(x_names.begin(), x_names.end(), y_names.begin(), y_names.end(),
                           std::back_inserter(intersection));
 
     const auto xf = x.begin();
@@ -313,8 +312,9 @@ void do_work(std::function<void()> f) {
 
     system([_work_token = work().working(), _doit = std::move(doit)] {
 #if ORC_FEATURE(TRACY)
-        thread_local bool tracy_set_thread_name_k = []{
-            TracyCSetThreadName(orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
+        thread_local bool tracy_set_thread_name_k = [] {
+            TracyCSetThreadName(
+                orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
             return true;
         }();
         (void)tracy_set_thread_name_k;
@@ -388,7 +388,8 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     for (auto x = conflict_first; x != conflict_last; ++x) {
         for (auto y = std::next(x); y != conflict_last; ++y) {
             auto conflicts = find_attribute_conflict(x->second._attributes, y->second._attributes);
-            _conflicting_attributes.insert(_conflicting_attributes.end(), conflicts.begin(), conflicts.end());
+            _conflicting_attributes.insert(_conflicting_attributes.end(), conflicts.begin(),
+                                           conflicts.end());
         }
     }
 
@@ -494,7 +495,8 @@ auto sorted_keys(const MapType& map) {
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
 
-    s << problem_prefix() << ": ODRV (" << report.reporting_categories() << "); " << report.conflict_map().size() << " conflicts with `"
+    s << problem_prefix() << ": ODRV (" << report.reporting_categories() << "); "
+      << report.conflict_map().size() << " conflicts with `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
     const auto& conflicts = report.conflict_map();
     for (const auto& entry : sorted_keys(conflicts)) {
@@ -505,7 +507,8 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
         s << "    symbol defintion location(s):\n";
         for (const auto& entry : sorted_keys(locations)) {
             const auto& instances = locations.at(entry);
-            s << "        " << entry << " (used by `" << instances.front() << "` and " << (instances.size() - 1) << " others)\n";
+            s << "        " << entry << " (used by `" << instances.front() << "` and "
+              << (instances.size() - 1) << " others)\n";
         }
         s << '\n';
     }
@@ -574,8 +577,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     static TracyLockable(std::mutex, odrv_report_mutex);
     {
-    std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
-    results.push_back(report);
+        std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
+        results.push_back(report);
     }
 
     return dies.front();

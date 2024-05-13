@@ -11,8 +11,8 @@
 #include <filesystem>
 
 // application
-#include "orc/parse_file.hpp"
 #include "orc/object_file_registry.hpp"
+#include "orc/parse_file.hpp"
 
 /**************************************************************************************************/
 
@@ -143,7 +143,7 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x) {
             s << " -> ";
         }
 
-        s << ancestor.allocate_path().filename().string() ;
+        s << ancestor.allocate_path().filename().string();
     }
     return s;
 }

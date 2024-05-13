@@ -239,8 +239,7 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
 
     s.seekg(entry._details._offset);
 
-    return dwarf_from_macho(ofd_index, std::move(s), copy(entry._details),
-                            std::move(callback));
+    return dwarf_from_macho(ofd_index, std::move(s), copy(entry._details), std::move(callback));
 }
 
 /**************************************************************************************************/

@@ -1668,6 +1668,7 @@ void dwarf::implementation::process_all_dies() {
             die._ofd_index = _ofd_index;
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
+            die._location = derive_definition_location(attributes);
 
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             auto path_view = die._path.view();

@@ -350,6 +350,7 @@ struct die {
     std::uint32_t _ofd_index{0}; // object file descriptor index
     std::size_t _cu_die_address{0}; // address of associated compilation unit die entry
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
+    std::optional<location> _location; // file_decl and file_line, if they exit for the die.
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};

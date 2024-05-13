@@ -360,22 +360,22 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     // Each entry in `conflict_map` will be a collection of dies
     // whose fatal attribute hashes are all the same.
     for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
-        const std::size_t hash = next_die->_fatal_attribute_hash;
+        const die& die = *next_die;
+        const std::size_t hash = die._fatal_attribute_hash;
         const bool new_conflict = _conflict_map.count(hash) == 0;
         auto& conflict = _conflict_map[hash];
-        auto attributes = fetch_attributes_for_die(*next_die);
 
         ++conflict._count;
 
-        if (const auto location = derive_definition_location(attributes)) {
-            conflict._locations[*location].emplace_back(object_file_ancestry(next_die->_ofd_index));
+        if (die._location) {
+            conflict._locations[*die._location].emplace_back(object_file_ancestry(die._ofd_index));
         }
 
         if (new_conflict) {
             // The fatal attribute hash should be the same for all instances
             // of this `conflict`, so we only need to set its attributes once.
-            conflict._attributes = std::move(attributes);
-            conflict._tag = next_die->_tag;
+            conflict._attributes = fetch_attributes_for_die(die);
+            conflict._tag = die._tag;
         }
     }
 
@@ -536,9 +536,6 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     // Otherwise, we are reusing the same memory over again, saving
     // us time.
     thread_local std::vector<die*> dies;
-    if (count > dies.capacity()) {
-        TracyMessageL("reallocation");
-    }
     dies.resize(count, nullptr);
 
     // traverse the linked list and put its pointers into the vector

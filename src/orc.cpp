@@ -517,8 +517,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 /**************************************************************************************************/
 
 die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
-    // Not necessary given the slowdown from `odrv_report` constructor, below.
-    // ZoneScoped;
+    ZoneScoped;
 
     // pre-flight the vector allocation by counting the number of dies
     // we'll be storing in it.
@@ -527,7 +526,7 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
         ++count;
     }
 
-    // ZoneValue(count);
+    ZoneValue(count);
 
     if (count == 1) return base;
 
@@ -571,8 +570,6 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     dies[0]->_conflict = true;
 
-    // The vast majority of the time in this routine is spent in the `odrv_report` constructor.
-    // Like, >99%.
     odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
 
     static TracyLockable(std::mutex, odrv_report_mutex);
@@ -649,7 +646,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    TracyMessageL("orc_process: Sorting ODRV reports");
+    TracyMessageL("orc_process: Sorting & filtering ODRV reports");
 
     std::sort(result.begin(), result.end(),
               [](const odrv_report& a, const odrv_report& b) { return a._symbol < b._symbol; });

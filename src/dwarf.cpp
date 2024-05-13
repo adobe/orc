@@ -22,6 +22,10 @@
 
 /**************************************************************************************************/
 
+#define ORC_PRIVATE_FEATURE_PROFILE_DIE_DETAILS() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+
+/**************************************************************************************************/
+
 namespace {
 
 /**************************************************************************************************/
@@ -198,7 +202,9 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 /**************************************************************************************************/
 
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     // Ideally, tag would not be part of this hash and all symbols, regardless of tag, would be
     // unique. However, that fails in at least one case:
@@ -337,7 +343,9 @@ void line_header::read(freader& s, bool needs_byteswap) {
 /**************************************************************************************************/
 
 std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     // We only hash the attributes that could contribute to an ODRV. We also sort that set of
     // attributes by name to make sure the hashing is consistent regardless of attribute order.
@@ -521,7 +529,9 @@ void dwarf::implementation::register_section(const std::string& name,
 /**************************************************************************************************/
 
 void dwarf::implementation::read_abbreviations() {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     auto section_begin = _debug_abbrev._offset;
     auto section_end = section_begin + _debug_abbrev._size;
@@ -538,7 +548,9 @@ void dwarf::implementation::read_abbreviations() {
 /**************************************************************************************************/
 
 void dwarf::implementation::read_lines(std::size_t header_offset) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     temp_seek(_s, _debug_line._offset + header_offset, [&] {
         line_header header;
@@ -577,7 +589,9 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
 #define ORC_PRIVATE_FEATURE_DEBUG_STR_CACHE() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
 pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
 #if ORC_FEATURE(DEBUG_STR_CACHE)
     thread_local float hit_s(0);
@@ -635,7 +649,9 @@ void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
 std::string dwarf::implementation::qualified_symbol_name(
     const die& d, const attribute_sequence& attributes) const {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     // There are some attributes that contain the mangled name of the symbol.
     // This is a much better representation of the symbol than the derived path
@@ -1169,7 +1185,9 @@ attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::a
 
 attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     /*
         The values for `ref1`, `ref2`, `ref4`, and `ref8` are offsets from the first byte of
@@ -1339,7 +1357,9 @@ attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size
 /**************************************************************************************************/
 
 pool_string dwarf::implementation::resolve_type(attribute type) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     std::size_t reference = type.reference();
     auto found = _type_cache.find(reference);
@@ -1377,7 +1397,9 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
 /**************************************************************************************************/
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     die die;
     attribute_sequence attributes;
@@ -1442,14 +1464,18 @@ bool dwarf::implementation::register_sections_done() {
 /**************************************************************************************************/
 
 bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Red);
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     // These are a handful of "filters" we use to elide false positives.
 
     // These are the tags we don't deal with (yet, if ever.)
     if (skip_tagged_die(d)) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: tagged die");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
@@ -1457,40 +1483,52 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
     // flag means the function is invisible outside its compilation unit. As
     // such, it cannot contribute to an ODRV.
     if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: non-external subprogram");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
     // Empty path means the die (or an ancestor) is anonymous/unnamed. No need to register
     // them.
     if (d._path.empty()) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: empty path");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
     // Symbols with __ in them are reserved, so are not user-defined. No need to register
     // them.
     if (d._path.view().find("::__") != std::string::npos) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: non-user-defined (reserved) symbol");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
     // lambdas are ephemeral and can't cause (hopefully) an ODRV
     if (d._path.view().find("lambda") != std::string::npos) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: lambda");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
     // we don't handle any die that's ObjC-based.
     if (attributes.has(dw::at::apple_runtime_class)) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: apple runtime class");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
     // If the symbol is listed in the symbol_ignore list, we're done here.
     std::string_view symbol = d._path.view();
     if (symbol.size() > 7 && sorted_has(settings::instance()._symbol_ignore, symbol.substr(7))) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: on symbol_ignore list");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
 
@@ -1508,14 +1546,18 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
         });
 
         if (empty) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneTextL("skipping: self-referential type");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
             return true;
         }
     }
 
     // This makes the kept dies visually identifiable in the Tracy analyzer.
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     TracyMessageL("odr_used");
     ZoneColor(tracy::Color::ColorType::Green);
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
     return false;
 }
 
@@ -1562,7 +1604,9 @@ void dwarf::implementation::process_all_dies() {
 
         // process dies one at a time, recording things like addresses along the way.
         while (true) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneScopedN("process_one_die"); // name matters for stats tracking
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
             const std::size_t die_absolute_offset = _s.tellg();
             die die;
@@ -1580,10 +1624,10 @@ void dwarf::implementation::process_all_dies() {
 
             die._cu_die_address = _cu_die_address;
 
-#if ORC_FEATURE(TRACY)
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
             const char* tag_str = to_string(die._tag);
             ZoneNameL(tag_str);
-#endif // ORC_FEATURE(TRACY)
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
             // Useful for looking up symbols in dwarfdump output.
 #if ORC_FEATURE(DEBUG) && 0
@@ -1625,7 +1669,7 @@ void dwarf::implementation::process_all_dies() {
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
 
-#if ORC_FEATURE(TRACY)
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
             auto path_view = die._path.view();
             if (!path_view.empty()) {
                 ZoneText(path_view.data(), path_view.length());
@@ -1638,7 +1682,7 @@ void dwarf::implementation::process_all_dies() {
             ZoneTextL(msg);
             std::snprintf(msg, msg_sz_k, "%zu attribute(s)", attributes.size());
             ZoneTextL(msg);
-#endif // ORC_FEATURE(TRACY)
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
             dies.emplace_back(std::move(die));
         }
@@ -1701,7 +1745,9 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
 
 die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset,
                                               std::size_t cu_die_address) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
 

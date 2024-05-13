@@ -16,6 +16,7 @@
 
 // application
 #include "orc/dwarf_constants.hpp"
+#include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
 
 /**************************************************************************************************/
@@ -251,7 +252,33 @@ private:
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
-std::optional<std::string> derive_definition_location(const attribute_sequence& x);
+/**************************************************************************************************/
+
+struct location {
+    pool_string file;
+    std::uint64_t loc{0};
+};
+
+inline bool operator==(const location& x, const location& y) {
+    return x.file == y.file && x.loc == y.loc;
+}
+inline bool operator!=(const location& x, const location& y) {
+    return !(x == y);
+}
+inline bool operator<(const location& x, const location& y) {
+    return x.file.hash() < y.file.hash() || (x.file == y.file && x.loc < y.loc);
+}
+
+template <>
+struct std::hash<location> {
+    std::size_t operator()(const location& x) const {
+        return orc::hash_combine(x.file.hash(), x.loc);
+    }
+};
+
+std::ostream& operator<<(std::ostream&, const location&);
+
+std::optional<location> derive_definition_location(const attribute_sequence& x);
 
 /**************************************************************************************************/
 

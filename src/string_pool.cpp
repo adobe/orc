@@ -29,7 +29,8 @@
 /*static*/ std::string_view pool_string::default_view("");
 
 #define ORC_PRIVATE_FEATURE_PROFILE_POOL_MEMORY() (ORC_PRIVATE_FEATURE_TRACY() && 0)
-#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MUTEXES() (ORC_PRIVATE_FEATURE_TRACY() && 1)
+#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MUTEXES() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+#define ORC_PRIVATE_FEATURE_PROFILE_EMPOOL() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
 /**************************************************************************************************/
 
@@ -174,9 +175,11 @@ std::size_t pool_string::get_hash(const char* d) {
 }
 
 pool_string empool(std::string_view src) {
+#if ORC_FEATURE(PROFILE_EMPOOL)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Green); // cache hit
     ZoneText(src.data(), src.size());
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
@@ -207,7 +210,9 @@ pool_string empool(std::string_view src) {
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
     if (const char* c = find_key(h)) {
+#if ORC_FEATURE(PROFILE_EMPOOL)
         ZoneColor(tracy::Color::ColorType::Orange); // cache "half-hit"
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
         pool_string ps(c);
         assert(ps.view() == src);
@@ -220,7 +225,9 @@ pool_string empool(std::string_view src) {
     assert(ptr);
     keys.insert(std::make_pair(h, ptr));
 
+#if ORC_FEATURE(PROFILE_EMPOOL)
     ZoneColor(tracy::Color::ColorType::Red); // cache miss
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
     return pool_string(ptr);
 }

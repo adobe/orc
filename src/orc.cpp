@@ -89,8 +89,6 @@ std::vector<dw::at> fatal_attribute_names(const attribute_sequence& x) {
 }
 
 std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
-    ZoneScoped;
-
     const auto x_names = fatal_attribute_names(x);
     const auto y_names = fatal_attribute_names(y);
 
@@ -332,7 +330,8 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
-    ZoneScoped;
+    // Too verbose for larger projects, but keep around for debugging/smaller projects.
+    // ZoneScoped;
 
     auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
 
@@ -352,12 +351,14 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     : _symbol(symbol), _list_head(list_head) {
-    ZoneScoped;
+    // Too verbose for larger projects, but keep around for debugging/smaller projects.
+    // ZoneScoped;
 
     assert(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
-
+    // Each entry in `conflict_map` will be a collection of dies
+    // whose fatal attribute hashes are all the same.
     for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
         const std::size_t hash = next_die->_fatal_attribute_hash;
         const bool new_conflict = _conflict_map.count(hash) == 0;
@@ -367,9 +368,7 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
         ++conflict._count;
 
         if (const auto location = derive_definition_location(attributes)) {
-            std::stringstream ss;
-            ss << object_file_ancestry(next_die->_ofd_index);
-            conflict._locations[*location].emplace_back(std::move(ss).str());
+            conflict._locations[*location].emplace_back(object_file_ancestry(next_die->_ofd_index));
         }
 
         if (new_conflict) {
@@ -523,14 +522,39 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 /**************************************************************************************************/
 
 die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
-    ZoneScoped;
+    // Not necessary given the slowdown from `odrv_report` constructor, below.
+    // ZoneScoped;
 
-    std::vector<die*> dies;
+    // pre-flight the vector allocation by counting the number of dies
+    // we'll be storing in it.
+    std::size_t count = 0;
     for (die* ptr = base; ptr; ptr = ptr->_next_die) {
-        dies.push_back(ptr);
+        ++count;
     }
-    assert(!dies.empty());
-    if (dies.size() == 1) return base;
+
+    ZoneValue(count);
+
+    if (count == 1) return base;
+
+    // By making this thread_local and using `resize`, we are only
+    // reallocating the vector when the die count grows between runs;
+    // Otherwise, we are reusing the same memory over again, saving
+    // us time.
+    thread_local std::vector<die*> dies;
+    if (count > dies.capacity()) {
+        TracyMessageL("reallocation");
+    }
+    dies.resize(count, nullptr);
+
+    // traverse the linked list and put its pointers into the vector
+    // so we can sort them by file ancestry.
+    std::size_t i = 0;
+    for (die* ptr = base; ptr; ptr = ptr->_next_die) {
+        dies[i++] = ptr;
+    }
+
+    assert(dies.front() == base);
+    assert(dies.back() != nullptr);
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
@@ -544,6 +568,7 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
         // Re-link the die list to match the sorted order.
         dies[i - 1]->_next_die = dies[i];
 
+        // Check and see if we have any conflicts along the way.
         if (!conflict) {
             conflict = dies[i - 1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
         }
@@ -554,6 +579,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     dies[0]->_conflict = true;
 
+    // The vast majority of the time in this routine is spent in the `odrv_report` constructor.
+    // Like, >99%.
     odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
 
     static TracyLockable(std::mutex, odrv_report_mutex);
@@ -568,7 +595,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 /**************************************************************************************************/
 
 std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
-    // First stage: process all the DIEs
+    TracyMessageL("orc_process: process all DIEs");
+
     for (const auto& input_path : file_list) {
         do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -588,7 +616,8 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Second stage: review DIEs for ODRVs
+    TracyMessageL("orc_process: review DIEs for ODRVs");
+
     std::vector<odrv_report> result;
 
     // We now subdivide the work. We do so by looking at the total number of entries
@@ -608,6 +637,13 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     while (cur_work != work_size) {
         // All but the last chunk will be the same size.
         // The last one could be up to (chunk_count - 1) smaller.
+        //
+        // There's a chance to save some good time here, especially on larger scans.
+        // The subdivisions are equal in task size, but each task will not be the
+        // same amount of time. Thus, some workers will finish sooner than others-
+        // some by quite a bit (on the order of seconds for 10MM+ die scans.) It
+        // may be worth trying some kind of task-stealing, though I'm not quite
+        // sure what that would look like.
         const auto next_chunk_size = std::min(chunk_size, work_size - cur_work);
         const auto last = std::next(first, next_chunk_size);
         do_work([_first = first, _last = last, &result]() mutable {
@@ -621,7 +657,8 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     work().wait();
 
-    // Sort the ordrv_report
+    TracyMessageL("orc_process: Sorting ODRV reports");
+
     std::sort(result.begin(), result.end(),
               [](const odrv_report& a, const odrv_report& b) { return a._symbol < b._symbol; });
 

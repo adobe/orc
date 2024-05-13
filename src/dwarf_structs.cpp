@@ -99,15 +99,21 @@ std::ostream& operator<<(std::ostream& s, const attribute& x) {
 
 /**************************************************************************************************/
 
-std::optional<std::string> derive_definition_location(const attribute_sequence& x) {
+std::ostream& operator<<(std::ostream& s, const location& x) {
+    return s << "    " << x.file << ": " << x.loc;
+}
+
+std::optional<location> derive_definition_location(const attribute_sequence& x) {
     if (!x.has_string(dw::at::decl_file)) {
         return std::nullopt;
     }
 
-    std::string result = x.string(dw::at::decl_file).allocate_string();
+    location result;
+
+    result.file = x.string(dw::at::decl_file);
 
     if (x.has_uint(dw::at::decl_line)) {
-        result += ":" + std::to_string(x.uint(dw::at::decl_line));
+        result.loc = x.uint(dw::at::decl_line);
     }
 
     return result;

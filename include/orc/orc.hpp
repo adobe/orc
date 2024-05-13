@@ -27,8 +27,8 @@ struct odrv_report {
     std::string reporting_categories() const;
     std::string filtered_categories() const;
 
-    using symbol_instances = std::vector<std::string>;
-    using symbol_declaration = std::string;
+    using symbol_instances = std::vector<object_ancestry>;
+    using symbol_declaration = location;
     using symbol_location_map = std::unordered_map<symbol_declaration, symbol_instances>;
 
     struct conflict_details {

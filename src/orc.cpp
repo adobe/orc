@@ -626,13 +626,6 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
     while (cur_work != work_size) {
         // All but the last chunk will be the same size.
         // The last one could be up to (chunk_count - 1) smaller.
-        //
-        // There's a chance to save some good time here, especially on larger scans.
-        // The subdivisions are equal in task size, but each task will not be the
-        // same amount of time. Thus, some workers will finish sooner than others-
-        // some by quite a bit (on the order of seconds for 10MM+ die scans.) It
-        // may be worth trying some kind of task-stealing, though I'm not quite
-        // sure what that would look like.
         const auto next_chunk_size = std::min(chunk_size, work_size - cur_work);
         const auto last = std::next(first, next_chunk_size);
         do_work([_first = first, _last = last, &result]() mutable {

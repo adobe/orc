@@ -22,6 +22,7 @@
 #include "orc/orc.hpp" // for cerr_safe
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -386,6 +387,8 @@ void read_macho(object_ancestry&& ancestry,
                 macho_params params) {
     orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s), _details = std::move(details),
                   _params = std::move(params)]() mutable {
+        ZoneScoped;
+
         std::uint32_t ofd_index =
             static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
         macho_reader macho(ofd_index, std::move(_s), std::move(_details), std::move(_params));

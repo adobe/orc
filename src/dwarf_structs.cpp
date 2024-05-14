@@ -11,8 +11,8 @@
 #include <filesystem>
 
 // application
-#include "orc/parse_file.hpp"
 #include "orc/object_file_registry.hpp"
+#include "orc/parse_file.hpp"
 
 /**************************************************************************************************/
 
@@ -94,22 +94,35 @@ std::ostream& operator<<(std::ostream& s, const attribute_value& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute& x) {
-    return s << "        " << to_string(x._name) << ": " << x._value;
+    return s << "    " << to_string(x._name) << ": " << x._value;
+}
+
+/**************************************************************************************************/
+
+std::ostream& operator<<(std::ostream& s, const location& x) {
+    return s << "    " << x.file << ": " << x.loc;
+}
+
+std::optional<location> derive_definition_location(const attribute_sequence& x) {
+    if (!x.has_string(dw::at::decl_file)) {
+        return std::nullopt;
+    }
+
+    location result;
+
+    result.file = x.string(dw::at::decl_file);
+
+    if (x.has_uint(dw::at::decl_line)) {
+        result.loc = x.uint(dw::at::decl_line);
+    }
+
+    return result;
 }
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x) {
-    if (x.has_string(dw::at::decl_file)) {
-        s << "        definition location: " << x.string(dw::at::decl_file);
-
-        if (x.has_uint(dw::at::decl_line)) {
-            s << ":" + std::to_string(x.uint(dw::at::decl_line));
-        }
-
-        s << '\n';
-    }
-
+    // file and line are covered by the `odrv_report`, so should be skipped here.
     for (const auto& attr : x) {
         if (attr._name == dw::at::decl_file) continue;
         if (attr._name == dw::at::decl_line) continue;
@@ -130,21 +143,8 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x) {
             s << " -> ";
         }
 
-        s << ancestor.allocate_path().filename().string() ;
+        s << ancestor.allocate_path().filename().string();
     }
-    return s;
-}
-
-/**************************************************************************************************/
-
-std::ostream& operator<<(std::ostream& s, const die& x) {
-    s << "    within: " << object_file_ancestry(x._ofd_index) << ":\n";
-
-    // Save for debugging so we can map what we find with dwarfdump output
-#if 0
-    s << "        debug_info offset: " << hex_print(x._debug_info_offset) << '\n';
-#endif
-
     return s;
 }
 

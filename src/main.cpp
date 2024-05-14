@@ -517,20 +517,28 @@ int main(int argc, char** argv) try {
 
     std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));
     std::vector<odrv_report> violations;
+    std::vector<std::string> filtered_categories;
+    const auto max_odrv_count = settings::instance()._max_violation_count;
 
     for (const auto& report : reports) {
-        if (filter_report(report)) {
-            violations.push_back(report);
+        if (!emit_report(report)) {
+            filtered_categories.push_back(report.filtered_categories());
+            continue;
+        }
 
-            // Administrivia
-            ++globals::instance()._odrv_count;
+        violations.push_back(report);
 
-            if (settings::instance()._max_violation_count > 0 &&
-                globals::instance()._odrv_count >= settings::instance()._max_violation_count) {
-                throw std::runtime_error("ODRV limit reached");
+        // Administrivia
+        ++globals::instance()._odrv_count;
+
+        if (max_odrv_count > 0 && globals::instance()._odrv_count >= max_odrv_count) {
+            if (log_level_at_least(settings::log_level::warning)) {
+                cout_safe([&](auto& s) { s << "warning: ODRV limit reached\n"; });
             }
+            break;
         }
     }
+
     assert(globals::instance()._odrv_count == violations.size());
 
     for (const auto& report : violations) {

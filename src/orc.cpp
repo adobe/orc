@@ -67,41 +67,56 @@ std::string_view path_to_symbol(std::string_view path) {
 }
 
 /**************************************************************************************************/
+
 bool type_equivalent(const attribute& x, const attribute& y);
-dw::at find_attribute_conflict(const attribute_sequence& x, const attribute_sequence& y) {
-    ZoneScoped;
 
-    auto yfirst = y.begin();
-    auto ylast = y.end();
-
-    for (const auto& xattr : x) {
-        auto name = xattr._name;
-        if (nonfatal_attribute(name)) continue;
-
-        auto yfound = std::find_if(yfirst, ylast, [&](auto& x) { return name == x._name; });
-        if (yfound == ylast) return name;
-
-        const auto& yattr = *yfound;
-
-        if (name == dw::at::type && type_equivalent(xattr, yattr))
-            continue;
-        else if (xattr == yattr)
-            continue;
-
-        return name;
+bool attributes_conflict(dw::at name, const attribute& x, const attribute& y) {
+    if (name == dw::at::type && type_equivalent(x, y)) {
+        return false;
     }
 
-    // Find and flag any nonfatal attributes that exist in y but not in x
-    const auto xfirst = x.begin();
-    const auto xlast = x.end();
-    for (; yfirst != ylast; ++yfirst) {
-        const auto& name = yfirst->_name;
-        if (nonfatal_attribute(name)) continue;
-        auto xfound = std::find_if(xfirst, xlast, [&](auto& x) { return name == x._name; });
-        if (xfound == xlast) return name;
+    return x != y;
+}
+
+std::vector<dw::at> fatal_attribute_names(const attribute_sequence& x) {
+    std::vector<dw::at> result;
+    for (const auto& entry : x) {
+        if (nonfatal_attribute(entry._name)) continue;
+        result.push_back(entry._name);
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x,
+                                            const attribute_sequence& y) {
+    const auto x_names = fatal_attribute_names(x);
+    const auto y_names = fatal_attribute_names(y);
+
+    std::vector<dw::at> result;
+    std::vector<dw::at> intersection;
+
+    std::set_symmetric_difference(x_names.begin(), x_names.end(), y_names.begin(), y_names.end(),
+                                  std::back_inserter(result));
+
+    std::set_intersection(x_names.begin(), x_names.end(), y_names.begin(), y_names.end(),
+                          std::back_inserter(intersection));
+
+    const auto xf = x.begin();
+    const auto xl = x.end();
+    const auto yf = y.begin();
+    const auto yl = y.end();
+
+    for (const auto name : intersection) {
+        auto xfound = std::find_if(xf, xl, [&](auto& x) { return name == x._name; });
+        auto yfound = std::find_if(yf, yl, [&](auto& y) { return name == y._name; });
+        assert(xfound != xl);
+        assert(yfound != yl);
+        if (!attributes_conflict(name, *xfound, *yfound)) continue;
+        result.push_back(name);
     }
 
-    return dw::at::none; // they're "the same"
+    return result;
 }
 
 /**************************************************************************************************/
@@ -110,14 +125,12 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
     // keep it all in a developer's head.
 
-    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference) &&
-        x.reference() == y.reference()) {
-        return true;
+    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string)) {
+        return x.string_hash() == y.string_hash();
     }
 
-    if (x.has(attribute_value::type::string) && y.has(attribute_value::type::string) &&
-        x.string_hash() == y.string_hash()) {
-        return true;
+    if (x.has(attribute_value::type::reference) && y.has(attribute_value::type::reference)) {
+        return x.reference() == y.reference();
     }
 
     // Type mismatch.
@@ -161,7 +174,8 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 /**************************************************************************************************/
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
-    ZoneScoped;
+    // Too verbose for larger projects, but keep around for debugging/smaller projects.
+    // ZoneScoped;
 
     auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
 
@@ -181,70 +195,166 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
 odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     : _symbol(symbol), _list_head(list_head) {
-    ZoneScoped;
+    // Too verbose for larger projects, but keep around for debugging/smaller projects.
+    // ZoneScoped;
 
     assert(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
+    // Each entry in `conflict_map` will be a collection of dies
+    // whose fatal attribute hashes are all the same.
+    for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
+        const die& die = *next_die;
+        const std::size_t hash = die._fatal_attribute_hash;
+        const bool new_conflict = _conflict_map.count(hash) == 0;
+        auto& conflict = _conflict_map[hash];
 
-    if (_conflict_map.empty()) {
-        for (const die* next_die = _list_head; next_die; next_die = next_die->_next_die) {
-            std::size_t hash = next_die->_fatal_attribute_hash;
-            if (_conflict_map.count(hash)) continue;
-            conflict_details details;
-            details._die = next_die;
-            details._attributes = fetch_attributes_for_die(*details._die);
-            _conflict_map[hash] = std::move(details);
+        ++conflict._count;
+
+        if (die._location) {
+            conflict._locations[*die._location].emplace_back(object_file_ancestry(die._ofd_index));
+        }
+
+        if (new_conflict) {
+            // The fatal attribute hash should be the same for all instances
+            // of this `conflict`, so we only need to set its attributes once.
+            conflict._attributes = fetch_attributes_for_die(die);
+            conflict._tag = die._tag;
         }
     }
 
     assert(_conflict_map.size() > 1);
 
-    // Derive the ODRV category.
+    // Derive the ODRV categories.
+    const auto conflict_first = _conflict_map.begin();
+    const auto conflict_last = _conflict_map.end();
 
-    auto& front = _conflict_map.begin()->second;
-    auto& back = (--_conflict_map.end())->second;
-    _name = find_attribute_conflict(front._attributes, back._attributes);
-}
-
-/**************************************************************************************************/
-
-std::string odrv_report::category() const {
-    return to_string(_conflict_map.begin()->second._die->_tag) + std::string(":") +
-           to_string(_name);
-}
-
-/**************************************************************************************************/
-bool filter_report(const odrv_report& report) {
-    std::string odrv_category = report.category();
-
-    // Decide if we should report or ignore.
-
-    auto& settings = settings::instance();
-    bool do_report{true};
-
-    if (!settings._violation_ignore.empty()) {
-        // Report everything except the stuff on the ignore list
-        do_report = !sorted_has(settings._violation_ignore, odrv_category);
-    } else if (!settings._violation_report.empty()) {
-        // Report nothing except the the stuff on the report list
-        do_report = sorted_has(settings._violation_report, odrv_category);
+    for (auto x = conflict_first; x != conflict_last; ++x) {
+        for (auto y = std::next(x); y != conflict_last; ++y) {
+            auto conflicts = find_attribute_conflict(x->second._attributes, y->second._attributes);
+            _conflicting_attributes.insert(_conflicting_attributes.end(), conflicts.begin(),
+                                           conflicts.end());
+        }
     }
 
-    return do_report;
+    sort_unique(_conflicting_attributes);
 }
 
+/**************************************************************************************************/
+
+bool should_report_category(const std::string& category) {
+    auto& settings = settings::instance();
+
+    if (!settings._violation_ignore.empty()) {
+        // Report everything except the stuff on the ignore list (denylist)
+        return !sorted_has(settings._violation_ignore, category);
+    } else if (!settings._violation_report.empty()) {
+        // Report nothing except the the stuff on the report list (allowlist)
+        return sorted_has(settings._violation_report, category);
+    }
+
+    return true;
+}
+
+/**************************************************************************************************/
+// Returns a comma-separated serialization of categories NOT considered when determining an ODRV.
+std::string odrv_report::filtered_categories() const {
+    std::string result;
+    bool first = true;
+
+    for (std::size_t i = 0; i < category_count(); ++i) {
+        auto c = category(i);
+        if (should_report_category(c)) continue;
+
+        if (first) {
+            first = false;
+        } else {
+            result += ", ";
+        }
+
+        result += std::move(c);
+    }
+
+    return result;
+}
+
+/**************************************************************************************************/
+// Returns a comma-separated serialization of categories considered when determining an ODRV.
+std::string odrv_report::reporting_categories() const {
+    std::string result;
+    bool first = true;
+
+    for (std::size_t i = 0; i < category_count(); ++i) {
+        auto c = category(i);
+        if (!should_report_category(c)) continue;
+
+        if (first) {
+            first = false;
+        } else {
+            result += ", ";
+        }
+
+        result += std::move(c);
+    }
+
+    return result;
+}
+
+/**************************************************************************************************/
+// Generates a category "slug" based on this symbol's kind + the category (e.g. member:type).
+std::string odrv_report::category(std::size_t n) const {
+    return to_string(_conflict_map.begin()->second._tag) + std::string(":") +
+           (_conflicting_attributes.empty() ? "<none>" : to_string(_conflicting_attributes[n]));
+}
+
+/**************************************************************************************************/
+// Given an ODRV report, we need to decide if the report's categories are ones we should
+// report for, or if we should filter this report out.
+bool emit_report(const odrv_report& report) {
+    // The general rule here is that if any category is
+    // marked "report", we issue the ODRV report.
+    for (std::size_t i = 0; i < report.category_count(); ++i) {
+        if (should_report_category(report.category(i))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**************************************************************************************************/
+
+template <class MapType>
+auto sorted_keys(const MapType& map) {
+    std::vector<typename MapType::key_type> result;
+    for (const auto& entry : map) {
+        result.emplace_back(entry.first);
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
 
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
-    std::string odrv_category = report.category();
 
-    s << problem_prefix() << ": ODRV (" << odrv_category << "); conflict in `"
+    s << problem_prefix() << ": ODRV (" << report.reporting_categories() << "); "
+      << report.conflict_map().size() << " conflicts with `"
       << (symbol.data() ? demangle(symbol.data()) : "<unknown>") << "`\n";
-    for (const auto& entry : report.conflict_map()) {
-        s << (*entry.second._die) << entry.second._attributes << '\n';
+    const auto& conflicts = report.conflict_map();
+    for (const auto& entry : sorted_keys(conflicts)) {
+        const auto& conflict = conflicts.at(entry);
+        const auto& locations = conflict._locations;
+
+        s << conflict._attributes;
+        s << "    symbol defintion location(s):\n";
+        for (const auto& entry : sorted_keys(locations)) {
+            const auto& instances = locations.at(entry);
+            s << "        " << entry << " (used by `" << instances.front() << "` and "
+              << (instances.size() - 1) << " others)\n";
+        }
+        s << '\n';
     }
     s << "\n";
 
@@ -256,12 +366,33 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
 die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     ZoneScoped;
 
-    std::vector<die*> dies;
+    // pre-flight the vector allocation by counting the number of dies
+    // we'll be storing in it.
+    std::size_t count = 0;
     for (die* ptr = base; ptr; ptr = ptr->_next_die) {
-        dies.push_back(ptr);
+        ++count;
     }
-    assert(!dies.empty());
-    if (dies.size() == 1) return base;
+
+    ZoneValue(count);
+
+    if (count == 1) return base;
+
+    // By making this thread_local and using `resize`, we are only
+    // reallocating the vector when the die count grows between runs;
+    // Otherwise, we are reusing the same memory over again, saving
+    // us time.
+    thread_local std::vector<die*> dies;
+    dies.resize(count, nullptr);
+
+    // traverse the linked list and put its pointers into the vector
+    // so we can sort them by file ancestry.
+    std::size_t i = 0;
+    for (die* ptr = base; ptr; ptr = ptr->_next_die) {
+        dies[i++] = ptr;
+    }
+
+    assert(dies.front() == base);
+    assert(dies.back() != nullptr);
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
@@ -275,6 +406,7 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
         // Re-link the die list to match the sorted order.
         dies[i - 1]->_next_die = dies[i];
 
+        // Check and see if we have any conflicts along the way.
         if (!conflict) {
             conflict = dies[i - 1]->_fatal_attribute_hash != dies[i]->_fatal_attribute_hash;
         }
@@ -301,6 +433,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
     // First stage: (optional) dependency/dylib preprocessing
     if (settings::instance()._dylib_scan_mode) {
+        TracyMessageL("orc_process: dylib scan");
+
         // dylib scan mode involves a pre-processing step where we parse the file list
         // and discover any dylibs those Mach-O files depend upon. Note that we're
         // glomming all these dependencies together, so if there are multiple
@@ -309,7 +443,8 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
         file_list = macho_derive_dylibs(std::move(file_list));
     }
 
-    // Second stage: process all the DIEs
+    TracyMessageL("orc_process: process all DIEs");
+
     for (const auto& input_path : file_list) {
         orc::do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
@@ -330,7 +465,8 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
 
     orc::block_on_work();
 
-    // Third stage: review DIEs for ODRVs
+    TracyMessageL("orc_process: review DIEs for ODRVs");
+
     std::vector<odrv_report> result;
 
     // We now subdivide the work. We do so by looking at the total number of entries
@@ -363,7 +499,8 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
 
     orc::block_on_work();
 
-    // Sort the ordrv_report
+    TracyMessageL("orc_process: Sorting & filtering ODRV reports");
+
     std::sort(result.begin(), result.end(),
               [](const odrv_report& a, const odrv_report& b) { return a._symbol < b._symbol; });
 

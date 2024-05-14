@@ -10,11 +10,13 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 // application
 #include "orc/dwarf_constants.hpp"
+#include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
 
 /**************************************************************************************************/
@@ -252,6 +254,34 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
 /**************************************************************************************************/
 
+struct location {
+    pool_string file;
+    std::uint64_t loc{0};
+};
+
+inline bool operator==(const location& x, const location& y) {
+    return x.file == y.file && x.loc == y.loc;
+}
+inline bool operator!=(const location& x, const location& y) {
+    return !(x == y);
+}
+inline bool operator<(const location& x, const location& y) {
+    return x.file.hash() < y.file.hash() || (x.file == y.file && x.loc < y.loc);
+}
+
+template <>
+struct std::hash<location> {
+    std::size_t operator()(const location& x) const {
+        return orc::hash_combine(x.file.hash(), x.loc);
+    }
+};
+
+std::ostream& operator<<(std::ostream&, const location&);
+
+std::optional<location> derive_definition_location(const attribute_sequence& x);
+
+/**************************************************************************************************/
+
 enum class arch : std::uint8_t {
     unknown,
     x86,
@@ -320,6 +350,7 @@ struct die {
     std::uint32_t _ofd_index{0}; // object file descriptor index
     std::size_t _cu_die_address{0}; // address of associated compilation unit die entry
     std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
+    std::optional<location> _location; // file_decl and file_line, if they exit for the die.
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};

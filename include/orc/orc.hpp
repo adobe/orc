@@ -22,11 +22,20 @@
 struct odrv_report {
     odrv_report(std::string_view symbol, const die* list_head);
 
-    std::string category() const;
+    std::size_t category_count() const { return _conflicting_attributes.size(); }
+    std::string category(std::size_t n) const;
+    std::string reporting_categories() const;
+    std::string filtered_categories() const;
+
+    using symbol_instances = std::vector<object_ancestry>;
+    using symbol_declaration = location;
+    using symbol_location_map = std::unordered_map<symbol_declaration, symbol_instances>;
 
     struct conflict_details {
-        const die* _die{nullptr};
+        dw::tag _tag{dw::tag::none};
         attribute_sequence _attributes;
+        symbol_location_map _locations;
+        std::size_t _count{0}; // may be different than _locations.size()
     };
 
     const auto& conflict_map() const { return _conflict_map; }
@@ -36,13 +45,13 @@ struct odrv_report {
 private:
     const die* _list_head{nullptr};
     mutable std::map<std::size_t, conflict_details> _conflict_map;
-    dw::at _name{dw::at::none};
+    std::vector<dw::at> _conflicting_attributes;
 };
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& x);
 
-// Return `true` if an ODRV
-bool filter_report(const odrv_report& report);
+// Return `true` if the ODRV report is one we should emit
+bool emit_report(const odrv_report& report);
 
 /**************************************************************************************************/
 
@@ -58,6 +67,15 @@ void orc_reset();
 
 // The returned char* is good until the next call to demangle() on the same thread.
 const char* demangle(const char* x);
+
+/**************************************************************************************************/
+// TODO: (fosterbrereton) Find a better home for this somewhere?
+template <class C>
+void sort_unique(C& container) {
+    std::sort(container.begin(), container.end());
+    const auto new_end = std::unique(container.begin(), container.end());
+    container.erase(new_end, container.end());
+}
 
 /**************************************************************************************************/
 

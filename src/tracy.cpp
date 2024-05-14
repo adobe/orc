@@ -69,7 +69,7 @@ void initialize() {
         // The workaround is to connect the analyzer or preempt the application. In either
         // case, you're not losing profiling data.
         while (!profiler.HasShutdownFinished()) {
-            static bool do_once = []{
+            static bool do_once = [] {
                 std::cout << "Waiting for Tracy...\n";
                 return true;
             }();

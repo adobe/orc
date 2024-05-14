@@ -24,7 +24,7 @@ tbb::concurrent_vector<object_file_descriptor>& obj_registry() {
 /**************************************************************************************************/
 
 } // namespace
-    
+
 /**************************************************************************************************/
 
 std::size_t object_file_register(object_ancestry&& ancestry, file_details&& details) {
@@ -32,12 +32,11 @@ std::size_t object_file_register(object_ancestry&& ancestry, file_details&& deta
     // "Growing the container does not invalidate any existing iterators or indices."
     // https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_vector_cls.html
 
-    auto result = obj_registry().emplace_back(object_file_descriptor{std::move(ancestry), std::move(details)});
+    auto result = obj_registry().emplace_back(
+        object_file_descriptor{std::move(ancestry), std::move(details)});
     return std::distance(obj_registry().begin(), result);
 }
 
-const object_file_descriptor& object_file_fetch(std::size_t index) {
-    return obj_registry()[index];
-}
+const object_file_descriptor& object_file_fetch(std::size_t index) { return obj_registry()[index]; }
 
 /**************************************************************************************************/

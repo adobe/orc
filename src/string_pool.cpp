@@ -29,7 +29,8 @@
 /*static*/ std::string_view pool_string::default_view("");
 
 #define ORC_PRIVATE_FEATURE_PROFILE_POOL_MEMORY() (ORC_PRIVATE_FEATURE_TRACY() && 0)
-#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MUTEXES() (ORC_PRIVATE_FEATURE_TRACY() && 1)
+#define ORC_PRIVATE_FEATURE_PROFILE_POOL_MUTEXES() (ORC_PRIVATE_FEATURE_TRACY() && 0)
+#define ORC_PRIVATE_FEATURE_PROFILE_EMPOOL() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
 /**************************************************************************************************/
 
@@ -37,7 +38,9 @@ namespace {
 
 /**************************************************************************************************/
 
-std::size_t string_view_hash(std::string_view s) { return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length())); }
+std::size_t string_view_hash(std::string_view s) {
+    return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length()));
+}
 
 /**************************************************************************************************/
 
@@ -102,9 +105,9 @@ struct pool {
 /**************************************************************************************************/
 
 #if ORC_FEATURE(PROFILE_POOL_MUTEXES)
-    using string_pool_mutex = LockableBase(std::mutex);
+using string_pool_mutex = LockableBase(std::mutex);
 #else
-    using string_pool_mutex = std::mutex;
+using string_pool_mutex = std::mutex;
 #endif // ORC_FEATURE(PROFILE_POOL_MUTEXES)
 
 /**************************************************************************************************/
@@ -120,10 +123,11 @@ auto& pool_mutex(std::size_t index) {
     // in place, which makes them very difficult to construct as a contiguous collection. So
     // we allocate them dynamically and collect their pointers as a contiguous sequence, then
     // index and dereference one of the pointers.
-    static string_pool_mutex** mutexes = []{
+    static string_pool_mutex** mutexes = [] {
         static std::vector<string_pool_mutex*> result;
         for (std::size_t i(0); i < string_pool_count_k; ++i) {
-            static constexpr tracy::SourceLocationData srcloc { nullptr, "pool_mutex", TracyFile, TracyLine, 0 };
+            static constexpr tracy::SourceLocationData srcloc{nullptr, "pool_mutex", TracyFile,
+                                                              TracyLine, 0};
             result.emplace_back(new string_pool_mutex(&srcloc));
         }
         return &result[0];
@@ -136,7 +140,7 @@ auto& pool_mutex(std::size_t index) {
 }
 
 auto& pool(std::size_t index) {
-    static struct pool* pools = []{
+    static struct pool* pools = [] {
         static struct pool result[string_pool_count_k];
 
 #if ORC_FEATURE(PROFILE_POOL_MEMORY)
@@ -174,9 +178,11 @@ std::size_t pool_string::get_hash(const char* d) {
 }
 
 pool_string empool(std::string_view src) {
+#if ORC_FEATURE(PROFILE_EMPOOL)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Green); // cache hit
     ZoneText(src.data(), src.size());
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
     // A pool_string is empty iff _data = nullptr
     // So this creates an empty pool_string (as opposed to an empty string_view, where
@@ -207,7 +213,9 @@ pool_string empool(std::string_view src) {
     // Now that we have the lock, do the search again in case another thread empooled the string
     // while we were waiting for the lock.
     if (const char* c = find_key(h)) {
+#if ORC_FEATURE(PROFILE_EMPOOL)
         ZoneColor(tracy::Color::ColorType::Orange); // cache "half-hit"
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
         pool_string ps(c);
         assert(ps.view() == src);
@@ -220,7 +228,9 @@ pool_string empool(std::string_view src) {
     assert(ptr);
     keys.insert(std::make_pair(h, ptr));
 
+#if ORC_FEATURE(PROFILE_EMPOOL)
     ZoneColor(tracy::Color::ColorType::Red); // cache miss
+#endif // ORC_FEATURE(PROFILE_EMPOOL)
 
     return pool_string(ptr);
 }

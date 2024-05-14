@@ -16,6 +16,7 @@
 #include "orc/object_file_registry.hpp"
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -218,6 +219,8 @@ void read_macho(object_ancestry&& ancestry,
     callbacks._do_work([_ancestry = std::move(ancestry), _s = std::move(s),
                         _details = std::move(details),
                         _callback = std::move(callbacks._register_die)]() mutable {
+        ZoneScoped;
+
         ++globals::instance()._object_file_count;
 
         std::uint32_t ofd_index = static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
@@ -236,8 +239,7 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, register_dies_callback&& callbac
 
     s.seekg(entry._details._offset);
 
-    return dwarf_from_macho(ofd_index, std::move(s), copy(entry._details),
-                            std::move(callback));
+    return dwarf_from_macho(ofd_index, std::move(s), copy(entry._details), std::move(callback));
 }
 
 /**************************************************************************************************/

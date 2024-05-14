@@ -54,14 +54,12 @@ struct work_counter {
         std::size_t _n{0};
     };
 
-    using shared_state = std::shared_ptr<state>;
-
     friend struct token;
 
     work_counter() : _impl{std::make_shared<state>()} {}
 
     struct token {
-        token(shared_state w) : _w(std::move(w)) { _w->increment(); }
+        token(std::shared_ptr<state> w) : _w(std::move(w)) { _w->increment(); }
         token(const token& t) : _w{t._w} { _w->increment(); }
         token(token&& t) = default;
         ~token() {
@@ -69,7 +67,7 @@ struct work_counter {
         }
 
     private:
-        shared_state _w;
+        std::shared_ptr<state> _w;
     };
 
     auto working() { return token(_impl); }
@@ -77,7 +75,7 @@ struct work_counter {
     void wait() { _impl->wait(); }
 
 private:
-    shared_state _impl;
+    std::shared_ptr<state> _impl;
 
     void increment() { _impl->increment(); }
     void decrement() { _impl->decrement(); }

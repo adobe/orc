@@ -58,7 +58,6 @@ struct work_counter {
 
     friend struct token;
 
-public:
     work_counter() : _impl{std::make_shared<state>()} {}
 
     struct token {

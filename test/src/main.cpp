@@ -532,7 +532,7 @@ void traverse_directory_tree(std::filesystem::path& directory) {
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    orc::tracy::initialize();
+    orc::profiler::initialize();
 
     if (argc < 2) {
         console_error() << "Usage: " << argv[0] << " /path/to/test/battery/\n";

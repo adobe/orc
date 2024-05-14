@@ -127,7 +127,7 @@ void do_work(std::function<void()> f) {
 #if ORC_FEATURE(TRACY)
         thread_local bool tracy_set_thread_name_k = [] {
             TracyCSetThreadName(
-                orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
+                orc::profiler::format_unique("worker %s", orc::profiler::unique_thread_name()));
             return true;
         }();
         (void)tracy_set_thread_name_k;
@@ -140,6 +140,7 @@ void do_work(std::function<void()> f) {
 // It would be groovy if this routine could do some of the work, too, while it is waiting for the
 // pool to finish up.
 void block_on_work() {
+    TracyMessageL("orc::block_on_work");
     work().wait();
 }
 

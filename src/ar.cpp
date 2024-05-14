@@ -9,6 +9,7 @@
 
 // application
 #include "orc/str.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -37,7 +38,8 @@ void read_ar(object_ancestry&& ancestry,
     std::string magic = read_fixed_string<8>(s);
     assert(magic == "!<arch>\n");
 
-    // REVISIT: (fbrereto) opportunity to parallelize here.
+    // The .o files are stored serially within the ar file, so I am not sure how easily this can be
+    // parallelized (if at all)
     while (s.tellg() < end_pos) {
         std::string identifier = rstrip(read_fixed_string<16>(s));
         std::string timestamp = rstrip(read_fixed_string<12>(s));

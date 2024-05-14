@@ -32,8 +32,10 @@
 #endif
 
 //==================================================================================================
-
-namespace orc::tracy {
+// This used to be orc::tracy, but then the compiler would complain about some of the Tracy macros
+// failing to resolve to symbols in this nested namespace. It failed to find the global ::tracy
+// namespace where they actually live. This has been renamed `profiler` to avoid the collision.
+namespace orc::profiler {
 
 //==================================================================================================
 // returns a unique `const char*` per thread for the lifetime of the application. A _brief_ name,
@@ -57,6 +59,6 @@ void initialize();
 
 //==================================================================================================
 
-} // namespace orc::tracy
+} // namespace orc::profiler
 
 //==================================================================================================

@@ -62,8 +62,7 @@ struct macho_reader {
 
     bool register_dies_mode() const { return _params._mode == macho_reader_mode::register_dies; }
     bool derive_dylibs_mode() const { return _params._mode == macho_reader_mode::derive_dylibs; }
-    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting;
-    // }
+    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting; }
 
     void derive_dependencies();
 
@@ -387,7 +386,13 @@ void read_macho(object_ancestry&& ancestry,
                 macho_params params) {
     orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s), _details = std::move(details),
                   _params = std::move(params)]() mutable {
-        ZoneScoped;
+        ZoneScopedN("read_macho");
+#if ORC_FEATURE(TRACY)
+        std::stringstream ss;
+        ss << _ancestry;
+        const auto path_annot = std::move(ss).str();
+        ZoneText(path_annot.c_str(), path_annot.size());
+#endif // ORC_FEATURE(TRACY)
 
         std::uint32_t ofd_index =
             static_cast<std::uint32_t>(object_file_register(std::move(_ancestry), copy(_details)));
@@ -449,8 +454,10 @@ std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesyste
 // as one of the returned dependencies.
 std::vector<std::filesystem::path> derive_immediate_dylibs(
     const std::filesystem::path& executable_path, const std::filesystem::path& input_path) {
+    ZoneScoped;
+
     // `input_path` is not `loader_path` because it points to the binary to be scanned.
-    // `loader_path` should be the directory that contains `input_path`.
+    // Therefore, `loader_path` should be the directory that contains `input_path`.
     if (!exists(input_path)) {
         if (log_level_at_least(settings::log_level::verbose)) {
             cerr_safe([&](auto& s) {
@@ -460,15 +467,21 @@ std::vector<std::filesystem::path> derive_immediate_dylibs(
         return std::vector<std::filesystem::path>();
     }
 
-    std::mutex result_mutex;
+#if ORC_FEATURE(TRACY)
+    const auto path_annot = input_path.string();
+    ZoneText(path_annot.c_str(), path_annot.size());
+#endif // ORC_FEATURE(TRACY)
+
+    TracyLockable(std::mutex, dylib_result_mutex);
     std::vector<std::filesystem::path> result;
     freader input(input_path);
     macho_params params;
     params._mode = macho_reader_mode::derive_dylibs;
     params._executable_path = executable_path;
     params._register_dependencies = [&](std::vector<std::filesystem::path>&& p) {
+        ZoneScopedN("register_dependencies");
         if (p.empty()) return;
-        std::lock_guard<std::mutex> m(result_mutex);
+        std::lock_guard m(dylib_result_mutex);
         move_append(result, std::move(p));
     };
 
@@ -476,18 +489,17 @@ std::vector<std::filesystem::path> derive_immediate_dylibs(
 
     orc::block_on_work();
 
-    return result;
+    return make_sorted_unique(std::move(result));
 }
 
 /**************************************************************************************************/
-// We have to assume that dependencies will circle back on themselves at some point, so we must have
-// a criteria to know when we are "done". The way we do this is to check the size of the file list
-// on every iteration. The moment the resulting list stops growing, we know we're done.
+
 std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path& binary) {
+    ZoneScoped;
+
     const auto executable_path = binary.parent_path();
-    std::vector<std::filesystem::path> result;
-    std::vector<std::filesystem::path> last_pass = derive_immediate_dylibs(executable_path, binary);
-    auto prev_result_size = result.size();
+    std::vector<std::filesystem::path> scanned;
+    std::vector<std::filesystem::path> pass(1, binary);
 
     if (log_level_at_least(settings::log_level::info)) {
         cout_safe([&](auto& s) {
@@ -496,40 +508,44 @@ std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path
     }
 
     while (true) {
-        // store a copy of last_pass in the result and get the new size.
-        move_append(result, copy(last_pass));
-        result = make_sorted_unique(std::move(result));
+        std::vector<std::filesystem::path> pass_dependencies;
 
-        // If the size of the result hasn't changed with the appending
-        // of the latest set of derived dependencies, then we know we
-        // have found all of them, and can stop.
-        const auto cur_result_size = result.size();
-        if (cur_result_size == prev_result_size) break;
+        for (const auto& dependency : pass) {
+            move_append(pass_dependencies, derive_immediate_dylibs(executable_path, dependency));
+        }
+
+        // The set of binaries scanned in this pass get appended to `scanned`
+        move_append(scanned, std::move(pass));
+        scanned = make_sorted_unique(std::move(scanned));
+
+        // clean up the set of dependencies found in this pass.
+        pass_dependencies = make_sorted_unique(std::move(pass_dependencies));
+
+        // for the _next_ pass, we only want to scan files that are new,
+        // those that are in `pass_dependencies` and _not_ in `scanned`.
+        // If that set of files is empty, then we have found all our
+        // dependencies, and can stop.
+        pass = std::vector<std::filesystem::path>(); // ensure `pass` is valid and empty.
+        std::set_difference(pass_dependencies.begin(), pass_dependencies.end(),
+                            scanned.begin(), scanned.end(), std::back_inserter(pass));
+
+        if (pass.empty()) {
+            break;
+        }
 
         if (log_level_at_least(settings::log_level::info)) {
             cout_safe([&](auto& s) {
-                const auto count = cur_result_size - prev_result_size;
-                s << "info: found " << count << " more dependencies...\n";
+                s << "info: scanning " << pass.size() << " more dependencies...\n";
             });
         }
-
-        prev_result_size = cur_result_size;
-
-        // Otherwise, gather a new set of dependencies from those in last_pass
-        // and set them to `last_pass` for the next round.
-        std::vector<std::filesystem::path> next_pass;
-        for (const auto& dependency : last_pass) {
-            move_append(next_pass, derive_immediate_dylibs(executable_path, dependency));
-        }
-        last_pass = make_sorted_unique(std::move(next_pass));
     }
 
     if (log_level_at_least(settings::log_level::info)) {
         cout_safe(
-            [&](auto& s) { s << "info: found " << result.size() << " total dependencies\n"; });
+            [&](auto& s) { s << "info: found " << scanned.size() << " total dependencies\n"; });
     }
 
-    return result;
+    return scanned;
 }
 
 /**************************************************************************************************/
@@ -540,7 +556,7 @@ std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path
 
 std::vector<std::filesystem::path> macho_derive_dylibs(
     const std::vector<std::filesystem::path>& binaries) {
-    std::vector<std::filesystem::path> result = binaries;
+    std::vector<std::filesystem::path> result;
 
     // For the purpose of the executable_path/loader_path relationships, we treat each binary
     // as independent of the others. That is, each root binary will be the `executable_path` for

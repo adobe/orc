@@ -493,7 +493,7 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    orc::tracy::initialize();
+    orc::profiler::initialize();
 
     signal(SIGINT, interrupt_callback_handler);
 

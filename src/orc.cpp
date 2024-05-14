@@ -419,6 +419,9 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
 
+    // This can be very contentious for large projects. We may want to think
+    // about a more efficient way to collect these reports per-thread, then
+    // bubble them up once they've all been collected.
     static TracyLockable(std::mutex, odrv_report_mutex);
     {
         std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);

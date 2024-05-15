@@ -18,6 +18,6 @@ void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
-              callbacks callbacks);
+              macho_params params);
 
 /**************************************************************************************************/

@@ -7,36 +7,13 @@
 // identity
 #include "orc/fat.hpp"
 
-// application
-#include "orc/mach_types.hpp"
+// mach-o
+#include <mach-o/loader.h>
+#include <mach-o/fat.h>
 
 /**************************************************************************************************/
 
 namespace {
-
-/**************************************************************************************************/
-
-struct fat_header {
-    std::uint32_t magic{0};
-    std::uint32_t nfat_arch{0};
-};
-
-struct fat_arch {
-    cpu_type_t cputype{0};
-    cpu_subtype_t cpusubtype{0};
-    std::uint32_t offset{0};
-    std::uint32_t size{0};
-    std::uint32_t align{0};
-};
-
-struct fat_arch_64 {
-    cpu_type_t cputype{0};
-    cpu_subtype_t cpusubtype{0};
-    std::uint64_t offset{0};
-    std::uint64_t size{0};
-    std::uint32_t align{0};
-    std::uint32_t reserved{0};
-};
 
 /**************************************************************************************************/
 
@@ -67,7 +44,7 @@ void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
-              callbacks callbacks) {
+              macho_params params) {
     auto header = read_pod<fat_header>(s);
     if (details._needs_byteswap) {
         endian_swap(header.magic);
@@ -111,7 +88,7 @@ void read_fat(object_ancestry&& ancestry,
 
         temp_seek(s, offset, [&] {
             parse_file(cputype_to_string(cputype), ancestry, s,
-                       s.tellg() + static_cast<std::streamoff>(size), callbacks);
+                       s.tellg() + static_cast<std::streamoff>(size), params);
         });
     }
 }

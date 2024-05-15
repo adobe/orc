@@ -100,7 +100,7 @@ std::ostream& operator<<(std::ostream& s, const attribute& x) {
 /**************************************************************************************************/
 
 std::ostream& operator<<(std::ostream& s, const location& x) {
-    return s << "    " << x.file << ": " << x.loc;
+    return s << "    " << x.file << ":" << x.loc;
 }
 
 std::optional<location> derive_definition_location(const attribute_sequence& x) {

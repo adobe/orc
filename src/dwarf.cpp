@@ -410,10 +410,8 @@ enum class process_mode {
 struct dwarf::implementation {
     implementation(std::uint32_t ofd_index,
                    freader&& s,
-                   file_details&& details,
-                   register_dies_callback&& callback)
-        : _s(std::move(s)), _details(std::move(details)), _register_dies(std::move(callback)),
-          _ofd_index(ofd_index) {}
+                   file_details&& details)
+        : _s(std::move(s)), _details(std::move(details)), _ofd_index(ofd_index) {}
 
     void register_section(const std::string& name, std::size_t offset, std::size_t size);
 
@@ -469,7 +467,6 @@ struct dwarf::implementation {
 
     freader _s;
     file_details _details;
-    register_dies_callback _register_dies;
     std::vector<abbrev> _abbreviations;
     std::vector<pool_string> _path;
     std::vector<pool_string> _decl_files;
@@ -1695,7 +1692,7 @@ void dwarf::implementation::process_all_dies() {
 
     dies.shrink_to_fit();
 
-    _register_dies(std::move(dies));
+    orc::register_dies(std::move(dies));
 }
 
 /**************************************************************************************************/
@@ -1778,9 +1775,8 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset,
 
 dwarf::dwarf(std::uint32_t ofd_index,
              freader&& s,
-             file_details&& details,
-             register_dies_callback&& callback)
-    : _impl(new implementation(ofd_index, std::move(s), std::move(details), std::move(callback)),
+             file_details&& details)
+    : _impl(new implementation(ofd_index, std::move(s), std::move(details)),
             [](auto x) { delete x; }) {}
 
 void dwarf::register_section(std::string name, std::size_t offset, std::size_t size) {

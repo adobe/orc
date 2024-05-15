@@ -454,7 +454,7 @@ void run_battery_test(const std::filesystem::path& home) {
     auto object_files = compile_compilation_units(home, settings, compilation_units);
 
     orc_reset();
-    auto reports = orc_process(object_files);
+    auto reports = orc_process(std::move(object_files));
 
     console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
 
@@ -532,7 +532,7 @@ void traverse_directory_tree(std::filesystem::path& directory) {
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    orc::tracy::initialize();
+    orc::profiler::initialize();
 
     if (argc < 2) {
         console_error() << "Usage: " << argv[0] << " /path/to/test/battery/\n";

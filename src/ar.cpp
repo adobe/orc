@@ -9,6 +9,7 @@
 
 // application
 #include "orc/str.hpp"
+#include "orc/tracy.hpp"
 
 /**************************************************************************************************/
 
@@ -33,11 +34,12 @@ void read_ar(object_ancestry&& ancestry,
              freader& s,
              std::istream::pos_type end_pos,
              file_details details,
-             callbacks callbacks) {
+             macho_params params) {
     std::string magic = read_fixed_string<8>(s);
     assert(magic == "!<arch>\n");
 
-    // REVISIT: (fbrereto) opportunity to parallelize here.
+    // The .o files are stored serially within the ar file, so I am not sure how easily this can be
+    // parallelized (if at all)
     while (s.tellg() < end_pos) {
         std::string identifier = rstrip(read_fixed_string<16>(s));
         std::string timestamp = rstrip(read_fixed_string<12>(s));
@@ -56,7 +58,7 @@ void read_ar(object_ancestry&& ancestry,
 
         if (identifier.rfind(".o") == identifier.size() - 2) {
             auto end_pos = s.tellg() + static_cast<std::streamoff>(file_size);
-            parse_file(identifier, ancestry, s, end_pos, callbacks);
+            parse_file(identifier, ancestry, s, end_pos, params);
             s.seekg(end_pos); // parse_file could leave the read head anywhere.
         } else {
             // skip to next file in the archive.

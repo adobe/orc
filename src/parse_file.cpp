@@ -19,10 +19,13 @@
 #include <sys/mman.h>
 #include <unistd.h> // close
 
+// mach-o
+#include <mach-o/loader.h>
+#include <mach-o/fat.h>
+
 // application
 #include "orc/ar.hpp"
 #include "orc/fat.hpp"
-#include "orc/mach_types.hpp"
 #include "orc/macho.hpp"
 #include "orc/orc.hpp"
 
@@ -152,7 +155,7 @@ void parse_file(std::string_view object_name,
                 const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,
-                callbacks callbacks) {
+                macho_params params) {
     auto detection = detect_file(s);
 
     // append this object name to the ancestry
@@ -164,13 +167,13 @@ void parse_file(std::string_view object_name,
             throw std::runtime_error("unknown format");
         case file_details::format::macho:
             return read_macho(std::move(new_ancestry), s, end_pos, std::move(detection),
-                              std::move(callbacks));
+                              std::move(params));
         case file_details::format::ar:
             return read_ar(std::move(new_ancestry), s, end_pos, std::move(detection),
-                           std::move(callbacks));
+                           std::move(params));
         case file_details::format::fat:
             return read_fat(std::move(new_ancestry), s, end_pos, std::move(detection),
-                            std::move(callbacks));
+                            std::move(params));
     }
 }
 

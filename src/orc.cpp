@@ -32,6 +32,7 @@
 #include <tbb/concurrent_unordered_map.h>
 
 // application
+#include "orc/async.hpp"
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
@@ -41,7 +42,6 @@
 #include "orc/settings.hpp"
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
-#include "orc/task_system.hpp"
 #include "orc/tracy.hpp"
 
 /**************************************************************************************************/
@@ -161,167 +161,11 @@ auto& global_die_map() {
 
 /**************************************************************************************************/
 
-void register_dies(dies die_vector) {
-    ZoneScoped;
-
-    globals::instance()._die_processed_count += die_vector.size();
-
-    // pre-process the vector of dies by partitioning them into those that are skippable and those
-    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
-    // cause a reallocation and copying of only the necessary dies into a vector whose memory
-    // consumption is exactly what's needed.
-
-    auto unskipped_end =
-        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
-
-    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
-
-    die_vector.erase(unskipped_end, die_vector.end());
-    die_vector.shrink_to_fit();
-
-    // This is a list so the die vectors don't move about. The dies become pretty entangled as they
-    // point to one another by reference, and the odr_map itself stores const pointers to the dies
-    // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
-    // pointers we use will stay valid for the lifetime of the application.
-    dies& dies = *with_global_die_collection([&](auto& collection) {
-        collection.push_back(std::move(die_vector));
-        return --collection.end();
-    });
-
-    for (auto& d : dies) {
-        assert(!d._skippable);
-
-        //
-        // At this point we know we're going to register the die. Hereafter belongs
-        // work exclusive to DIEs getting registered/odr-enforced.
-        //
-
-        auto result = global_die_map().insert(std::make_pair(d._hash, &d));
-        if (result.second) {
-            ++globals::instance()._unique_symbol_count;
-            continue;
-        }
-
-        constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
-        static std::mutex mutexes_s[mutex_count_k];
-        std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
-
-        die& d_in_map = *result.first->second;
-        d._next_die = d_in_map._next_die;
-        d_in_map._next_die = &d;
-    }
-
-    globals::instance()._die_skipped_count += skip_count;
-}
-
-/**************************************************************************************************/
-
 struct cmdline_results {
     std::vector<std::filesystem::path> _file_object_list;
     bool _ld_mode{false};
     bool _libtool_mode{false};
 };
-
-/**************************************************************************************************/
-
-struct work_counter {
-    struct state {
-        void increment() {
-            {
-                std::lock_guard<std::mutex> lock(_m);
-                ++_n;
-            }
-            _c.notify_all();
-        }
-
-        void decrement() {
-            {
-                std::lock_guard<std::mutex> lock(_m);
-                --_n;
-            }
-            _c.notify_all();
-        }
-
-        void wait() {
-            std::unique_lock<std::mutex> lock(_m);
-            if (_n == 0) return;
-            _c.wait(lock, [&] { return _n == 0; });
-        }
-
-        std::mutex _m;
-        std::condition_variable _c;
-        std::size_t _n{0};
-    };
-
-    using shared_state = std::shared_ptr<state>;
-
-    friend struct token;
-
-public:
-    work_counter() : _impl{std::make_shared<state>()} {}
-
-    struct token {
-        token(shared_state w) : _w(std::move(w)) { _w->increment(); }
-        token(const token& t) : _w{t._w} { _w->increment(); }
-        token(token&& t) = default;
-        ~token() {
-            if (_w) _w->decrement();
-        }
-
-    private:
-        shared_state _w;
-    };
-
-    auto working() { return token(_impl); }
-
-    void wait() { _impl->wait(); }
-
-private:
-    shared_state _impl;
-
-    void increment() { _impl->increment(); }
-    void decrement() { _impl->decrement(); }
-};
-
-/**************************************************************************************************/
-
-auto& work() {
-    static work_counter _work;
-    return _work;
-}
-
-/**************************************************************************************************/
-
-void do_work(std::function<void()> f) {
-    auto doit = [_f = std::move(f)]() {
-        try {
-            _f();
-        } catch (const std::exception& error) {
-            cerr_safe([&](auto& s) { s << "task error: " << error.what() << '\n'; });
-        } catch (...) {
-            cerr_safe([&](auto& s) { s << "task error: unknown\n"; });
-        }
-    };
-
-    if (!settings::instance()._parallel_processing) {
-        doit();
-        return;
-    }
-
-    static orc::task_system system;
-
-    system([_work_token = work().working(), _doit = std::move(doit)] {
-#if ORC_FEATURE(TRACY)
-        thread_local bool tracy_set_thread_name_k = [] {
-            TracyCSetThreadName(
-                orc::tracy::format_unique("worker %s", orc::tracy::unique_thread_name()));
-            return true;
-        }();
-        (void)tracy_set_thread_name_k;
-#endif // ORC_FEATURE(TRACY)
-        _doit();
-    });
-}
 
 /**************************************************************************************************/
 
@@ -333,7 +177,7 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
     // Too verbose for larger projects, but keep around for debugging/smaller projects.
     // ZoneScoped;
 
-    auto dwarf = dwarf_from_macho(d._ofd_index, register_dies_callback());
+    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
 
     auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
     assert(die._tag == d._tag);
@@ -575,6 +419,9 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
     odrv_report report{path_to_symbol(base->_path.view()), dies[0]};
 
+    // This can be very contentious for large projects. We may want to think
+    // about a more efficient way to collect these reports per-thread, then
+    // bubble them up once they've all been collected.
     static TracyLockable(std::mutex, odrv_report_mutex);
     {
         std::lock_guard<LockableBase(std::mutex)> lock(odrv_report_mutex);
@@ -586,27 +433,40 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
 /**************************************************************************************************/
 
-std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& file_list) {
+std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
+    // First stage: (optional) dependency/dylib preprocessing
+    if (settings::instance()._dylib_scan_mode) {
+        TracyMessageL("orc_process: dylib scan");
+
+        // dylib scan mode involves a pre-processing step where we parse the file list
+        // and discover any dylibs those Mach-O files depend upon. Note that we're
+        // glomming all these dependencies together, so if there are multiple
+        // files in `file_list`, we could be "finding" ODRVs across independent
+        // artifact+dylib groups that really do not exist.
+        file_list = macho_derive_dylibs(std::move(file_list));
+    }
+
     TracyMessageL("orc_process: process all DIEs");
 
     for (const auto& input_path : file_list) {
-        do_work([_input_path = input_path] {
+        orc::do_work([_input_path = input_path] {
             if (!exists(_input_path)) {
-                throw std::runtime_error("file " + _input_path.string() + " does not exist");
+                if (log_level_at_least(settings::log_level::verbose)) {
+                    cerr_safe([&](auto& s) {
+                        s << "file " << _input_path.string() << " does not exist\n";
+                    });
+                }
+                return;
             }
 
             freader input(_input_path);
-            callbacks callbacks = {
-                register_dies,
-                do_work,
-            };
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       std::move(callbacks));
+                       macho_params{macho_reader_mode::register_dies});
         });
     }
 
-    work().wait();
+    orc::block_on_work();
 
     TracyMessageL("orc_process: review DIEs for ODRVs");
 
@@ -631,7 +491,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
         // The last one could be up to (chunk_count - 1) smaller.
         const auto next_chunk_size = std::min(chunk_size, work_size - cur_work);
         const auto last = std::next(first, next_chunk_size);
-        do_work([_first = first, _last = last, &result]() mutable {
+        orc::do_work([_first = first, _last = last, &result]() mutable {
             for (; _first != _last; ++_first) {
                 _first->second = enforce_odrv_for_die_list(_first->second, result);
             }
@@ -640,7 +500,7 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
         first = last;
     }
 
-    work().wait();
+    orc::block_on_work();
 
     TracyMessageL("orc_process: Sorting & filtering ODRV reports");
 
@@ -649,6 +509,69 @@ std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>& f
 
     return result;
 }
+
+/**************************************************************************************************/
+
+namespace orc {
+
+/**************************************************************************************************/
+
+void register_dies(dies die_vector) {
+    ZoneScoped;
+
+    globals::instance()._die_processed_count += die_vector.size();
+
+    // pre-process the vector of dies by partitioning them into those that are skippable and those
+    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
+    // cause a reallocation and copying of only the necessary dies into a vector whose memory
+    // consumption is exactly what's needed.
+
+    auto unskipped_end =
+        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
+
+    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
+
+    die_vector.erase(unskipped_end, die_vector.end());
+    die_vector.shrink_to_fit();
+
+    // This is a list so the die vectors don't move about. The dies become pretty entangled as they
+    // point to one another by reference, and the odr_map itself stores const pointers to the dies
+    // it registers. Thus, we move our incoming die_vector to the end of this list, and all the
+    // pointers we use will stay valid for the lifetime of the application.
+    dies& dies = *with_global_die_collection([&](auto& collection) {
+        collection.push_back(std::move(die_vector));
+        return --collection.end();
+    });
+
+    for (auto& d : dies) {
+        assert(!d._skippable);
+
+        //
+        // At this point we know we're going to register the die. Hereafter belongs
+        // work exclusive to DIEs getting registered/odr-enforced.
+        //
+
+        auto result = global_die_map().insert(std::make_pair(d._hash, &d));
+        if (result.second) {
+            ++globals::instance()._unique_symbol_count;
+            continue;
+        }
+
+        constexpr auto mutex_count_k = 67; // prime; to help reduce any hash bias
+        static std::mutex mutexes_s[mutex_count_k];
+        std::lock_guard<std::mutex> lock(mutexes_s[d._hash % mutex_count_k]);
+
+        die& d_in_map = *result.first->second;
+        d._next_die = d_in_map._next_die;
+        d_in_map._next_die = &d;
+    }
+
+    globals::instance()._die_skipped_count += skip_count;
+}
+
+/**************************************************************************************************/
+
+} // namespace orc
 
 /**************************************************************************************************/
 

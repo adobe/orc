@@ -119,6 +119,7 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._max_violation_count = settings["max_error_count"].value_or(0);
             app_settings._forward_to_linker = settings["forward_to_linker"].value_or(true);
             app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
+            app_settings._dylib_scan_mode = settings["dylib_scan_mode"].value_or(false);
             app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
@@ -146,6 +147,15 @@ void process_orc_config_file(const char* bin_path_string) {
                     cout_safe(
                         [&](auto& s) { s << "warning: Unknown log level (using verbose)\n"; });
                 }
+            }
+
+            if (app_settings._standalone_mode && app_settings._dylib_scan_mode) {
+                throw std::logic_error(
+                    "Both standalone and dylib scanning mode are enabled. Pick one.");
+            }
+
+            if (app_settings._dylib_scan_mode) {
+                app_settings._forward_to_linker = false;
             }
 
             auto read_string_list = [&_settings = settings](const char* name) {
@@ -251,9 +261,17 @@ cmdline_results process_command_line(int argc, char** argv) {
         });
     }
 
-    if (settings::instance()._standalone_mode) {
+    if (settings::instance()._standalone_mode || settings::instance()._dylib_scan_mode) {
         for (std::size_t i{1}; i < argc; ++i) {
             result._file_object_list.push_back(argv[i]);
+        }
+
+        if (settings::instance()._dylib_scan_mode &&
+            result._file_object_list.size() != 1 &&
+            log_level_at_least(settings::log_level::warning)) {
+            cout_safe([&](auto& s) {
+                s << "warning: dylib scanning with more than one top-level artifact may yield false positives.\n";
+            });
         }
     } else {
         std::vector<std::filesystem::path> library_search_paths;
@@ -367,9 +385,9 @@ auto epilogue(bool exception) {
               << "  " << g._odrv_count << " ODRV(s) reported\n"
               << "  " << g._object_file_count << " object file(s) processed\n"
               << "  " << g._die_processed_count << " dies processed\n"
-              << "  " << g._die_skipped_count << " dies skipped (" << format_pct(g._die_skipped_count, g._die_processed_count) << ")\n"
-              << "  " << g._unique_symbol_count << " unique symbols\n"
-              ;
+              << "  " << g._die_skipped_count << " dies skipped ("
+              << format_pct(g._die_skipped_count, g._die_processed_count) << ")\n"
+              << "  " << g._unique_symbol_count << " unique symbols\n";
         });
     }
 
@@ -475,17 +493,16 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
 /**************************************************************************************************/
 
 int main(int argc, char** argv) try {
-    orc::tracy::initialize();
+    orc::profiler::initialize();
 
     signal(SIGINT, interrupt_callback_handler);
 
     process_orc_config_file(argv[0]);
 
     cmdline_results cmdline = process_command_line(argc, argv);
-    const auto& file_list = cmdline._file_object_list;
 
     if (settings::instance()._print_object_file_list) {
-        for (const auto& input_path : file_list) {
+        for (const auto& input_path : cmdline._file_object_list) {
             cout_safe([&](auto& s) { s << input_path.string() << '\n'; });
         }
 
@@ -494,11 +511,11 @@ int main(int argc, char** argv) try {
 
     maybe_forward_to_linker(argc, argv, cmdline);
 
-    if (file_list.empty()) {
+    if (cmdline._file_object_list.empty()) {
         throw std::runtime_error("ORC could not find files to process");
     }
 
-    std::vector<odrv_report> reports = orc_process(file_list); // `orc_process` sorts the reports
+    std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));
     std::vector<odrv_report> violations;
     std::vector<std::string> filtered_categories;
     const auto max_odrv_count = settings::instance()._max_violation_count;
@@ -526,20 +543,8 @@ int main(int argc, char** argv) try {
 
     for (const auto& report : violations) {
         cout_safe([&](auto& s) {
-            s << report; // important to NOT add the '\n' because lots of reports are empty and it
+            s << report; // important to NOT add the '\n', because lots of reports are empty, and it
                          // creates a lot of blank lines
-        });
-    }
-
-    if (!filtered_categories.empty()) {
-        const auto count = filtered_categories.size();
-        sort_unique(filtered_categories);
-        cout_safe([&](auto& s) {
-            s << "Filtered out " << count << " reports in the following categories:\n";
-            for (const auto& category : filtered_categories) {
-                s << "    " << category << '\n';
-            }
-            s << "\n";
         });
     }
 

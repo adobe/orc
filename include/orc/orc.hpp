@@ -55,7 +55,13 @@ bool emit_report(const odrv_report& report);
 
 /**************************************************************************************************/
 
-std::vector<odrv_report> orc_process(const std::vector<std::filesystem::path>&);
+std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&&);
+
+namespace orc {
+
+void register_dies(dies die_vector);
+
+} // namespace orc
 
 void orc_reset();
 
@@ -93,3 +99,5 @@ template <class F>
 void cerr_safe(F&& f) {
     ostream_safe(std::cerr, std::forward<F>(f));
 }
+
+/**************************************************************************************************/

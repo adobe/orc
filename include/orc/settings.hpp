@@ -46,7 +46,6 @@ struct settings {
     bool _parallel_processing{true};
     bool _filter_redundant{true};
     std::string _relative_output_file;
-    bool _resource_metrics{false};
     output_file_mode _output_file_mode{output_file_mode::text};
 };
 

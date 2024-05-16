@@ -98,13 +98,6 @@ print_object_file_list = false
 
 parallel_processing = true
 
-# `resource_metrics`, when true, will cause ORC to emit various metrics regarding resource
-# (time, memory, etc.) consumption.
-#
-# The default value is `false`.
-
-resource_metrics = false
-
 # `symbol_ignore` is a list of symbol names ORC should ignore.
 
 # symbol_ignore = [

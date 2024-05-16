@@ -644,14 +644,28 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     constexpr auto spaces_k = 0; // no pretty-printing in release builds
 #endif
 
-    nlohmann::json result;
+    nlohmann::json violations;
 
     for (const auto& report : reports) {
-        assert(result.count(report._symbol) == 0);
-        result[report._symbol] = report;
+        assert(violations.count(report._symbol) == 0);
+        violations[report._symbol] = report;
     }
 
-    return nlohmann::json(result).dump(spaces_k);
+    const auto& g = globals::instance();
+    nlohmann::json synopsis;
+    synopsis["violations"] = g._odrv_count.load();
+    synopsis["object_files_scanned"] = g._object_file_count.load();
+    synopsis["dies_processed"] = g._die_processed_count.load();
+    synopsis["dies_skipped"] = g._die_skipped_count.load();
+    synopsis["dies_skipped_pct"] = g._die_skipped_count * 100. / g._die_processed_count;
+    synopsis["unique_symbols"] = g._unique_symbol_count.load();
+
+    nlohmann::json result = nlohmann::json::object_t {
+        { "violations", std::move(violations) },
+        { "synopsis", std::move(synopsis) },
+    };
+
+    return result.dump(spaces_k);
 }
 
 /**************************************************************************************************/

@@ -395,6 +395,7 @@ auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
     if (log_level_at_least(settings::log_level::warning)) {
+        // Make sure these values are in sync with the `synopsis` json blob in `to_json`.
         cout_safe([&](auto& s) {
             s << "ORC complete.\n"
               << "  " << g._odrv_count << " ODRV(s) reported\n"

@@ -33,7 +33,7 @@ struct freader {
 
     std::size_t size() const {
         assert(*this);
-        return _l - _p;
+        return _l - _f;
     }
 
     std::size_t tellg() const {
@@ -55,7 +55,7 @@ struct freader {
                 _p += offset;
             } break;
             case std::ios::end: {
-                _p = _f + (size() - offset);
+                _p = _l - offset;
             } break;
             default: {
                 // GNU's libstdc++ has an end-of-options marker that the compiler

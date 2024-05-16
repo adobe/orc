@@ -7,6 +7,9 @@
 // identity
 #include "orc/macho.hpp"
 
+// stdc++
+#include <sstream>
+
 // mach-o
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>

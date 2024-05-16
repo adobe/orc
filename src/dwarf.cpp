@@ -424,7 +424,9 @@ struct dwarf::implementation {
 
     bool skip_die(die& d, const attribute_sequence& attributes);
 
-    die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
+    die_pair fetch_one_die(std::size_t die_offset,
+                           std::size_t cu_header_offset,
+                           std::size_t cu_die_offset);
 
     template <class T>
     T read();
@@ -473,8 +475,8 @@ struct dwarf::implementation {
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
     cu_header _cu_header;
-    std::size_t _cu_address{0};     // offset of the start of the compilation unit in _debug_info
-    std::size_t _cu_die_address{0}; // offset of the compilation unit die
+    std::size_t _cu_header_offset{0}; // offset of the compilation unit header. Relative to __debug_info.
+    std::size_t _cu_die_offset{0}; // offset of the `compile_unit` die. Relative to start of `debug_info`
     pool_string _cu_compilation_directory;
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
@@ -712,12 +714,12 @@ pool_string dwarf::implementation::make_path_canonical(pool_string candidate) {
 // This "flattens" the template into an evaluated value, based on both the attribute and the
 // current read position in debug_info.
 attribute dwarf::implementation::process_attribute(const attribute& attr,
-                                                   std::size_t cur_die_offset,
+                                                   std::size_t die_offset,
                                                    process_mode mode) {
     // clang-format off
     attribute result = attr;
 
-    result._value = process_form(attr, cur_die_offset);
+    result._value = process_form(attr, die_offset);
 
     if (result._value.has_passover()) {
         return result;
@@ -1209,10 +1211,8 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     attribute_value result;
 
     const auto handle_reference = [&](std::uint64_t offset) {
-        const auto debug_info_offset = _debug_info._offset;
-        const auto cu_offset = _cu_address - debug_info_offset;
         // REVISIT (fosterbrereton): Possible overflow
-        result.reference(static_cast<std::uint32_t>(cu_offset + offset));
+        result.reference(_cu_header_offset + offset);
     };
 
     const auto handle_passover = [&]() {
@@ -1402,7 +1402,9 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die die;
     attribute_sequence attributes;
 
-    die._debug_info_offset = static_cast<std::uint32_t>(die_address - _debug_info._offset);
+    die._offset = die_address - _debug_info._offset;
+    die._cu_die_offset = _cu_die_offset;
+    die._cu_header_offset = _cu_header_offset;
     die._arch = _details._arch;
 
     std::size_t abbrev_code = read_uleb();
@@ -1419,7 +1421,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
                        // If the attribute is nonfatal, we'll pass over it in `process_attribute`.
-                       return process_attribute(x, die._debug_info_offset, mode);
+                       return process_attribute(x, die._offset, mode);
                    });
 
     if (mode == process_mode::complete) {
@@ -1533,17 +1535,8 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
     // Unfortunately we have to do this work to see if we're dealing with
     // a self-referential type.
     if (attributes.has_reference(dw::at::type)) {
-        // if this is a self-referential type, it's die will have no attributes.
-        // To determine that, we'll jump to the reference, grab the abbreviation code,
-        // and see how many attributes it should have.
-        auto reference = attributes.reference(dw::at::type);
-        bool empty = temp_seek(_s, _debug_info._offset + reference, std::ios::beg, [&] {
-            auto abbrev_code = read_uleb();
-            const auto& abbrev = find_abbreviation(abbrev_code);
-            return abbrev._attributes.empty();
-        });
-
-        if (empty) {
+        // Check if we have a self-referential type.
+        if (resolve_type(attributes.get(dw::at::type)) == pool_string()) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneTextL("skipping: self-referential type");
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -1561,16 +1554,15 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
 
 /**************************************************************************************************/
 
-void dwarf::implementation::report_die_processing_failure(std::size_t die_absolute_offset,
+void dwarf::implementation::report_die_processing_failure(std::size_t die_address,
                                                           std::string&& error) {
     if (log_level_at_least(settings::log_level::warning)) {
-        const auto debug_info_offset =
-            static_cast<std::uint32_t>(die_absolute_offset - _debug_info._offset);
+        const auto die_offset = die_address - _debug_info._offset;
 
         cerr_safe([&](auto& s) {
             s << "warning: failed to process die\n"
               << "    within: " << object_file_ancestry(_ofd_index) << '\n'
-              << "    debug_info offset: " << hex_print(debug_info_offset) << '\n'
+              << "    debug_info offset: " << hex_print(die_offset) << '\n'
               << "    error: " << error << " \n";
         });
     }
@@ -1598,7 +1590,7 @@ void dwarf::implementation::process_all_dies() {
     dies dies;
 
     while (_s.tellg() < section_end) {
-        _cu_address = _s.tellg();
+        _cu_header_offset = _s.tellg() - _debug_info._offset;
 
         _cu_header.read(_s, _details._needs_byteswap);
 
@@ -1608,22 +1600,23 @@ void dwarf::implementation::process_all_dies() {
             ZoneScopedN("process_one_die"); // name matters for stats tracking
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
-            const std::size_t die_absolute_offset = _s.tellg();
+            const std::size_t die_address = _s.tellg();
             die die;
             attribute_sequence attributes;
 
             try {
                 std::tie(die, attributes) =
-                    abbreviation_to_die(die_absolute_offset, process_mode::complete);
+                    abbreviation_to_die(die_address, process_mode::complete);
             } catch (const std::exception& error) {
                 // `report_die_processing_failure` will rethrow
-                report_die_processing_failure(die_absolute_offset, error.what());
+                report_die_processing_failure(die_address, error.what());
             } catch (...) {
                 // `report_die_processing_failure` will rethrow
-                report_die_processing_failure(die_absolute_offset, "unknown");
+                report_die_processing_failure(die_address, "unknown");
             }
 
-            die._cu_die_address = _cu_die_address;
+            die._cu_header_offset = _cu_header_offset;
+            die._cu_die_offset = _cu_die_offset;
 
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             const char* tag_str = to_string(die._tag);
@@ -1699,7 +1692,7 @@ void dwarf::implementation::process_all_dies() {
 
 void dwarf::implementation::post_process_compilation_unit_die(
     const die& die, const attribute_sequence& attributes) {
-    _cu_die_address = die._debug_info_offset;
+    _cu_die_offset = die._offset;
 
     // Spec (section 3.1.1) says that compilation and partial units may specify which
     // __debug_line subsection they want to draw their decl_files list from. This also
@@ -1745,24 +1738,26 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
 
 /**************************************************************************************************/
 
-die_pair dwarf::implementation::fetch_one_die(std::size_t debug_info_offset,
-                                              std::size_t cu_die_address) {
+die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
+                                              std::size_t cu_header_offset,
+                                              std::size_t cu_die_offset) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
     if (!_ready && !register_sections_done()) throw std::runtime_error("dwarf setup failed");
 
-    if (cu_die_address != debug_info_offset) {
+    _cu_header_offset = cu_header_offset;
+
+    if (cu_die_offset != die_offset) {
         // This loads some state into the dwarf::implementation that makes the `abbreviation_to_die`
         // call more meaningful for the original die we are trying to fetch.
-        die_pair cu_pair = fetch_one_die(cu_die_address, cu_die_address);
+        die_pair cu_pair = fetch_one_die(cu_die_offset, cu_header_offset, cu_die_offset);
         post_process_compilation_unit_die(std::get<0>(cu_pair), std::get<1>(cu_pair));
     }
 
-    auto die_address = _debug_info._offset + debug_info_offset;
+    auto die_address = _debug_info._offset + die_offset;
     _s.seekg(die_address);
-    _cu_address = _debug_info._offset;
 
     auto result = abbreviation_to_die(die_address, process_mode::single);
 
@@ -1785,8 +1780,10 @@ void dwarf::register_section(std::string name, std::size_t offset, std::size_t s
 
 void dwarf::process_all_dies() { _impl->process_all_dies(); }
 
-die_pair dwarf::fetch_one_die(std::size_t debug_info_offset, std::size_t cu_die_address) {
-    return _impl->fetch_one_die(debug_info_offset, cu_die_address);
+die_pair dwarf::fetch_one_die(std::size_t die_offset,
+                              std::size_t cu_header_offset,
+                              std::size_t cu_die_offset) {
+    return _impl->fetch_one_die(die_offset, cu_header_offset, cu_die_offset);
 }
 
 /**************************************************************************************************/

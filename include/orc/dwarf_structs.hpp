@@ -339,18 +339,27 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
 // attribute values with data taken from _debug_info. Thus it is possible for more than one die to
 // use the same abbreviation, but because the die is listed in a different place in the debug_info
 // data block, it's values will be different than previous "stampings" of the abbreviation.
+//
+// A NOTE ON ADDRESS V. OFFSET (because I keep confusing myself)
+//     * An ADDRESS is absolute relative to the _top of the file_. Address-based variables
+//       are always relative to the top of the file, so need no additional annotation.
+//     * An OFFSET is relative to either __debug_info or the start of the compilation unit
+//       (whose offset is relative to __debug_info.) Offsets should always be annotated with
+//       what their value is relative to.
+// All DWARF/DIE/scanning related variables should follow the above conventions.
 struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
     pool_string _path;
     die* _next_die{nullptr};
+    std::optional<location> _location; // file_decl and file_line, if they exit for the die.
     std::size_t _hash{0};
     std::size_t _fatal_attribute_hash{0};
     std::uint32_t _ofd_index{0}; // object file descriptor index
-    std::size_t _cu_die_address{0}; // address of associated compilation unit die entry
-    std::uint32_t _debug_info_offset{0}; // relative from top of __debug_info
-    std::optional<location> _location; // file_decl and file_line, if they exit for the die.
+    std::size_t _cu_header_offset{0}; // offset to the compilation unit that contains this die; relative to __debug_info
+    std::size_t _cu_die_offset{0}; // offset to the associated compilation unit die entry; relative to __debug_info
+    std::size_t _offset{0}; // offset of this die; relative to __debug_info
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};

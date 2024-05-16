@@ -433,6 +433,35 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
 
 /**************************************************************************************************/
 
+namespace {
+
+/**************************************************************************************************/
+
+void parse_dsym(const std::filesystem::path& dsym) {
+    // This may be making a lot of assumptions about the various files, nuances, metadata, directory
+    // structures, etc., that are contained within a dSYM. I would expect further tweaks will
+    // be necessary as real-world issues are found.
+    //
+    // For now, assume the symbol data is stored within file(s) inside the directory below, and
+    // requires no additional data in order to grok it for the purpose of ODRV scanning.
+    for (const auto& entry : std::filesystem::directory_iterator(dsym / "Contents" / "Resources" / "DWARF")) {
+        const auto path = entry.path();
+        if (!is_regular_file(path)) continue;
+        orc::do_work([_input_path = std::move(path)]{
+            freader input(_input_path);
+
+            parse_file(_input_path.string(), object_ancestry(), input, input.size(),
+                       macho_params{macho_reader_mode::register_dies});
+        });
+    }
+}
+
+/**************************************************************************************************/
+
+} // namespace
+
+/**************************************************************************************************/
+
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
     // First stage: (optional) dependency/dylib preprocessing
     if (settings::instance()._dylib_scan_mode) {
@@ -459,10 +488,15 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
                 return;
             }
 
-            freader input(_input_path);
+            if (_input_path.extension() == ".dSYM" && is_directory(_input_path)) {
+                // special case: it's actually a directory.
+                parse_dsym(_input_path);
+            } else {
+                freader input(_input_path);
 
-            parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       macho_params{macho_reader_mode::register_dies});
+                parse_file(_input_path.string(), object_ancestry(), input, input.size(),
+                           macho_params{macho_reader_mode::register_dies});
+            }
         });
     }
 

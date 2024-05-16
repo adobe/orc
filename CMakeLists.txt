@@ -49,6 +49,18 @@ if (NOT TARGET tomlplusplus::tomlplusplus)
 endif()
 
 ####################################################################################################
+
+if (NOT TARGET nlohmann_json::nlohmann_json)
+    message(STATUS "ORC third-party: creating target 'nlohmann_json::nlohmann_json'...")
+    FetchContent_Declare(
+        json
+        URL
+        https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    )
+    FetchContent_MakeAvailable(json)
+endif()
+
+####################################################################################################
 #
 # Adds support for the Tracy profiler.
 #
@@ -125,6 +137,7 @@ foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
             TBB::tbb
             tomlplusplus::tomlplusplus
             Tracy::TracyClient
+            nlohmann_json::nlohmann_json
     )
 
     target_include_directories(${_TARGET_NAME}
@@ -154,6 +167,7 @@ target_link_libraries(orc_test
         TBB::tbb
         tomlplusplus::tomlplusplus
         Tracy::TracyClient
+        nlohmann_json::nlohmann_json
 )
 if (PROJECT_IS_TOP_LEVEL)
     target_compile_options(orc_test PRIVATE -Wall -Werror)

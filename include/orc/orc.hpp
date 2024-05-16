@@ -61,6 +61,8 @@ namespace orc {
 
 void register_dies(dies die_vector);
 
+std::string to_json(const std::vector<odrv_report>&);
+
 } // namespace orc
 
 void orc_reset();
@@ -85,8 +87,10 @@ template <class F>
 void ostream_safe(std::ostream& s, F&& f) {
     std::lock_guard<std::mutex> lock{ostream_safe_mutex()};
     std::forward<F>(f)(s);
-    if (globals::instance()._fp.is_open()) {
-        std::forward<F>(f)(globals::instance()._fp);
+    if (settings::instance()._output_file_mode == settings::output_file_mode::json) return;
+    auto& output_file = globals::instance()._fp;
+    if (output_file.is_open()) {
+        std::forward<F>(f)(output_file);
     }
 }
 

@@ -74,6 +74,16 @@ dylib_scan_mode = false
 
 # relative_output_file = "out.txt"
 
+# Determines what format should be used for content written to external report files defined by
+# either `output_file` or `relative_output_file`. The options are `text` or `json`. `text` will
+# mirror all output sent to `stdout` and `stderr` to the file. `json` will limit output file
+# contents to the ODRV report. This mode enumerates all object files with conflicting symbols, so
+# can be quite verbose. It is intended for programmatic consumption.
+#
+# The default value is `text`.
+
+output_file_mode = 'text'
+
 # `print_object_file_list`, when true, will print the list of object files ORC would otherwise
 # process, and then it exits without failure.
 #

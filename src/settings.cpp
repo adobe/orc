@@ -21,6 +21,12 @@ globals& globals::instance() {
     return instance;
 }
 
+globals::~globals() {
+    if (_fp.is_open()) {
+        _fp.close();
+    }
+}
+
 /**************************************************************************************************/
 
 bool log_level_at_least(settings::log_level level) {

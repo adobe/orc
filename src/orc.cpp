@@ -25,6 +25,9 @@
 #include <stlab/concurrency/serial_queue.hpp>
 #include <stlab/concurrency/utility.hpp>
 
+// json
+#include "nlohmann/json.hpp"
+
 // toml++
 #include <toml++/toml.h>
 
@@ -512,6 +515,69 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
 
 /**************************************************************************************************/
 
+void to_json(nlohmann::json& j, const attribute_value& a) {
+    // limitation: only one of these types will be output,
+    // though I haven't seen a case where more than one is needed.
+    if (a.has(attribute_value::type::string)) {
+        j = a.string().view();
+    } else if (a.has(attribute_value::type::uint)) {
+        j = a.uint();
+    } else if (a.has(attribute_value::type::sint)) {
+        j = a.sint();
+    }
+}
+
+void to_json(nlohmann::json& j, const attribute& a) {
+    // The "name" part of the attribute is handled by `attribute_sequence`.
+    j = a._value;
+}
+
+void to_json(nlohmann::json& j, const attribute_sequence& a) {
+    for (const auto& attr : a) {
+        if (attr._name == dw::at::decl_file) continue;
+        if (attr._name == dw::at::decl_line) continue;
+        if (attr._name == dw::at::name) continue;
+        j[to_string(attr._name)] = nlohmann::json(attr);
+    }
+}
+
+void to_json(nlohmann::json& j, const odrv_report::conflict_details& c) {
+    j["count"] = c._count;
+    j["attributes"] = c._attributes;
+    const auto& locations = c._locations;
+    auto& instances = j["locations"];
+    for (const auto& location : sorted_keys(locations)) {
+        const std::string location_str = location.file.allocate_string() + ":" + std::to_string(location.loc);
+        auto& location_json = instances[location_str];
+        for (const auto& ancestry : locations.at(location)) {
+            auto* node = &location_json;
+            for (std::size_t i = 0; i < ancestry._count; ++i) {
+                const std::string key = ancestry._ancestors[i].allocate_string();
+                if (i == (ancestry._count - 1)) {
+                    node->push_back(key);
+                } else {
+                    node = &(*node)[key];
+                }
+            }
+        }
+    }
+}
+
+void to_json(nlohmann::json& j, const odrv_report& p) {
+    // skip the 'symbol' field; it's already been output
+
+    for (std::size_t i = 0; i < p.category_count(); ++i) {
+        j["attributes"].push_back(p.category(i));
+    }
+
+    const auto& conflicts = p.conflict_map();
+    for (const auto& entry : sorted_keys(conflicts)) {
+        j["definitions"].push_back(conflicts.at(entry));
+    }
+}
+
+/**************************************************************************************************/
+
 namespace orc {
 
 /**************************************************************************************************/
@@ -567,6 +633,25 @@ void register_dies(dies die_vector) {
     }
 
     globals::instance()._die_skipped_count += skip_count;
+}
+
+/**************************************************************************************************/
+
+std::string to_json(const std::vector<odrv_report>& reports) {
+#ifndef NDEBUG
+    constexpr auto spaces_k = 2; // pretty-print in debug builds
+#else
+    constexpr auto spaces_k = 0; // no pretty-printing in release builds
+#endif
+
+    nlohmann::json result;
+
+    for (const auto& report : reports) {
+        assert(result.count(report._symbol) == 0);
+        result[report._symbol] = report;
+    }
+
+    return nlohmann::json(result).dump(spaces_k);
 }
 
 /**************************************************************************************************/

@@ -179,11 +179,11 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
 
     auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
 
-    auto [die, attributes] = dwarf.fetch_one_die(d._debug_info_offset, d._cu_die_address);
+    auto [die, attributes] = dwarf.fetch_one_die(d._offset, d._cu_header_offset, d._cu_die_offset);
     assert(die._tag == d._tag);
     assert(die._arch == d._arch);
     assert(die._has_children == d._has_children);
-    assert(die._debug_info_offset == d._debug_info_offset);
+    assert(die._offset == d._offset);
     return std::move(attributes);
 }
 

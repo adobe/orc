@@ -49,6 +49,9 @@ if (NOT TARGET tomlplusplus::tomlplusplus)
 endif()
 
 ####################################################################################################
+#
+# Taken from https://json.nlohmann.me/integration/cmake/#fetchcontent
+#
 
 if (NOT TARGET nlohmann_json::nlohmann_json)
     message(STATUS "ORC third-party: creating target 'nlohmann_json::nlohmann_json'...")

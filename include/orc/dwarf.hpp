@@ -18,15 +18,15 @@
 using die_pair = std::tuple<die, attribute_sequence>;
 
 struct dwarf {
-    dwarf(std::uint32_t ofd_index,
-          freader&& s,
-          file_details&& details);
+    dwarf(std::uint32_t ofd_index, freader&& s, file_details&& details);
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
 
     void process_all_dies();
 
-    die_pair fetch_one_die(std::size_t debug_info_offset, std::size_t cu_address);
+    die_pair fetch_one_die(std::size_t die_offset,
+                           std::size_t cu_header_offset,
+                           std::size_t cu_die_offset);
 
 private:
     struct implementation;

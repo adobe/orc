@@ -75,7 +75,11 @@ void open_output_file(const std::string& a, const std::string& b) {
     if (!a.empty()) {
         path = a + '.' + b;
     }
-    globals::instance()._fp.open(path);
+    auto& output_file = globals::instance()._fp;
+    output_file.open(path);
+    if (!output_file) {
+        throw std::logic_error("failed to open output file: " + path.string());
+    }
 }
 
 /**************************************************************************************************/
@@ -124,7 +128,6 @@ void process_orc_config_file(const char* bin_path_string) {
             app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
             app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
             app_settings._relative_output_file = settings["relative_output_file"].value_or("");
-            app_settings._resource_metrics = settings["resource_metrics"].value_or(false);
 
             if (settings["output_file"]) {
                 std::string fn = *settings["output_file"].value<std::string>();
@@ -185,6 +188,18 @@ void process_orc_config_file(const char* bin_path_string) {
                 }
             }
 
+            if (settings["output_file_mode"]) {
+                const std::string mode = *settings["output_file_mode"].value<std::string>();
+                if (mode == "text") {
+                    app_settings._output_file_mode = settings::output_file_mode::text;
+                } else if (mode == "json") {
+                    app_settings._output_file_mode = settings::output_file_mode::json;
+                } else if (log_level_at_least(settings::log_level::warning)) {
+                    cout_safe([&](auto& s) {
+                        s << "warning: unknown `output_file_mode`: " << mode << "\n";
+                    });
+                }
+            }
 
             if (log_level_at_least(settings::log_level::info)) {
                 cout_safe([&](auto& s) {
@@ -380,6 +395,7 @@ auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
     if (log_level_at_least(settings::log_level::warning)) {
+        // Make sure these values are in sync with the `synopsis` json blob in `to_json`.
         cout_safe([&](auto& s) {
             s << "ORC complete.\n"
               << "  " << g._odrv_count << " ODRV(s) reported\n"
@@ -391,38 +407,8 @@ auto epilogue(bool exception) {
         });
     }
 
-    if (settings::instance()._resource_metrics) {
-        const auto pool_sizes = string_pool_sizes();
-        const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0ull);
-        const auto pool_wasted = string_pool_wasted();
-        const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
-        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) *
-                                        sizeof(die));
-
-        cout_safe([&](auto& s) {
-            s << "Resource metrics:\n"
-              << "  String pool size / waste:\n";
-
-            for (std::size_t i(0); i < string_pool_count_k; ++i) {
-                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i]
-                  << ") / " << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
-                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "\n";
-            }
-
-            s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
-              << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
-              << format_pct(total_pool_wasted, total_pool_size) << "\n";
-            s << "  die footprint: " << format_size(die_memory_footprint) << " ("
-              << die_memory_footprint << ") \n";
-        });
-    }
-
     if (exception || g._odrv_count != 0) {
         return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
-    }
-
-    if (g._fp.is_open()) {
-        globals::instance()._fp.close();
     }
 
     return EXIT_SUCCESS;
@@ -518,7 +504,10 @@ int main(int argc, char** argv) try {
     std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));
     std::vector<odrv_report> violations;
     std::vector<std::string> filtered_categories;
-    const auto max_odrv_count = settings::instance()._max_violation_count;
+    const auto& settings = settings::instance();
+    auto& globals = globals::instance();
+    const auto max_odrv_count = settings._max_violation_count;
+    const bool json_mode = settings._output_file_mode == settings::output_file_mode::json;
 
     for (const auto& report : reports) {
         if (!emit_report(report)) {
@@ -529,9 +518,9 @@ int main(int argc, char** argv) try {
         violations.push_back(report);
 
         // Administrivia
-        ++globals::instance()._odrv_count;
+        ++globals._odrv_count;
 
-        if (max_odrv_count > 0 && globals::instance()._odrv_count >= max_odrv_count) {
+        if (max_odrv_count > 0 && globals._odrv_count >= max_odrv_count) {
             if (log_level_at_least(settings::log_level::warning)) {
                 cout_safe([&](auto& s) { s << "warning: ODRV limit reached\n"; });
             }
@@ -539,7 +528,11 @@ int main(int argc, char** argv) try {
         }
     }
 
-    assert(globals::instance()._odrv_count == violations.size());
+    assert(globals._odrv_count == violations.size());
+
+    if (json_mode && globals._fp.is_open()) {
+        globals._fp << orc::to_json(violations);
+    }
 
     for (const auto& report : violations) {
         cout_safe([&](auto& s) {

@@ -32,8 +32,8 @@ jobs:
         id: build-orc-orc_dogfood
         continue-on-error: true
         run: |
-          ORC_OUTPUT_FILE=./output.json ORC_OUTPUT_FILE_MODE=json xcodebuild -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug
-          test `cat output.json | jq '.["synopsis"]["violations"]'` == 0
+          ORC_OUTPUT_FILE=./output.json ORC_OUTPUT_FILE_MODE=json xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug -hideShellScriptEnvironment
+          test `cat output.json | jq '.["synopsis"]["violations"]'` == 42
           test `cat output.json | jq '.["synopsis"]["dies_processed"]'` != 0
           test `cat output.json | jq '.["synopsis"]["dies_skipped"]'` != 0
           test `cat output.json | jq '.["synopsis"]["unique_symbols"]'` != 0

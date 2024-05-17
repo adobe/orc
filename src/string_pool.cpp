@@ -38,6 +38,10 @@ namespace {
 
 /**************************************************************************************************/
 
+constexpr int string_pool_count_k = 23;
+
+/**************************************************************************************************/
+
 std::size_t string_view_hash(std::string_view s) {
     return orc::murmur3_64(s.data(), static_cast<std::uint32_t>(s.length()));
 }
@@ -55,7 +59,6 @@ struct pool {
     char* _p{nullptr};
     std::size_t _n{0};
     std::size_t _size{0};
-    std::size_t _wasted{0};
 #if ORC_FEATURE(PROFILE_POOL_MEMORY)
     const char* _id{nullptr};
 #endif // ORC_FEATURE(PROFILE_POOL_MEMORY)
@@ -72,8 +75,6 @@ struct pool {
         const uint32_t tsz = sz + sizeof(uint32_t) + sizeof(size_t) + 1;
 
         if (_n < tsz) {
-            _wasted += _n;
-
             // grow the pool's ponds exponentially. This will strike a balance between
             // the cost of memory allocations required and making sure we have enough
             // space for this and future strings.
@@ -233,33 +234,6 @@ pool_string empool(std::string_view src) {
 #endif // ORC_FEATURE(PROFILE_EMPOOL)
 
     return pool_string(ptr);
-}
-
-/**************************************************************************************************/
-
-std::array<std::size_t, string_pool_count_k> string_pool_sizes() {
-    std::array<std::size_t, string_pool_count_k> result;
-
-    for (std::size_t i(0); i < string_pool_count_k; ++i) {
-        std::lock_guard<string_pool_mutex> pool_guard(pool_mutex(i));
-        result[i] = pool(i)._size;
-    }
-
-    return result;
-}
-
-/**************************************************************************************************/
-
-std::array<std::size_t, string_pool_count_k> string_pool_wasted() {
-    std::array<std::size_t, string_pool_count_k> result;
-
-    for (std::size_t i(0); i < string_pool_count_k; ++i) {
-        std::lock_guard<string_pool_mutex> pool_guard(pool_mutex(i));
-        // Add the accumulated waste from previous ponds to the current pond's unused space.
-        result[i] = pool(i)._wasted + pool(i)._n;
-    }
-
-    return result;
 }
 
 /**************************************************************************************************/

@@ -33,4 +33,6 @@ inline std::string format_pct(float x, float total) {
     return format_pct(x / total);
 }
 
+std::string toupper(std::string&& s);
+
 /**************************************************************************************************/

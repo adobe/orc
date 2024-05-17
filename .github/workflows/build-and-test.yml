@@ -28,16 +28,16 @@ jobs:
         continue-on-error: true
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
+      - name: 🏃 orc_dogfood
+        id: build-orc-orc_dogfood
+        continue-on-error: true
+        run: |
+          xcodebuild -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug
       - name: 🛠️ orc release
         id: build-orc-release
         continue-on-error: true
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
-      - name: 🛠️ orc_dogfood
-        id: build-orc-orc_dogfood
-        continue-on-error: true
-        run: |
-          xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Release -hideShellScriptEnvironment
       - name: 🛠️ orc_test
         id: build-orc_test
         continue-on-error: true

@@ -22,7 +22,7 @@ jobs:
           cmake -DTRACY_ENABLE=OFF -DORC_BUILD_EXAMPLES=0 -GXcode ..
       - name: 🛠️ Build ORC
         run: |
-          xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment
+          xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment ARCHS="x86_64 arm64"
       - name: 🗜️ Create archive
         run: |
           cd build/Release
@@ -32,4 +32,4 @@ jobs:
         with:
           generate_release_notes: true
           files:
-            build/Release/orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz
+            build/Release/orc-${{github.ref_name}}-${{runner.os}}-fat64.tgz

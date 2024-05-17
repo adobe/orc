@@ -32,7 +32,12 @@ jobs:
         id: build-orc-orc_dogfood
         continue-on-error: true
         run: |
-          xcodebuild -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug
+          ORC_OUTPUT_FILE=./output.json ORC_OUTPUT_FILE_MODE=json xcodebuild -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug
+          test `cat output.json | jq '.["synopsis"]["violations"]'` == 0
+          test `cat output.json | jq '.["synopsis"]["dies_processed"]'` != 0
+          test `cat output.json | jq '.["synopsis"]["dies_skipped"]'` != 0
+          test `cat output.json | jq '.["synopsis"]["unique_symbols"]'` != 0
+          test `cat output.json | jq '.["synopsis"]["object_files_scanned"]'` != 0
       - name: 🛠️ orc release
         id: build-orc-release
         continue-on-error: true

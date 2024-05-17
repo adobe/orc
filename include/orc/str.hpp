@@ -30,7 +30,7 @@ std::string format_size(std::size_t x, format_mode mode = format_mode::binary);
 std::string format_pct(float x);
 
 inline std::string format_pct(float x, float total) {
-    return format_pct(x / total);
+    return format_pct(total ? x / total : 0);
 }
 
 std::string toupper(std::string&& s);

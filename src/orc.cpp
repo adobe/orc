@@ -644,7 +644,7 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     constexpr auto spaces_k = 0; // no pretty-printing in release builds
 #endif
 
-    nlohmann::json violations;
+    nlohmann::json violations = nlohmann::json::object_t();
 
     for (const auto& report : reports) {
         assert(violations.count(report._symbol) == 0);
@@ -657,7 +657,7 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     synopsis["object_files_scanned"] = g._object_file_count.load();
     synopsis["dies_processed"] = g._die_processed_count.load();
     synopsis["dies_skipped"] = g._die_skipped_count.load();
-    synopsis["dies_skipped_pct"] = g._die_skipped_count * 100. / g._die_processed_count;
+    synopsis["dies_skipped_pct"] = g._die_processed_count ? (g._die_skipped_count * 100. / g._die_processed_count) : 0;
     synopsis["unique_symbols"] = g._unique_symbol_count.load();
 
     nlohmann::json result = nlohmann::json::object_t {

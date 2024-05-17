@@ -26,7 +26,7 @@ jobs:
       - name: 🗜️ Create archive
         run: |
           cd build/Release
-          tar -zcvf orc-${{github.ref_name}}-${{runner.os}}-${{runner.arch}}.tgz orc
+          tar -zcvf orc-${{github.ref_name}}-${{runner.os}}-fat64.tgz orc
       - name: ✍️ Post archive
         uses: softprops/action-gh-release@v1
         with:

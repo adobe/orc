@@ -28,6 +28,20 @@ jobs:
         continue-on-error: true
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Debug -hideShellScriptEnvironment
+      - name: 🧪 orc on dSYM (flat)
+        id: orc-on-dSYM-flat
+        continue-on-error: true
+        run: |
+          cd ./build/Debug
+          dsymutil --no-odr --flat orc
+          ./orc orc.dwarf 
+      - name: 🧪 orc on dSYM (directory)
+        id: orc-on-dSYM-directory
+        continue-on-error: true
+        run: |
+          cd ./build/Debug
+          dsymutil --no-odr orc
+          ./orc orc.dSYM
       - name: 🏃 orc_dogfood
         id: build-orc-orc_dogfood
         continue-on-error: true

@@ -301,6 +301,24 @@ struct cmdline_results {
 
 /**************************************************************************************************/
 
+namespace {
+
+/**************************************************************************************************/
+
+bool direct_input_file(const std::string_view& p) {
+    // .o: object file
+    // .a: ar file (presumably containing .o files)
+    // .dwarf: flattened dSYM file (see https://llvm.org/docs/CommandGuide/dsymutil.html)
+    // .dSYM: dSYM folder.
+    return p.ends_with(".o") || p.ends_with(".a") || p.ends_with(".dwarf") || p.ends_with(".dSYM");
+}
+
+/**************************************************************************************************/
+
+} // namespace
+
+/**************************************************************************************************/
+
 cmdline_results process_command_line(int argc, char** argv) {
     cmdline_results result;
 
@@ -397,7 +415,7 @@ cmdline_results process_command_line(int argc, char** argv) {
                 auto framework = std::string(argv[++i]);
                 framework = framework + ".framework/" + framework;
                 unresolved_frameworks.push_back(std::move(framework));
-            } else if (arg.ends_with(".o") || arg.ends_with(".a")) {
+            } else if (direct_input_file(arg)) {
                 result._file_object_list.push_back(arg);
             }
         }

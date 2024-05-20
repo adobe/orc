@@ -554,7 +554,7 @@ void to_json(nlohmann::json& j, const odrv_report::conflict_details& c) {
             for (std::size_t i = 0; i < ancestry._count; ++i) {
                 const std::string key = ancestry._ancestors[i].allocate_string();
                 if (i == (ancestry._count - 1)) {
-                    (*node)["objects"].push_back(key);
+                    (*node)["object_files"].push_back(key);
                 } else {
                     node = &(*node)[key];
                 }

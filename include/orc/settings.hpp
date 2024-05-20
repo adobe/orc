@@ -26,6 +26,11 @@ struct settings {
         verbose, // emit as much as possible
     };
 
+    enum class output_file_mode {
+        text,
+        json,
+    };
+
     static settings& instance();
 
     bool _graceful_exit{false};
@@ -41,13 +46,14 @@ struct settings {
     bool _parallel_processing{true};
     bool _filter_redundant{true};
     std::string _relative_output_file;
-    bool _resource_metrics{false};
+    output_file_mode _output_file_mode{output_file_mode::text};
 };
 
 /**************************************************************************************************/
 
 struct globals {
     static globals& instance();
+    ~globals();
 
     std::atomic_size_t _object_file_count{0};
     std::atomic_size_t _odrv_count{0};

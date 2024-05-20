@@ -102,11 +102,6 @@ private:
     const char* _data{nullptr};
 };
 
-constexpr int string_pool_count_k = 23;
-
-std::array<std::size_t, string_pool_count_k> string_pool_sizes();
-std::array<std::size_t, string_pool_count_k> string_pool_wasted();
-
 // pool_string is just a pointer with methods. It needs to be small as strings are a large part
 // of ORC's considerable memory usage. pool_string doesn't have a copy constructor or move semantics. 
 // Copying and low memory usage depend on pool_string being really a pointer, so double check that here,

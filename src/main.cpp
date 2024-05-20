@@ -75,12 +75,51 @@ void open_output_file(const std::string& a, const std::string& b) {
     if (!a.empty()) {
         path = a + '.' + b;
     }
-    globals::instance()._fp.open(path);
+    auto& output_file = globals::instance()._fp;
+    output_file.open(path);
+    if (!output_file) {
+        throw std::logic_error("failed to open output file: " + path.string());
+    }
 }
 
 /**************************************************************************************************/
 
-void process_orc_config_file(const char* bin_path_string) {
+template <typename T>
+T parse_enval(std::string&&) = delete;
+
+template <>
+std::string parse_enval(std::string&& x) {
+    assert(!x.empty());
+    return x;
+}
+
+template <>
+bool parse_enval(std::string&& x) {
+    assert(!x.empty());
+    return x != "0" && toupper(std::move(x)) != "FALSE";
+}
+
+template <>
+std::size_t parse_enval(std::string&& x) {
+    assert(!x.empty());
+    return std::max<int>(std::atoi(x.c_str()), 0);
+}
+
+template <typename T>
+T derive_configuration(const char* key,
+                       const toml::parse_result& settings,
+                       T&& fallback) {
+    T result = settings[key].value_or(fallback);
+    std::string envar = toupper(std::string("ORC_") + key);
+    if (const char* enval = std::getenv(envar.c_str())) {
+        result = parse_enval<T>(enval);
+    }
+    return result;
+}
+
+/**************************************************************************************************/
+
+void process_orc_configuration(const char* bin_path_string) {
     std::filesystem::path pwd(std::filesystem::current_path());
     std::filesystem::path bin_path(pwd / bin_path_string);
     std::filesystem::path config_path;
@@ -110,93 +149,106 @@ void process_orc_config_file(const char* bin_path_string) {
         bin_path = parent;
     }
 
+    toml::parse_result settings;
+
     if (exists(config_path)) {
         try {
-            auto settings = toml::parse_file(config_path.string());
-            auto& app_settings = settings::instance();
-
-            app_settings._graceful_exit = settings["graceful_exit"].value_or(false);
-            app_settings._max_violation_count = settings["max_error_count"].value_or(0);
-            app_settings._forward_to_linker = settings["forward_to_linker"].value_or(true);
-            app_settings._standalone_mode = settings["standalone_mode"].value_or(false);
-            app_settings._dylib_scan_mode = settings["dylib_scan_mode"].value_or(false);
-            app_settings._parallel_processing = settings["parallel_processing"].value_or(true);
-            app_settings._filter_redundant = settings["filter_redundant"].value_or(true);
-            app_settings._print_object_file_list = settings["print_object_file_list"].value_or(false);
-            app_settings._relative_output_file = settings["relative_output_file"].value_or("");
-            app_settings._resource_metrics = settings["resource_metrics"].value_or(false);
-
-            if (settings["output_file"]) {
-                std::string fn = *settings["output_file"].value<std::string>();
-                open_output_file("", fn);
-            }
-
-            if (auto log_level = settings["log_level"].value<std::string>()) {
-                const auto& level = *log_level;
-                if (level == "silent") {
-                    app_settings._log_level = settings::log_level::silent;
-                } else if (level == "warning") {
-                    app_settings._log_level = settings::log_level::warning;
-                } else if (level == "info") {
-                    app_settings._log_level = settings::log_level::info;
-                } else if (level == "verbose") {
-                    app_settings._log_level = settings::log_level::verbose;
-                } else {
-                    // not a known value. Switch to verbose!
-                    app_settings._log_level = settings::log_level::verbose;
-                    cout_safe(
-                        [&](auto& s) { s << "warning: Unknown log level (using verbose)\n"; });
-                }
-            }
-
-            if (app_settings._standalone_mode && app_settings._dylib_scan_mode) {
-                throw std::logic_error(
-                    "Both standalone and dylib scanning mode are enabled. Pick one.");
-            }
-
-            if (app_settings._dylib_scan_mode) {
-                app_settings._forward_to_linker = false;
-            }
-
-            auto read_string_list = [&_settings = settings](const char* name) {
-                std::vector<std::string> result;
-                if (auto* array = _settings.get_as<toml::array>(name)) {
-                    for (const auto& entry : *array) {
-                        if (auto symbol = entry.value<std::string>()) {
-                            result.push_back(*symbol);
-                        }
-                    }
-                }
-                std::sort(result.begin(), result.end());
-                return result;
-            };
-
-            app_settings._symbol_ignore = read_string_list("symbol_ignore");
-            app_settings._violation_report = read_string_list("violation_report");
-            app_settings._violation_ignore = read_string_list("violation_ignore");
-
-            if (!app_settings._violation_report.empty() &&
-                !app_settings._violation_ignore.empty()) {
-                if (log_level_at_least(settings::log_level::warning)) {
-                    cout_safe([&](auto& s) {
-                        s << "warning: Both `violation_report` and `violation_ignore` lists found\n";
-                        s << "warning: `violation_report` will be ignored in favor of `violation_ignore`\n";
-                    });
-                }
-            }
-
-
-            if (log_level_at_least(settings::log_level::info)) {
-                cout_safe([&](auto& s) {
-                    s << "info: ORC config file: " << config_path.string() << "\n";
-                });
-            }
+            settings = toml::parse_file(config_path.string());
         } catch (const toml::parse_error& err) {
             cerr_safe([&](auto& s) { s << "Parsing failed:\n" << err << "\n"; });
             throw std::runtime_error("configuration parsing error");
         }
     } else {
         cerr_safe([&](auto& s) { s << "ORC config file: not found\n"; });
+    }
+
+    auto& app_settings = settings::instance();
+
+    app_settings._graceful_exit = derive_configuration("graceful_exit", settings, false);
+    app_settings._max_violation_count = derive_configuration("max_error_count", settings, std::size_t(0));
+    app_settings._forward_to_linker = derive_configuration("forward_to_linker", settings, true);
+    app_settings._standalone_mode = derive_configuration("standalone_mode", settings, false);
+    app_settings._dylib_scan_mode = derive_configuration("dylib_scan_mode", settings, false);
+    app_settings._parallel_processing = derive_configuration("parallel_processing", settings, true);
+    app_settings._filter_redundant = derive_configuration("filter_redundant", settings, true);
+    app_settings._print_object_file_list = derive_configuration("print_object_file_list", settings, false);
+    app_settings._relative_output_file = derive_configuration("relative_output_file", settings, std::string());
+
+    const std::string log_level = derive_configuration("log_level", settings, std::string("warning"));
+    const std::string output_file = derive_configuration("output_file", settings, std::string());
+    const std::string output_file_mode = derive_configuration("output_file_mode", settings, std::string("text"));
+
+    // Do this early so we can log the ensuing output if it happens.
+    if (!output_file.empty()) {
+        open_output_file(std::string(), output_file);
+    }
+
+    // Do this early, too, so we can _suppress_ the output if we need to.
+    if (output_file_mode == "text") {
+        app_settings._output_file_mode = settings::output_file_mode::text;
+    } else if (output_file_mode == "json") {
+        app_settings._output_file_mode = settings::output_file_mode::json;
+    } else if (log_level_at_least(settings::log_level::warning)) {
+        cout_safe([&](auto& s) {
+            s << "warning: unknown output_file_mode '" << output_file_mode << "'; using text\n";
+        });
+    }
+
+    if (log_level == "silent") {
+        app_settings._log_level = settings::log_level::silent;
+    } else if (log_level == "warning") {
+        app_settings._log_level = settings::log_level::warning;
+    } else if (log_level == "info") {
+        app_settings._log_level = settings::log_level::info;
+    } else if (log_level == "verbose") {
+        app_settings._log_level = settings::log_level::verbose;
+    } else {
+        // not a known value. Switch to verbose!
+        app_settings._log_level = settings::log_level::verbose;
+        cout_safe(
+            [&](auto& s) { s << "warning: unknown log_level '" << log_level << "'; using verbose\n"; });
+    }
+
+    if (app_settings._standalone_mode && app_settings._dylib_scan_mode) {
+        throw std::logic_error(
+            "Both standalone and dylib scanning mode are enabled. Pick one.");
+    }
+
+    if (app_settings._dylib_scan_mode) {
+        app_settings._forward_to_linker = false;
+    }
+
+    auto read_string_list = [&_settings = settings](const char* name) {
+        std::vector<std::string> result;
+        if (auto* array = _settings.get_as<toml::array>(name)) {
+            for (const auto& entry : *array) {
+                if (auto symbol = entry.value<std::string>()) {
+                    result.push_back(*symbol);
+                }
+            }
+        }
+        std::sort(result.begin(), result.end());
+        return result;
+    };
+
+    app_settings._symbol_ignore = read_string_list("symbol_ignore");
+    app_settings._violation_report = read_string_list("violation_report");
+    app_settings._violation_ignore = read_string_list("violation_ignore");
+
+    if (!app_settings._violation_report.empty() &&
+        !app_settings._violation_ignore.empty()) {
+        if (log_level_at_least(settings::log_level::warning)) {
+            cout_safe([&](auto& s) {
+                s << "warning: Both `violation_report` and `violation_ignore` lists found\n";
+                s << "warning: `violation_report` will be ignored in favor of `violation_ignore`\n";
+            });
+        }
+    }
+
+    if (log_level_at_least(settings::log_level::info)) {
+        cout_safe([&](auto& s) {
+            s << "info: ORC config file: " << config_path.string() << "\n";
+        });
     }
 }
 
@@ -398,6 +450,7 @@ auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
     if (log_level_at_least(settings::log_level::warning)) {
+        // Make sure these values are in sync with the `synopsis` json blob in `to_json`.
         cout_safe([&](auto& s) {
             s << "ORC complete.\n"
               << "  " << g._odrv_count << " ODRV(s) reported\n"
@@ -409,41 +462,13 @@ auto epilogue(bool exception) {
         });
     }
 
-    if (settings::instance()._resource_metrics) {
-        const auto pool_sizes = string_pool_sizes();
-        const auto total_pool_size = std::accumulate(pool_sizes.begin(), pool_sizes.end(), 0ull);
-        const auto pool_wasted = string_pool_wasted();
-        const auto total_pool_wasted = std::accumulate(pool_wasted.begin(), pool_wasted.end(), 0);
-        const auto die_memory_footprint((g._die_processed_count - g._die_skipped_count) *
-                                        sizeof(die));
-
-        cout_safe([&](auto& s) {
-            s << "Resource metrics:\n"
-              << "  String pool size / waste:\n";
-
-            for (std::size_t i(0); i < string_pool_count_k; ++i) {
-                s << "    " << i << ": " << format_size(pool_sizes[i]) << " (" << pool_sizes[i]
-                  << ") / " << format_size(pool_wasted[i]) << " (" << pool_wasted[i] << ") / "
-                  << std::fixed << format_pct(pool_wasted[i], pool_sizes[i]) << "\n";
-            }
-
-            s << "    totals: " << format_size(total_pool_size) << " (" << total_pool_size << ") / "
-              << format_size(total_pool_wasted) << " (" << total_pool_wasted << ") / "
-              << format_pct(total_pool_wasted, total_pool_size) << "\n";
-            s << "  die footprint: " << format_size(die_memory_footprint) << " ("
-              << die_memory_footprint << ") \n";
-        });
+    if (exception) {
+        return EXIT_FAILURE;
+    } else if (settings::instance()._graceful_exit) {
+        return EXIT_SUCCESS;
     }
 
-    if (exception || g._odrv_count != 0) {
-        return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
-    }
-
-    if (g._fp.is_open()) {
-        globals::instance()._fp.close();
-    }
-
-    return EXIT_SUCCESS;
+    return g._odrv_count == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 /**************************************************************************************************/
@@ -515,7 +540,7 @@ int main(int argc, char** argv) try {
 
     signal(SIGINT, interrupt_callback_handler);
 
-    process_orc_config_file(argv[0]);
+    process_orc_configuration(argv[0]);
 
     cmdline_results cmdline = process_command_line(argc, argv);
 
@@ -536,7 +561,10 @@ int main(int argc, char** argv) try {
     std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));
     std::vector<odrv_report> violations;
     std::vector<std::string> filtered_categories;
-    const auto max_odrv_count = settings::instance()._max_violation_count;
+    const auto& settings = settings::instance();
+    auto& globals = globals::instance();
+    const auto max_odrv_count = settings._max_violation_count;
+    const bool json_mode = settings._output_file_mode == settings::output_file_mode::json;
 
     for (const auto& report : reports) {
         if (!emit_report(report)) {
@@ -547,9 +575,9 @@ int main(int argc, char** argv) try {
         violations.push_back(report);
 
         // Administrivia
-        ++globals::instance()._odrv_count;
+        ++globals._odrv_count;
 
-        if (max_odrv_count > 0 && globals::instance()._odrv_count >= max_odrv_count) {
+        if (max_odrv_count > 0 && globals._odrv_count >= max_odrv_count) {
             if (log_level_at_least(settings::log_level::warning)) {
                 cout_safe([&](auto& s) { s << "warning: ODRV limit reached\n"; });
             }
@@ -557,7 +585,11 @@ int main(int argc, char** argv) try {
         }
     }
 
-    assert(globals::instance()._odrv_count == violations.size());
+    assert(globals._odrv_count == violations.size());
+
+    if (json_mode && globals._fp.is_open()) {
+        globals._fp << orc::to_json(violations);
+    }
 
     for (const auto& report : violations) {
         cout_safe([&](auto& s) {
@@ -572,7 +604,7 @@ int main(int argc, char** argv) try {
     return epilogue(true);
 } catch (...) {
     cerr_safe([&](auto& s) { s << "Fatal error: unknown\n"; });
-    return epilogue(false);
+    return epilogue(true);
 }
 
 /**************************************************************************************************/

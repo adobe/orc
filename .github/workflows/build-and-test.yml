@@ -42,6 +42,17 @@ jobs:
           cd ./build/Debug
           dsymutil --no-odr orc
           ./orc orc.dSYM
+      - name: 🏃 orc_dogfood
+        id: build-orc-orc_dogfood
+        continue-on-error: true
+        run: |
+          ORC_OUTPUT_FILE=./output.json ORC_OUTPUT_FILE_MODE=json xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_dogfood -configuration Debug -hideShellScriptEnvironment
+          cat output.json
+          echo # newline
+          if [ `cat output.json | jq '.["synopsis"]["violations"]'` == 0 ]; then echo "SUCCESS"; else echo "FAILURE"; exit 1; fi
+          if [ `cat output.json | jq '.["synopsis"]["dies_skipped"]'` != 0 ]; then echo "SUCCESS"; else echo "FAILURE"; exit 1; fi
+          if [ `cat output.json | jq '.["synopsis"]["unique_symbols"]'` != 0 ]; then echo "SUCCESS"; else echo "FAILURE"; exit 1; fi
+          if [ `cat output.json | jq '.["synopsis"]["object_files_scanned"]'` != 0 ]; then echo "SUCCESS"; else echo "FAILURE"; exit 1; fi
       - name: 🛠️ orc release
         id: build-orc-release
         continue-on-error: true

@@ -444,11 +444,13 @@ auto epilogue(bool exception) {
         });
     }
 
-    if (exception || g._odrv_count != 0) {
-        return settings::instance()._graceful_exit ? EXIT_SUCCESS : EXIT_FAILURE;
+    if (exception) {
+        return EXIT_FAILURE;
+    } else if (settings::instance()._graceful_exit) {
+        return EXIT_SUCCESS;
     }
 
-    return EXIT_SUCCESS;
+    return g._odrv_count == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 /**************************************************************************************************/
@@ -584,7 +586,7 @@ int main(int argc, char** argv) try {
     return epilogue(true);
 } catch (...) {
     cerr_safe([&](auto& s) { s << "Fatal error: unknown\n"; });
-    return epilogue(false);
+    return epilogue(true);
 }
 
 /**************************************************************************************************/

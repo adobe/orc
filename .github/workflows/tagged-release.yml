@@ -20,6 +20,9 @@ jobs:
           mkdir build
           cd build
           cmake -DTRACY_ENABLE=OFF -DORC_BUILD_EXAMPLES=0 -GXcode ..
+      - name: 📝 Set Version Details
+        run: |
+          ./set_build_version.sh ${{github.ref_name}} ${{github.sha}}
       - name: 🛠️ Build ORC
         run: |
           xcodebuild -json -project ./build/orc.xcodeproj -scheme orc_orc -configuration Release -hideShellScriptEnvironment ARCHS="x86_64 arm64"

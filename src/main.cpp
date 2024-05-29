@@ -38,6 +38,7 @@
 #include "orc/string_pool.hpp"
 #include "orc/task_system.hpp"
 #include "orc/tracy.hpp"
+#include "orc/version.hpp"
 
 /**************************************************************************************************/
 
@@ -449,7 +450,15 @@ cmdline_results process_command_line(int argc, char** argv) {
 auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
-    if (log_level_at_least(settings::log_level::warning)) {
+    if (g._object_file_count == 0) {
+        cout_safe([&](auto& s) {
+            const auto local_build = ORC_VERSION_STR() == std::string("local");
+            const std::string tag_url = local_build ? "" : std::string(" (https://github.com/adobe/orc/releases/tag/") + ORC_VERSION_STR() + ")";
+            s << "ORC (https://github.com/adobe/orc)\n";
+            s << "    version: " << ORC_VERSION_STR() << tag_url << '\n';
+            s << "    sha: " << ORC_SHA_STR() << '\n';
+        });
+    } else if (log_level_at_least(settings::log_level::warning)) {
         // Make sure these values are in sync with the `synopsis` json blob in `to_json`.
         cout_safe([&](auto& s) {
             s << "ORC complete.\n"
@@ -555,7 +564,7 @@ int main(int argc, char** argv) try {
     maybe_forward_to_linker(argc, argv, cmdline);
 
     if (cmdline._file_object_list.empty()) {
-        throw std::runtime_error("ORC could not find files to process");
+        return epilogue(false);
     }
 
     std::vector<odrv_report> reports = orc_process(std::move(cmdline._file_object_list));

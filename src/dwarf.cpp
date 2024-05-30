@@ -341,16 +341,15 @@ void line_header::read(freader& s, bool needs_byteswap) {
 }
 
 /**************************************************************************************************/
+// It is fixed to keep allocations from happening.
+constexpr const std::size_t max_names_k{32};
+using fixed_attribute_array = std::array<dw::at, max_names_k>;
 
-std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
-#if ORC_FEATURE(PROFILE_DIE_DETAILS)
-    ZoneScoped;
-#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
-
-    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
-    // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    constexpr const std::size_t max_names_k{32};
-    std::array<dw::at, max_names_k> names{dw::at::none};
+// for an incoming set of arbitrary attributes, return the subset of those that are fatal.
+// We also sort the set of attributes by name to make sure subsequent traversal of this set
+// is consistent.
+fixed_attribute_array fatal_attributes_within(const attribute_sequence& attributes) {
+    fixed_attribute_array names{dw::at::none};
     std::size_t count{0};
 
     for (const auto& attr : attributes) {
@@ -362,17 +361,32 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
     }
     std::sort(&names[0], &names[count]);
 
+    return names;
+}
+
+/**************************************************************************************************/
+
+std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+    ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+
+    // We only hash the attributes that could contribute to an ODRV. That's what makes them "fatal"
+
     std::size_t h{0};
 
-    for (std::size_t i{0}; i < count; ++i) {
+    for (auto name : fatal_attributes_within(attributes)) {
+        // As soon as we hit our first no-name-attribute, we're done.
+        if (name == dw::at::none) break;
+
         // If this assert fires, it means an attribute's value was passed over during evaluation,
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
-        const auto name = names[i];
         const auto& attribute = attributes.get(name);
         assert(!attributes.has(name, attribute_value::type::passover));
-        const auto attribute_hash = attribute._value.hash();
-        h = orc::hash_combine(h, attribute_hash);
+
+        const auto hash = attribute._value.hash();
+        h = orc::hash_combine(h, hash);
     }
 
     return h;
@@ -1380,6 +1394,24 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
         result = empool("const " + recurse(attributes).allocate_string());
     } else if (die._tag == dw::tag::pointer_type) {
         result = empool(recurse(attributes).allocate_string() + "*");
+    } else if (die._tag == dw::tag::typedef_) {
+        // This is the anonymous struct / typedef case.
+        // (See https://github.com/adobe/orc/issues/84)
+        // In this case if the resolving type comes back empty,
+        // we have an anonymous structure whose name is in _this_
+        // typedef, not the type this typedef refers to. So we pull
+        // the name from this typedef and use it.
+        if (const auto maybe_type = recurse(attributes)) {
+            result = maybe_type;
+        } else if (attributes.has_string(dw::at::name)) {
+            result = attributes.string(dw::at::name);
+        } else {
+            // `result` will be empty if we hit this in release
+            // builds. It's bad, but not UB, so the program can
+            // continue from here (though the results will be
+            // untrustworthy).
+            assert(!"Got an anonymous typedef with no name?");
+        }
     } else if (attributes.has_string(dw::at::type)) {
         result = type.string();
     } else if (attributes.has_reference(dw::at::type)) {

@@ -1,0 +1,9 @@
+[[source]]
+    path = "a.cpp"
+
+[[source]]
+    path = "b.cpp"
+
+[[odrv]]
+    category = "structure:byte_size"
+    symbol = "S"

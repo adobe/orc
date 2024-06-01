@@ -488,6 +488,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    pool_string _last_typedef_name; // for unnamed structs - see https://github.com/adobe/orc/issues/84
     cu_header _cu_header;
     std::size_t _cu_header_offset{0}; // offset of the compilation unit header. Relative to __debug_info.
     std::size_t _cu_die_offset{0}; // offset of the `compile_unit` die. Relative to start of `debug_info`
@@ -1395,12 +1396,6 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
     } else if (die._tag == dw::tag::pointer_type) {
         result = empool(recurse(attributes).allocate_string() + "*");
     } else if (die._tag == dw::tag::typedef_) {
-        // This is the anonymous struct / typedef case.
-        // (See https://github.com/adobe/orc/issues/84)
-        // In this case if the resolving type comes back empty,
-        // we have an anonymous structure whose name is in _this_
-        // typedef, not the type this typedef refers to. So we pull
-        // the name from this typedef and use it.
         if (const auto maybe_type = recurse(attributes)) {
             result = maybe_type;
         } else if (attributes.has_string(dw::at::name)) {
@@ -1410,7 +1405,7 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
             // builds. It's bad, but not UB, so the program can
             // continue from here (though the results will be
             // untrustworthy).
-            assert(!"Got an anonymous typedef with no name?");
+            assert(!"Got a typedef with no name?");
         }
     } else if (attributes.has_string(dw::at::type)) {
         result = type.string();
@@ -1448,6 +1443,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die._tag = a._tag;
     die._has_children = a._has_children;
 
+    // Can we get rid of this memory allocation? This happens a lot...
     attributes.reserve(a._attributes.size());
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
@@ -1457,8 +1453,9 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
                    });
 
     if (mode == process_mode::complete) {
+        // These statements must be kept in sync with the ones dealing with issue 84 below.
+        // See https://github.com/adobe/orc/issues/84
         path_identifier_set(die_identifier(die, attributes));
-
         die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
     }
 
@@ -1684,11 +1681,36 @@ void dwarf::implementation::process_all_dies() {
                 }
             }
 
+            post_process_die_attributes(attributes);
+
+            // See https://github.com/adobe/orc/issues/84
+            // This code accounts for unnamed structs that are part of
+            // a typedef expression. In such case the typedef actually adds a name
+            // for the purpose of linking, but the structure's
+            // die does not contain the name. Furthermore, the typedef die has
+            // been found to precede the die for the structure. So we grab it if
+            // we find a typedef, and use it if an ensuing structure_type has no name.
+            if (die._tag == dw::tag::typedef_ && attributes.has(dw::at::name)) {
+                _last_typedef_name = attributes.get(dw::at::name).string();
+            } else if (die._tag == dw::tag::structure_type &&
+                       !attributes.has(dw::at::name) &&
+                       _last_typedef_name) {
+                attribute name;
+                name._name = dw::at::name;
+                name._form = dw::form::strp;
+                name._value.string(_last_typedef_name);
+                attributes.push_back(name);
+
+                // These two statements must be in sync with the ones in `abbreviation_to_die`
+                path_identifier_set(die_identifier(die, attributes));
+                die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+
+                _last_typedef_name = pool_string(); // reset it to avoid misuse
+            }
+
             if (die._has_children) {
                 path_identifier_push();
             }
-
-            post_process_die_attributes(attributes);
 
             die._skippable = skip_die(die, attributes);
             die._ofd_index = _ofd_index;

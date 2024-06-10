@@ -1536,6 +1536,16 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
         return true;
     }
 
+    // There are some symbols that are owned by the compiler and/or OS vendor (read: Apple)
+    // that have been observed to conflict. We skip them for our purposes, as we have no
+    // control over them.
+    if (d._path.view().find("::[u]::objc_object") == 0) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+        ZoneTextL("skipping: vendor- or compiler-defined symbol");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
     // lambdas are ephemeral and can't cause (hopefully) an ODRV
     if (d._path.view().find("lambda") != std::string::npos) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)

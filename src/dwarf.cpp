@@ -342,7 +342,7 @@ void line_header::read(freader& s, bool needs_byteswap) {
 
 /**************************************************************************************************/
 // It is fixed to keep allocations from happening.
-constexpr const std::size_t max_names_k{32};
+constexpr std::size_t max_names_k{32};
 using fixed_attribute_array = std::array<dw::at, max_names_k>;
 
 // for an incoming set of arbitrary attributes, return the subset of those that are fatal.

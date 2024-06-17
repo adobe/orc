@@ -63,6 +63,8 @@ void register_dies(dies die_vector);
 
 std::string to_json(const std::vector<odrv_report>&);
 
+std::string version_json();
+
 } // namespace orc
 
 void orc_reset();

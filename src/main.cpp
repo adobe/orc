@@ -451,13 +451,19 @@ auto epilogue(bool exception) {
     const auto& g = globals::instance();
 
     if (g._object_file_count == 0) {
-        cout_safe([&](auto& s) {
-            const auto local_build = ORC_VERSION_STR() == std::string("local");
-            const std::string tag_url = local_build ? "" : std::string(" (https://github.com/adobe/orc/releases/tag/") + ORC_VERSION_STR() + ")";
-            s << "ORC (https://github.com/adobe/orc)\n";
-            s << "    version: " << ORC_VERSION_STR() << tag_url << '\n';
-            s << "    sha: " << ORC_SHA_STR() << '\n';
-        });
+        if (settings::instance()._output_file_mode == settings::output_file_mode::json) {
+            cout_safe([](auto& s){
+                s << orc::version_json() << '\n';
+            });
+        } else {
+            cout_safe([&](auto& s) {
+                const auto local_build = ORC_VERSION_STR() == std::string("local");
+                const std::string tag_url = local_build ? "" : std::string(" (https://github.com/adobe/orc/releases/tag/") + ORC_VERSION_STR() + ")";
+                s << "ORC (https://github.com/adobe/orc)\n";
+                s << "    version: " << ORC_VERSION_STR() << tag_url << '\n';
+                s << "    sha: " << ORC_SHA_STR() << '\n';
+            });
+        }
     } else if (log_level_at_least(settings::log_level::warning)) {
         // Make sure these values are in sync with the `synopsis` json blob in `to_json`.
         cout_safe([&](auto& s) {
@@ -510,9 +516,9 @@ void maybe_forward_to_linker(int argc, char** argv, const cmdline_results& cmdli
     } else if (cmdline._libtool_mode) {
         executable_path /= "libtool";
     } else {
-        if (log_level_at_least(settings::log_level::warning)) {
+        if (log_level_at_least(settings::log_level::verbose)) {
             cout_safe([&](auto& s) {
-                s << "warning: libtool/ld mode could not be derived; forwarding to linker disabled\n";
+                s << "verbose: libtool/ld mode could not be derived; forwarding to linker disabled\n";
             });
         }
 

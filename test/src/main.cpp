@@ -504,19 +504,17 @@ void run_battery_test(const std::filesystem::path& home) {
 
 /**************************************************************************************************/
 
-void traverse_directory_tree(std::filesystem::path& directory) {
+void traverse_directory_tree(const std::filesystem::path& directory) {
     assert(is_directory(directory));
+
+    if (exists(directory / tomlname_k)) {
+        run_battery_test(directory);
+    }
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         try {
             if (is_directory(entry)) {
-                std::filesystem::path path = entry.path();
-
-                if (exists(path / tomlname_k)) {
-                    run_battery_test(path);
-                }
-
-                traverse_directory_tree(path);
+                traverse_directory_tree(entry.path());
             }
         } catch (...) {
             console_error() << "\nIn battery " << entry.path() << ":";

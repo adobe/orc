@@ -341,16 +341,15 @@ void line_header::read(freader& s, bool needs_byteswap) {
 }
 
 /**************************************************************************************************/
+// It is fixed to keep allocations from happening.
+constexpr std::size_t max_names_k{32};
+using fixed_attribute_array = std::array<dw::at, max_names_k>;
 
-std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
-#if ORC_FEATURE(PROFILE_DIE_DETAILS)
-    ZoneScoped;
-#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
-
-    // We only hash the attributes that could contribute to an ODRV. We also sort that set of
-    // attributes by name to make sure the hashing is consistent regardless of attribute order.
-    constexpr const std::size_t max_names_k{32};
-    std::array<dw::at, max_names_k> names{dw::at::none};
+// for an incoming set of arbitrary attributes, return the subset of those that are fatal.
+// We also sort the set of attributes by name to make sure subsequent traversal of this set
+// is consistent.
+fixed_attribute_array fatal_attributes_within(const attribute_sequence& attributes) {
+    fixed_attribute_array names{dw::at::none};
     std::size_t count{0};
 
     for (const auto& attr : attributes) {
@@ -362,17 +361,32 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
     }
     std::sort(&names[0], &names[count]);
 
+    return names;
+}
+
+/**************************************************************************************************/
+
+std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+    ZoneScoped;
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+
+    // We only hash the attributes that could contribute to an ODRV. That's what makes them "fatal"
+
     std::size_t h{0};
 
-    for (std::size_t i{0}; i < count; ++i) {
+    for (auto name : fatal_attributes_within(attributes)) {
+        // As soon as we hit our first no-name-attribute, we're done.
+        if (name == dw::at::none) break;
+
         // If this assert fires, it means an attribute's value was passed over during evaluation,
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
-        const auto name = names[i];
         const auto& attribute = attributes.get(name);
         assert(!attributes.has(name, attribute_value::type::passover));
-        const auto attribute_hash = attribute._value.hash();
-        h = orc::hash_combine(h, attribute_hash);
+
+        const auto hash = attribute._value.hash();
+        h = orc::hash_combine(h, hash);
     }
 
     return h;
@@ -474,6 +488,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    pool_string _last_typedef_name; // for unnamed structs - see https://github.com/adobe/orc/issues/84
     cu_header _cu_header;
     std::size_t _cu_header_offset{0}; // offset of the compilation unit header. Relative to __debug_info.
     std::size_t _cu_die_offset{0}; // offset of the `compile_unit` die. Relative to start of `debug_info`
@@ -1380,6 +1395,18 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
         result = empool("const " + recurse(attributes).allocate_string());
     } else if (die._tag == dw::tag::pointer_type) {
         result = empool(recurse(attributes).allocate_string() + "*");
+    } else if (die._tag == dw::tag::typedef_) {
+        if (const auto maybe_type = recurse(attributes)) {
+            result = maybe_type;
+        } else if (attributes.has_string(dw::at::name)) {
+            result = attributes.string(dw::at::name);
+        } else {
+            // `result` will be empty if we hit this in release
+            // builds. It's bad, but not UB, so the program can
+            // continue from here (though the results will be
+            // untrustworthy).
+            assert(!"Got a typedef with no name?");
+        }
     } else if (attributes.has_string(dw::at::type)) {
         result = type.string();
     } else if (attributes.has_reference(dw::at::type)) {
@@ -1416,6 +1443,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die._tag = a._tag;
     die._has_children = a._has_children;
 
+    // Can we get rid of this memory allocation? This happens a lot...
     attributes.reserve(a._attributes.size());
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
@@ -1425,8 +1453,9 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
                    });
 
     if (mode == process_mode::complete) {
+        // These statements must be kept in sync with the ones dealing with issue 84 below.
+        // See https://github.com/adobe/orc/issues/84
         path_identifier_set(die_identifier(die, attributes));
-
         die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
     }
 
@@ -1503,6 +1532,16 @@ bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attribute
     if (d._path.view().find("::__") != std::string::npos) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: non-user-defined (reserved) symbol");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
+    // There are some symbols that are owned by the compiler and/or OS vendor (read: Apple)
+    // that have been observed to conflict. We skip them for our purposes, as we have no
+    // control over them.
+    if (d._path.view().find("::[u]::objc_object") == 0) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+        ZoneTextL("skipping: vendor- or compiler-defined symbol");
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }
@@ -1652,11 +1691,36 @@ void dwarf::implementation::process_all_dies() {
                 }
             }
 
+            post_process_die_attributes(attributes);
+
+            // See https://github.com/adobe/orc/issues/84
+            // This code accounts for unnamed structs that are part of
+            // a typedef expression. In such case the typedef actually adds a name
+            // for the purpose of linking, but the structure's
+            // die does not contain the name. Furthermore, the typedef die has
+            // been found to precede the die for the structure. So we grab it if
+            // we find a typedef, and use it if an ensuing structure_type has no name.
+            if (die._tag == dw::tag::typedef_ && attributes.has(dw::at::name)) {
+                _last_typedef_name = attributes.get(dw::at::name).string();
+            } else if (die._tag == dw::tag::structure_type &&
+                       !attributes.has(dw::at::name) &&
+                       _last_typedef_name) {
+                attribute name;
+                name._name = dw::at::name;
+                name._form = dw::form::strp;
+                name._value.string(_last_typedef_name);
+                attributes.push_back(name);
+
+                // These two statements must be in sync with the ones in `abbreviation_to_die`
+                path_identifier_set(die_identifier(die, attributes));
+                die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+
+                _last_typedef_name = pool_string(); // reset it to avoid misuse
+            }
+
             if (die._has_children) {
                 path_identifier_push();
             }
-
-            post_process_die_attributes(attributes);
 
             die._skippable = skip_die(die, attributes);
             die._ofd_index = _ofd_index;

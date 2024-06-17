@@ -46,6 +46,7 @@
 #include "orc/str.hpp"
 #include "orc/string_pool.hpp"
 #include "orc/tracy.hpp"
+#include "orc/version.hpp"
 
 /**************************************************************************************************/
 
@@ -700,6 +701,15 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     };
 
     return result.dump(spaces_k);
+}
+
+std::string version_json() {
+    nlohmann::json result;
+
+    result["version"] = ORC_VERSION_STR();
+    result["sha256"] = ORC_SHA_STR();
+
+    return result.dump();
 }
 
 /**************************************************************************************************/

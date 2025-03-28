@@ -20,6 +20,30 @@
 #include "orc/settings.hpp"
 #include "orc/tracy.hpp"
 
+//
+// A note on SPECREF:
+//
+// SPECREF (specification references) are bookmarks to the specification where more context
+// can be found about what the code is doing. The reference must take the following format:
+//
+//     `SPECREF:` version `page` abspage `(`relpage`)` [`line` lineno] [`--` comment]
+//
+// Where:
+//     - version: The version of the DWARF spec (DWARF4, DWARF5, etc.)
+//     - abspage: The absolute page number of the official PDF; the first page is 1.
+//     - relpage: The page number as shown on the page itself (e.g., "Page 123")
+//     - lineno: DWARF5 and beyond have line numbers, which go here.
+//     - comment: An optional comment preceded by `--` that adds brief context.
+//                If the comment is multiline the SPECREF should end with `--`
+//                and the comment follow immediately thereafter.
+//
+// As specification reference needs evolve this format should, too.
+//
+// Links:
+//     - DWARF4: https://dwarfstd.org/doc/DWARF4.pdf
+//     - DWARF5: https://dwarfstd.org/doc/DWARF5.pdf
+//
+
 /**************************************************************************************************/
 
 #define ORC_PRIVATE_FEATURE_PROFILE_DIE_DETAILS() (ORC_PRIVATE_FEATURE_TRACY() && 0)
@@ -30,7 +54,7 @@ namespace {
 
 /**************************************************************************************************/
 
-std::uint32_t form_length(dw::form f, freader& s) {
+std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
     static constexpr std::uint32_t length_size_k{4}; // REVISIT: (fosterbrereton) 8 on 64bit DWARF
 
     auto leb_block = [&] {
@@ -102,7 +126,22 @@ std::uint32_t form_length(dw::form f, freader& s) {
         case dw::form::strx:
             return uleb128(s); // length of LEB _not_ included
         case dw::form::addrx:
-            return uleb128(s); // length of LEB _not_ included
+            if (version == 4) {
+                return uleb128(s); // length of LEB _not_ included
+            } else if (version == 5) {
+                // SPECREF: DWARF5 page 45 (27) line 13 --
+                // addrx has changed to be a single ULEB;
+                // therefore we need to return the length
+                // of the ULEB instead of its value.
+                return temp_seek(s, [&]{
+                    const std::size_t beginning = s.tellg();
+                    (void)uleb128(s); // do the uleb read to find out how much was read.
+                    const std::size_t end = s.tellg();
+                    return static_cast<std::uint32_t>(end - beginning);
+                });
+            } else {
+                assert(!"unhandled DWARF version");
+            }
         case dw::form::ref_sup4:
             return 4;
         case dw::form::strp_sup:
@@ -238,7 +277,8 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
 struct cu_header {
     std::uint64_t _length{0}; // 4 bytes (or 12 if extended length is used.)
     bool _is_64_bit{false};
-    std::uint16_t _version{0};
+    std::uint16_t _version{0}; // DWARF spec version (DWARF4, DWARF5, etc.)
+    std::uint8_t _unit_type{0}; // SPECREF: DWARF5 page 218 (200) line 15
     std::uint64_t _debug_abbrev_offset{0}; // 4 (!_is_64_bit) or 8 (_is_64_bit) bytes
     std::uint32_t _address_size{0};
 
@@ -252,10 +292,23 @@ void cu_header::read(freader& s, bool needs_byteswap) {
         // REVISIT: (fbrereto) handle extended length / DWARF64
         // For DWARF64 `_length` will be 0xffffffff.
         // See section 7.5.1.1 on how to handle this.
+        _is_64_bit = true;
         throw std::runtime_error("unsupported length / DWARF64");
     }
 
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
+
+    if (_version == 4) {
+        // Do nothing. We started this project with DWARF4
+        // so the baseline implementation should match that.
+    } else if (_version == 5) {
+        // SPECREF: DWARF5 page 218 (200) line 15 --
+        // just read the value here, but do not interpret
+        // it until it is necessary to do so.
+        _unit_type = read_pod<std::uint8_t>(s, needs_byteswap);
+    } else {
+        throw std::runtime_error("unknown DWARF version: " + std::to_string(_version));
+    }
 
     // note the read_pod types differ.
     if (_is_64_bit) {
@@ -276,6 +329,8 @@ struct line_header {
     // account for it differently.
     std::uint64_t _length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
     std::uint16_t _version{0};
+    std::int8_t _address_size{0}; // new for DWARF5
+    std::int8_t _segment_selector_size{0}; // new for DWARF5
     std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
     std::uint32_t _min_instruction_length{0};
     std::uint32_t _max_ops_per_instruction{0}; // DWARF4 or greater
@@ -297,8 +352,17 @@ void line_header::read(freader& s, bool needs_byteswap) {
         throw std::runtime_error("unsupported length");
     }
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
-    if (_version > 4) {
-        // REVISIT: (fbrereto) handle DWARF5 and later.
+    if (_version == 4) {
+        /* do nothing */
+    } else if (_version == 5) {
+        // SPECREF: DWARF5 page 26 (8) line 11 -- changes from DWARF4 to DWARF5
+
+        // SPECREF: DWARF5 page 172 (154) line 10
+        _address_size = read_pod<std::int8_t>(s, needs_byteswap);
+
+        // SPECREF: DWARF5 page 172 (154) line 16
+        _segment_selector_size = read_pod<std::int8_t>(s, needs_byteswap);
+    } else {
         throw std::runtime_error("unhandled DWARF version (" + std::to_string(_version) + ")");
     }
     _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
@@ -451,12 +515,14 @@ struct dwarf::implementation {
     std::uint32_t read8();
     std::uint32_t read_uleb();
     std::int32_t read_sleb();
+    std::uint64_t read_initial_length();
 
     void read_abbreviations();
     void read_lines(std::size_t header_offset);
     const abbrev& find_abbreviation(std::uint32_t code) const;
 
     pool_string read_debug_str(std::size_t offset);
+    pool_string read_debug_str_offs(std::size_t offset);
 
     void path_identifier_push();
     void path_identifier_set(pool_string name);
@@ -488,6 +554,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    std::unordered_map<std::size_t, pool_string> _debug_str_offs_cache;
     pool_string _last_typedef_name; // for unnamed structs - see https://github.com/adobe/orc/issues/84
     cu_header _cu_header;
     std::size_t _cu_header_offset{0}; // offset of the compilation unit header. Relative to __debug_info.
@@ -498,6 +565,7 @@ struct dwarf::implementation {
     section _debug_info;
     section _debug_line;
     section _debug_str;
+    section _debug_str_offsets;
     bool _ready{false};
 };
 
@@ -520,6 +588,28 @@ std::uint32_t dwarf::implementation::read_uleb() { return uleb128(_s); }
 
 std::int32_t dwarf::implementation::read_sleb() { return sleb128(_s); }
 
+std::uint64_t dwarf::implementation::read_initial_length() {
+    // SPECREF: DWARF5 page 202 (184) line 25 -- initial length definition
+    // SPECREF: DWARF5 page 214 (196) line 15 -- 32- v. 64-bit length representation
+    std::uint64_t result = read32();
+
+    if (result < 0xfffffff0) {
+        return result;
+    } else if (result == 0xffffffff) {
+        // We still need to communicate that this is a 64-bit field so subsequent
+        // reads can call read64 instead of read32. Hence the assertion here.
+        assert(!"Gotta tell the caller that this is a 64 bit structure");
+        result = read64();
+    } else {
+        // "the values 0xfffffff0 through 0xffffffff are reserved by DWARF
+        // to indicate some form of extension relative to DWARF Version 2;
+        // such values must not be interpreted as a length field."
+        assert(!"unsupported DWARF2 extension");
+    }
+
+    return result;
+}
+
 /**************************************************************************************************/
 
 void dwarf::implementation::register_section(const std::string& name,
@@ -537,6 +627,11 @@ void dwarf::implementation::register_section(const std::string& name,
         _debug_abbrev = section{offset, size};
     } else if (name == "__debug_line") {
         _debug_line = section{offset, size};
+    } else if (name == "__debug_str_offs__DWARF") {
+        _debug_str_offsets = section{offset, size};
+    } else {
+        // save for debugging.
+        // std::cout << "skipped " << name << '\n';
     }
 }
 
@@ -642,6 +737,56 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
 
     return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
                                                 [&] { return empool(_s.read_c_string_view()); });
+}
+
+/**************************************************************************************************/
+// SPECREF: DWARF5 page 26 (8) line 28 -- v4 -> v5 changes
+pool_string dwarf::implementation::read_debug_str_offs(std::size_t entry) {
+    if (const auto found = _debug_str_offs_cache.find(entry); found != _debug_str_offs_cache.end()) {
+        return found->second;
+    }
+
+    // SPECREF: DWARF5 page 259 (241) line 6 --
+    // Apparently `DW_AT_str_offsets_base` points to the first entry in this table, but I am not
+    // sure where that attribute lives. So we'll take the time to derive that offset every time.
+    // If that becomes too expensive we can revisit hunting down `DW_AT_str_offsets_base` and
+    // caching it.
+
+    // This section contains a header, then a series of offsets stored as 4- or 8-byte
+    // values, then a series of strings. So we have to jump twice: first to get
+    // the offset, then to get the string. The 0th string immediately follows the last
+    // entry offset.
+
+    const std::size_t entry_offset = temp_seek(_s, _debug_str_offsets._offset, [&] {
+        const std::size_t startoff = _s.tellg();
+        // SPECREF: DWARF5 page 258 (240) line 9 -- string offsets table details
+        const std::uint64_t length = read_initial_length();
+        const std::uint16_t version = read16();
+        assert(version == 5);
+        const std::uint16_t padding = read16();
+        assert(padding == 0);
+        const std::size_t endoff = _s.tellg();
+        const std::size_t header_size = endoff - startoff;
+
+        // length does not include itself. So the on-disk size taken
+        // up by the entry offsets is the length minus version and padding.
+        const std::size_t entry_offsets_size = length - 4;
+
+        // At this point tellg() is at the 0th entry offset value.
+        // To get the entry offset value we are interested in, we
+        // temp seek to its location and read 4 bytes. (Note that
+        // all of this assumes 32-bit DWARF.)
+        std::size_t entry_offset = 4 * entry;
+        const std::uint32_t entry_offset_value = temp_seek(_s, entry_offset, std::ios::cur, [&]{
+            return read32();
+        });
+
+        // This result is relative to `_debug_str_offsets._offset`.
+        return header_size + entry_offsets_size + entry_offset_value;
+    });
+
+    return _debug_str_offs_cache[entry] = temp_seek(_s, _debug_str_offsets._offset + entry_offset,
+                                                    [&] { return empool(_s.read_c_string_view()); });
 }
 
 /**************************************************************************************************/
@@ -1236,7 +1381,7 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
                                      to_string(attr._name) + ")");
         }
         result.passover();
-        auto size = form_length(attr._form, _s);
+        auto size = form_length(attr._form, _s, _cu_header._version);
         _s.seekg(size, std::ios::cur);
     };
 
@@ -1346,6 +1491,26 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::block: {
             maybe_handle_block(block_type::uleb);
         } break;
+        case dw::form::strx: {
+            // First seen in Xcode 16.1 w/ DWARF5.
+            // SPECREF: DWARF5 page 236 (218) line 31
+            result.string(read_debug_str_offs(read_uleb()));
+        } break;
+        case dw::form::strx1: {
+            // First seen in Xcode 16.1 w/ DWARF5.
+            // SPECREF: DWARF5 page 236 (218) line 31
+            result.string(read_debug_str_offs(read8()));
+        } break;
+        case dw::form::strx2: {
+            // First seen in Xcode 16.1 w/ DWARF5.
+            // SPECREF: DWARF5 page 236 (218) line 31
+            result.string(read_debug_str_offs(read16()));
+        } break;
+        case dw::form::strx4: {
+            // First seen in Xcode 16.1 w/ DWARF5.
+            // SPECREF: DWARF5 page 236 (218) line 31
+            result.string(read_debug_str_offs(read32()));
+        } break;
         default: {
             handle_passover();
         } break;
@@ -1433,6 +1598,18 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die._cu_die_offset = _cu_die_offset;
     die._cu_header_offset = _cu_header_offset;
     die._arch = _details._arch;
+
+    //
+    // This is the offset a tool like dwarfdump will emit for a given object.
+    // By setting the conditional to that offset, you can break on specific
+    // dies to debug them.
+    //
+    // Save this for debugging.
+    //
+    // if (die._offset == 0xc) {
+    //     int x{42};
+    //     (void)x; // <-- breakpoint here.
+    // }
 
     std::size_t abbrev_code = read_uleb();
 
@@ -1672,6 +1849,12 @@ void dwarf::implementation::process_all_dies() {
             if (die._tag == dw::tag::none) {
                 path_identifier_pop();
 
+                //
+                // If this fires, you've got an imbalanced push/pop, meaning you have
+                // a NONE tag that didn't have a prior die with `die._has_children == true`.
+                //
+                assert(!_path.empty());
+
                 if (_path.size() == 1) {
                     break; // end of the compilation unit
                 }
@@ -1814,8 +1997,19 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
     _cu_header_offset = cu_header_offset;
 
     if (cu_die_offset != die_offset) {
-        // This loads some state into the dwarf::implementation that makes the `abbreviation_to_die`
-        // call more meaningful for the original die we are trying to fetch.
+        // If you're in here, we are reading some compilation unit information prior
+        // to reading the actual die that was requested. This loads some state into
+        // the `dwarf::implementation` that makes the `abbreviation_to_die` call
+        // more meaningful for the original die we are trying to fetch.
+
+        // Read the compilation unit header. We need this to know what version of
+        // DWARF we are processing, which can affect how dies are processed (e.g.,
+        // `form_length`'s `dw::form::addrx` passover.)
+        temp_seek(_s, _debug_info._offset + _cu_header_offset, [&]{
+            _cu_header.read(_s, _details._needs_byteswap);
+        });
+
+        // Now grab the compilation unit die itself to fill in additional state details.
         die_pair cu_pair = fetch_one_die(cu_die_offset, cu_header_offset, cu_die_offset);
         post_process_compilation_unit_die(std::get<0>(cu_pair), std::get<1>(cu_pair));
     }

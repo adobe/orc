@@ -1992,11 +1992,12 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
     if (cu_die_offset != die_offset) {
         // If you're in here, we are reading some compilation unit information prior
         // to reading the actual die that was requested. This loads some state into
-        // the dwarf::implementation that makes the `abbreviation_to_die` call more
-        // meaningful for the original die we are trying to fetch.
+        // the `dwarf::implementation` that makes the `abbreviation_to_die` call
+        // more meaningful for the original die we are trying to fetch.
 
-        // read the compilation unit header. We need this to know what version of
-        // DWARF we are processing, which can have an effect on how dies are processed.
+        // Read the compilation unit header. We need this to know what version of
+        // DWARF we are processing, which can affect how dies are processed (e.g.,
+        // `form_length`'s `dw::form::addrx` passover.)
         temp_seek(_s, _debug_info._offset + _cu_header_offset, [&]{
             _cu_header.read(_s, _details._needs_byteswap);
         });

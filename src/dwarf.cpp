@@ -12,6 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
+// adobe contract checks
+#include "adobe/contract_checks.hpp"
+
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
@@ -76,7 +79,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         case dw::form::data8:
             return 8;
         case dw::form::string:
-            assert(false);
+            ADOBE_INVARIANT(false);
             return 0; // TODO: read NTSB from s
         case dw::form::block:
             return static_cast<std::uint32_t>(leb_block());
@@ -115,7 +118,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         case dw::form::indirect:
             // For attributes with this form, the attribute value itself in the .debug_info
             // section begins with an unsigned LEB128 number that represents its form.
-            assert(false);
+            ADOBE_INVARIANT(false);
             return 0; // TODO: (fbrereto)
         case dw::form::sec_offset:
             return length_size_k;
@@ -140,7 +143,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
                     return static_cast<std::uint32_t>(end - beginning);
                 });
             } else {
-                assert(!"unhandled DWARF version");
+                ADOBE_INVARIANT(!"unhandled DWARF version");
             }
         case dw::form::ref_sup4:
             return 4;
@@ -447,7 +450,7 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
         // but it was necessary for ODRV evaluation after all. The fix is to improve the attribute
         // form evaluation engine such that this attribute's value is no longer passed over.
         const auto& attribute = attributes.get(name);
-        assert(!attributes.has(name, attribute_value::type::passover));
+        ADOBE_INVARIANT(!attributes.has(name, attribute_value::type::passover));
 
         const auto hash = attribute._value.hash();
         h = orc::hash_combine(h, hash);
@@ -598,13 +601,13 @@ std::uint64_t dwarf::implementation::read_initial_length() {
     } else if (result == 0xffffffff) {
         // We still need to communicate that this is a 64-bit field so subsequent
         // reads can call read64 instead of read32. Hence the assertion here.
-        assert(!"Gotta tell the caller that this is a 64 bit structure");
+        ADOBE_INVARIANT(!"Gotta tell the caller that this is a 64 bit structure");
         result = read64();
     } else {
         // "the values 0xfffffff0 through 0xffffffff are reserved by DWARF
         // to indicate some form of extension relative to DWARF Version 2;
         // such values must not be interpreted as a length field."
-        assert(!"unsupported DWARF2 extension");
+        ADOBE_INVARIANT(!"unsupported DWARF2 extension");
     }
 
     return result;
@@ -617,7 +620,7 @@ void dwarf::implementation::register_section(const std::string& name,
                                              std::size_t size) {
     // You've called process or fetch once already, and are trying to register more sections.
     // Instead, the section registration must be complete and cannot be revisited.
-    assert(!_ready);
+    ADOBE_PRECONDITION(!_ready);
 
     if (name == "__debug_str") {
         _debug_str = section{offset, size};
@@ -667,7 +670,7 @@ void dwarf::implementation::read_lines(std::size_t header_offset) {
 
         for (const auto& name : header._file_names) {
             if (name._directory_index > 0) {
-                assert(name._directory_index - 1 < header._include_directories.size());
+                ADOBE_INVARIANT(name._directory_index - 1 < header._include_directories.size());
                 std::string path(header._include_directories[name._directory_index - 1]);
                 path += '/';
                 path += name._name;
@@ -762,9 +765,9 @@ pool_string dwarf::implementation::read_debug_str_offs(std::size_t entry) {
         // SPECREF: DWARF5 page 258 (240) line 9 -- string offsets table details
         const std::uint64_t length = read_initial_length();
         const std::uint16_t version = read16();
-        assert(version == 5);
+        ADOBE_INVARIANT(version == 5);
         const std::uint16_t padding = read16();
-        assert(padding == 0);
+        ADOBE_INVARIANT(padding == 0);
         const std::size_t endoff = _s.tellg();
         const std::size_t header_size = endoff - startoff;
 
@@ -796,7 +799,7 @@ void dwarf::implementation::path_identifier_push() { _path.push_back(pool_string
 /**************************************************************************************************/
 
 void dwarf::implementation::path_identifier_set(pool_string name) {
-    assert(!_path.empty());
+    ADOBE_PRECONDITION(!_path.empty());
     _path.back() = name;
 }
 
@@ -908,7 +911,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::calling_convention) {
         auto convention = result._value.uint();
-        assert(convention > 0 && convention <= 0xff);
+        ADOBE_INVARIANT(convention > 0 && convention <= 0xff);
         switch (convention) {
             case 0x01: result._value.string(empool("normal")); break;
             case 0x02: result._value.string(empool("program")); break;
@@ -921,7 +924,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::accessibility) {
         auto accessibility = result._value.uint();
-        assert(accessibility >= 1 && accessibility <= 3);
+        ADOBE_INVARIANT(accessibility >= 1 && accessibility <= 3);
         switch (accessibility) {
             case 1: result._value.string(empool("public")); break;
             case 2: result._value.string(empool("protected")); break;
@@ -930,7 +933,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::virtuality) {
         auto virtuality = result._value.uint();
-        assert(virtuality >= 0 && virtuality <= 2);
+        ADOBE_INVARIANT(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
             case 0: result._value.string(empool("none")); break;
             case 1: result._value.string(empool("virtual")); break;
@@ -939,7 +942,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::visibility) {
         auto visibility = result._value.uint();
-        assert(visibility > 0 && visibility <= 3);
+        ADOBE_INVARIANT(visibility > 0 && visibility <= 3);
         switch (visibility) {
             case 1: result._value.string(empool("local")); break;
             case 2: result._value.string(empool("exported")); break;
@@ -1038,7 +1041,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     // to pull it out, we can.
 
     auto stack_pop = [&_stack = stack] {
-        assert(!_stack.empty());
+        ADOBE_PRECONDITION(!_stack.empty());
         auto result = _stack.back();
         _stack.pop_back();
         return result;
@@ -1190,12 +1193,12 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             //
             case dw::op::dup: {
                 // Duplicates the value (including its type identifier) at the top of the stack
-                assert(!stack.empty());
+                ADOBE_INVARIANT(!stack.empty());
                 stack_push(stack.back());
             } break;
             case dw::op::drop: {
                 // Pops the value (including its type identifier) at the top of the stack
-                assert(!stack.empty());
+                ADOBE_INVARIANT(!stack.empty());
                 (void)stack_pop();
             } break;
             case dw::op::deref: {
@@ -1214,7 +1217,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             case dw::op::and_: {
                 // Pops the top two stack values, performs a bitwise and operation on the two, and
                 // pushes the result.
-                assert(stack.size() > 1);
+                ADOBE_INVARIANT(stack.size() > 1);
                 auto arg0 = stack_pop();
                 auto arg1 = stack_pop();
                 stack_push(arg0 & arg1);
@@ -1222,7 +1225,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
             case dw::op::plus_uconst: {
                 // Pops the top stack entry, adds it to the unsigned LEB128 constant operand and
                 // pushes the result.
-                assert(!stack.empty());
+                ADOBE_INVARIANT(!stack.empty());
                 stack_push(read_uleb() + stack_pop());
             } break;
             case dw::op::minus: {
@@ -1284,7 +1287,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
         _s.seekg(end);
         result.passover();
     } else {
-        assert(!stack.empty());
+        ADOBE_INVARIANT(!stack.empty());
         result.sint(static_cast<std::int32_t>(stack.back()));
     }
 
@@ -1570,7 +1573,7 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
             // builds. It's bad, but not UB, so the program can
             // continue from here (though the results will be
             // untrustworthy).
-            assert(!"Got a typedef with no name?");
+            ADOBE_INVARIANT(!"Got a typedef with no name?");
         }
     } else if (attributes.has_string(dw::at::type)) {
         result = type.string();
@@ -1642,7 +1645,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 /**************************************************************************************************/
 
 bool dwarf::implementation::register_sections_done() {
-    assert(!_ready);
+    ADOBE_PRECONDITION(!_ready);
 
     // Houston, we have a problem.
     if (!(_debug_info.valid() && _debug_abbrev.valid() && _debug_line.valid())) return false;
@@ -1793,7 +1796,7 @@ void dwarf::implementation::report_die_processing_failure(std::size_t die_addres
 
 void dwarf::implementation::process_all_dies() {
     if (!_ready && !register_sections_done()) return;
-    assert(_ready);
+    ADOBE_PRECONDITION(_ready);
 
     auto section_begin = _debug_info._offset;
     auto section_end = section_begin + _debug_info._size;
@@ -1853,7 +1856,7 @@ void dwarf::implementation::process_all_dies() {
                 // If this fires, you've got an imbalanced push/pop, meaning you have
                 // a NONE tag that didn't have a prior die with `die._has_children == true`.
                 //
-                assert(!_path.empty());
+                ADOBE_INVARIANT(!_path.empty());
 
                 if (_path.size() == 1) {
                     break; // end of the compilation unit
@@ -1949,7 +1952,7 @@ void dwarf::implementation::post_process_compilation_unit_die(
     // from? Or is the expectation that the DWARF information won't specify any in that
     // case?)
 
-    assert(!_decl_files.empty());
+    ADOBE_PRECONDITION(!_decl_files.empty());
     _decl_files.erase(std::next(_decl_files.begin()), _decl_files.end());
 
     if (attributes.has_uint(dw::at::stmt_list)) {

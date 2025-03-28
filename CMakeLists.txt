@@ -146,11 +146,14 @@ foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
     target_include_directories(${_TARGET_NAME}
         PRIVATE
             ${PROJECT_SOURCE_DIR}/include
+            ${PROJECT_SOURCE_DIR}/third_party/adobe-contract-checks/include
     )
 
 endforeach()
 
+#
 # This is the end of the ORC executable(s) definition
+#
 
 file(GLOB TEST_SRC_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/test/src/*.cpp)
 list(REMOVE_ITEM SRC_FILES ${PROJECT_SOURCE_DIR}/src/main.cpp)
@@ -163,6 +166,7 @@ add_executable(orc::test ALIAS orc_test)
 target_include_directories(orc_test
     PRIVATE
         ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/third_party/adobe-contract-checks/include
 )
 target_link_libraries(orc_test
     PRIVATE
@@ -180,7 +184,9 @@ if (PROJECT_IS_TOP_LEVEL)
     endif()
 endif()
 
+#
 # This is the end of the ORC test suite app
+#
 
 # This variable can be used by parent projects to import the link_via_orc helper function with
 # include(${ORC_HELPERS})

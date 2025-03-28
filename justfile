@@ -9,23 +9,15 @@ set shell := ["bash", "-uc"]
 default:
   @just --list --justfile {{justfile()}} --list-heading $'Usage: `just recipe` where `recipe` is one of:\n'
 
-# Make `build/` if it does not exist
-mkdir:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    if [ ! -d build ]; then
-        mkdir build
-    fi
-
 # Generate the cmake project (Tracy disabled)
-gen: mkdir
-    cd build && cmake .. -GXcode -DTRACY_ENABLE=OFF
+gen:
+    cmake -B build -GXcode -DTRACY_ENABLE=OFF
 
 # Erase and rebuild `build/` folder
 [confirm("Are you sure you want to delete `build/`? (y/N)")]
-nuke: && mkdir gen
+nuke: && gen
     rm -rf build/
 
 # Generate the cmake project (Tracy enabled)
-tracy: mkdir
-    cd build && cmake .. -GXcode -DTRACY_ENABLE=ON
+tracy:
+    cmake -B build -GXcode -DTRACY_ENABLE=ON

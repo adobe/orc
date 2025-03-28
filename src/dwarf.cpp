@@ -24,8 +24,7 @@
 // A note on SPECREF:
 //
 // SPECREF (specification references) are bookmarks to the specification where more context
-// can be found about what the code is doing. The reference should always take the following
-// format:
+// can be found about what the code is doing. The reference must take the following format:
 //
 //     `SPECREF:` version `page` abspage `(`relpage`)` [`line` lineno] [`--` comment]
 //
@@ -38,7 +37,11 @@
 //                If the comment is multiline the SPECREF should end with `--`
 //                and the comment follow immediately thereafter.
 //
-// As specifications evolve this reference format should, too.
+// As specification reference needs evolve this format should, too.
+//
+// Links:
+//     - DWARF4: https://dwarfstd.org/doc/DWARF4.pdf
+//     - DWARF5: https://dwarfstd.org/doc/DWARF5.pdf
 //
 
 /**************************************************************************************************/

@@ -199,6 +199,17 @@ bool nonfatal_attribute(dw::at at) {
             dw::at::low_pc,
             dw::at::name,
             dw::at::prototyped,
+
+            // Added 2025-03-28 with Xcode 16.1. It's been a while so I'm not sure exactly when
+            // these were introduced, or if they are truly nonfatal. They have been known for
+            // quite a while, but only now are starting to appear in generated DWARF data. I
+            // think it's because Xcode 16.x has started producing DWARF v5 data. Huzzah.
+            // (Perhaps it would be better to have an allowlist of fatal attributes instead of
+            // a disallowlist of nonfatal ones?)
+            dw::at::producer,
+            dw::at::llvm_sysroot,
+            dw::at::comp_dir,
+            dw::at::ranges,
         };
 
         std::sort(nonfatal_attributes.begin(), nonfatal_attributes.end());

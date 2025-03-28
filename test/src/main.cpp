@@ -315,6 +315,20 @@ std::vector<compilation_unit> derive_compilation_units(const std::filesystem::pa
 }
 
 /**************************************************************************************************/
+/// Returns a command-line sanitized version of the string, to prevent user input from doing
+/// something troublesome with the command line execution of the compiler. Note this could
+/// also wreak havoc on non-7-bit-ASCII locales. If that becomes a big problem this can be
+/// improved.
+std::string sanitize(const std::filesystem::path& in) {
+    std::string result = in.string();
+    auto new_end = std::remove_if(result.begin(), result.end(), [](char c){
+        return !(std::isalnum(c) || c == '/' || c == '.' || c == '_');
+    });
+    result.erase(new_end, result.end());
+    return result;
+}
+
+/**************************************************************************************************/
 // REVISIT (fosterbrereton): units is an out-arg here (_path can get modified)
 std::vector<std::filesystem::path> compile_compilation_units(const std::filesystem::path& home,
                                                              const toml::table& settings,
@@ -324,7 +338,7 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
         settings["orc_test_flags"]["preserve_object_files"].value_or(false);
     console() << "Compiling " << units.size() << " source file(s):\n";
     for (auto& unit : units) {
-        auto temp_path = object_file_path(home, unit);
+        auto temp_path = sanitize(object_file_path(home, unit));
         if (preserve_object_files) {
             console() << temp_path << '\n';
         } else {
@@ -334,7 +348,7 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
         for (const auto& flag : unit._flags) {
             command += " " + flag;
         }
-        command += " -g -c " + unit._src.string() + " -o " + temp_path.string();
+        command += " -g -c " + sanitize(unit._src) + " -o " + temp_path;
         // Save this for debugging purposes.
         // console() << command << '\n';
         std::string result = exec(command.c_str());

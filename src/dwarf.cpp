@@ -295,12 +295,16 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
 
-    if (_version == 5) {
+    if (_version == 4) {
+        // Do nothing. We started this project with DWARF4
+        // so the baseline implementation should match that.
+    } else if (_version == 5) {
         // SPECREF: DWARF5 page 218 (200) line 15 --
-        // just read the value here but do not interpret it
-        // until such time as it is found to be necessary to
-        // do so.
+        // just read the value here, but do not interpret
+        // it until it is necessary to do so.
         _unit_type = read_pod<std::uint8_t>(s, needs_byteswap);
+    } else {
+        throw std::runtime_error("unknown DWARF version: " + std::to_string(_version));
     }
 
     // note the read_pod types differ.

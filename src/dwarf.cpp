@@ -56,7 +56,23 @@
 namespace {
 
 /**************************************************************************************************/
-
+///
+/// Calculates the length of a DWARF form value in bytes.
+///
+/// @param f The DWARF form type to calculate the length for
+/// @param s The file reader positioned at the start of the form value
+/// @param version The DWARF version number
+///
+/// @pre The reader must be positioned at the start of the form value data
+/// @pre The form must be a valid DWARF form value
+///
+/// @post The reader position may be modified by this routine. The caller is responsible for
+///     restoring the reader position to the original location.
+///
+/// @return The length in bytes of the form value
+///
+/// @note Not all form types are supported.
+///
 std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
     static constexpr std::uint32_t length_size_k{4}; // REVISIT: (fosterbrereton) 8 on 64bit DWARF
 
@@ -204,15 +220,29 @@ struct section {
 // Think of it like a cookie cutter that needs to get stamped on some dough to make an actual
 // cookie. Only in this case instead of a cookie, it'll make a DIE (DWARF Information Entry.)
 struct abbrev {
-    std::size_t _g{0};
-    std::uint32_t _code{0};
-    dw::tag _tag{0};
-    bool _has_children{false};
-    std::vector<attribute> _attributes;
+    std::size_t _g{0}; /// the offset of the abbreviation entry in the debug_abbrev section (relative to the start of the section)
+    std::uint32_t _code{0}; /// the abbreviation code
+    dw::tag _tag{0}; /// the tag of the DIE
+    bool _has_children{false}; /// whether the DIE has children
+    std::vector<attribute> _attributes; /// the attributes of the DIE
 
     void read(freader& s);
 };
 
+
+/**
+ * @brief Reads an abbreviation entry from the DWARF debug_abbrev section
+ *
+ * Abbreviations in DWARF act as templates for DIEs (DWARF Information Entries).
+ * This function reads the abbreviation code, tag, children flag, and attribute list
+ * from the input stream.
+ *
+ * @param s The file reader positioned at the start of an abbreviation entry
+ *
+ * @pre The stream must be positioned at the beginning of a valid abbreviation entry
+ * @post The stream will be positioned after the last attribute of this abbreviation
+ *       and the abbrev object will be populated with the read data
+ */
 void abbrev::read(freader& s) {
     _g = s.tellg();
     _code = uleb128(s);
@@ -242,7 +272,27 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
 }
 
 /**************************************************************************************************/
-
+/**
+ * @brief Calculates a hash value for a DWARF Information Entry (DIE)
+ *
+ * This function generates a hash value for a DIE that can be used to differentiate it from
+ * other DIEs. The hash combines the architecture, tag, declaration status, and path
+ * of the DIE. Special handling is applied to struct/class tags to treat them as equivalent. This
+ * is _not_ the same as the fatal hash, which is used to detect ODR violations. Rather, this hash
+ * is used to detect DIEs that would otherwise have the same symbol path, but should be treated
+ * as different symbols. If that's the hash you're looking for, see `fatal_attribute_hash`.
+ *
+ * @param d The DIE to hash
+ * @param attributes The attribute sequence associated with the DIE
+ * 
+ * @return A size_t hash value that uniquely identifies the DIE
+ *
+ * @note Struct and class tags are treated as equivalent
+ * @note The declaration attribute is included to distinguish between declarations and definitions
+ *
+ * @pre The DIE and its attributes must be properly initialized
+ * @post The returned hash can be used to identify potentially equivalent DIEs
+ */
 std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
@@ -276,18 +326,42 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
 };
 
 /**************************************************************************************************/
-
+/**
+ * @brief Represents the header of a DWARF compilation unit
+ *
+ * This struct contains information about the DWARF compilation unit, including its length,
+ * version, unit type, and the offset of the debug_abbrev section.
+ */
 struct cu_header {
     std::uint64_t _length{0}; // 4 bytes (or 12 if extended length is used.)
-    bool _is_64_bit{false};
+    bool _is_64_bit{false}; // whether the DWARF is 64-bit
     std::uint16_t _version{0}; // DWARF spec version (DWARF4, DWARF5, etc.)
     std::uint8_t _unit_type{0}; // SPECREF: DWARF5 page 218 (200) line 15
     std::uint64_t _debug_abbrev_offset{0}; // 4 (!_is_64_bit) or 8 (_is_64_bit) bytes
-    std::uint32_t _address_size{0};
+    std::uint32_t _address_size{0}; // size of an address in bytes (currently unused)
 
     void read(freader& s, bool needs_byteswap);
 };
 
+/**************************************************************************************************/
+/**
+ * @brief Reads a DWARF compilation unit header from the input stream
+ *
+ * This function reads a DWARF compilation unit header from the input stream and populates
+ * the cu_header structure with the values read. It handles both DWARF4 and DWARF5 formats,
+ * though DWARF64 is not currently supported.
+ *
+ * @param s The file reader positioned at the start of the compilation unit header
+ * @param needs_byteswap Whether the data needs to be byte-swapped (for endianness correction)
+ *
+ * @pre The reader must be positioned at the start of a valid compilation unit header
+ * @pre The needs_byteswap parameter must correctly indicate whether byte swapping is needed
+ *
+ * @post All fields of the cu_header structure are populated with values from the stream
+ * @post The reader is positioned immediately after the compilation unit header
+ *
+ * @throws std::runtime_error If the DWARF version is unsupported or if DWARF64 is encountered
+ */
 void cu_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s, needs_byteswap);
 
@@ -412,18 +486,30 @@ void line_header::read(freader& s, bool needs_byteswap) {
 constexpr std::size_t max_names_k{32};
 using fixed_attribute_array = std::array<dw::at, max_names_k>;
 
-// for an incoming set of arbitrary attributes, return the subset of those that are fatal.
-// We also sort the set of attributes by name to make sure subsequent traversal of this set
-// is consistent.
+/**
+ * @brief Extracts fatal attributes from an attribute sequence
+ *
+ * This function filters the attributes in the input sequence to include only those that are
+ * considered fatal for ODR (One Definition Rule) violation detection. It sorts the resulting
+ * attributes by value and returns them in a fixed-size array.
+ *
+ * @param attributes The attribute sequence to filter for fatal attributes
+ * 
+ * @return A fixed-size array containing the fatal attributes, sorted by value
+ *
+ * @pre The attributes parameter must be a valid `attribute_sequence`
+ * @post The returned array contains only fatal attributes, sorted by value, with any unused
+ *       elements set to dw::at::none
+ * 
+ * @note The function is limited to processing `max_names_k` fatal attributes.
+ */
 fixed_attribute_array fatal_attributes_within(const attribute_sequence& attributes) {
     fixed_attribute_array names{dw::at::none};
     std::size_t count{0};
 
     for (const auto& attr : attributes) {
         if (nonfatal_attribute(attr._name)) continue;
-        if (count >= max_names_k) {
-            throw std::runtime_error("fatal_attribute_hash names overflow");
-        }
+        ADOBE_INVARIANT(count < (max_names_k - 1), "fatal_attribute_hash names overflow");
         names[count++] = attr._name;
     }
     std::sort(&names[0], &names[count]);
@@ -432,6 +518,26 @@ fixed_attribute_array fatal_attributes_within(const attribute_sequence& attribut
 }
 
 /**************************************************************************************************/
+/**
+ * @brief Calculates a hash value for fatal attributes in a DIE
+ *
+ * This function generates a hash value based on the attributes of a DIE that could contribute
+ * to an ODR violation (One Definition Rule violation). It filters out non-fatal attributes,
+ * sorts them by name for consistent traversal, and returns the subset that are considered fatal.
+ * Note this is not the same as `die_hash`. 
+ *
+ * @param attributes The attribute sequence to filter for fatal attributes
+ * 
+ * @return A fixed-size array containing the fatal attributes, sorted by name
+ *
+ * @pre The attributes parameter must be a valid attribute_sequence
+ * @post The returned array contains only fatal attributes, sorted by name, with any unused
+ *       elements set to dw::at::none
+ * 
+ * @note The function is limited to processing max_names_k attributes and will throw
+ *       an exception if more fatal attributes are found
+ * @note This function is used as part of ODR violation detection
+ */
 
 std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -503,7 +609,7 @@ struct dwarf::implementation {
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
     void post_process_die_attributes(attribute_sequence& attributes);
 
-    bool skip_die(die& d, const attribute_sequence& attributes);
+    bool is_skippable_die(die& d, const attribute_sequence& attributes);
 
     die_pair fetch_one_die(std::size_t die_offset,
                            std::size_t cu_header_offset,
@@ -1671,8 +1777,31 @@ bool dwarf::implementation::register_sections_done() {
 }
 
 /**************************************************************************************************/
-
-bool dwarf::implementation::skip_die(die& d, const attribute_sequence& attributes) {
+/**
+ * @brief Determines if a DIE should be skipped during ODR processing
+ *
+ * This function applies various filtering rules to determine if a DIE (DWARF Information Entry)
+ * should be excluded from ODR (One Definition Rule) violation detection. It checks for:
+ * - DIEs with tags that are explicitly marked for skipping
+ * - Non-external subprograms (invisible outside their compilation unit)
+ * - Anonymous/unnamed DIEs (with empty paths)
+ * - Reserved symbols (containing "__")
+ * - Vendor/compiler-defined symbols
+ * - Lambda expressions (which cannot contribute to ODR violations)
+ * - Objective-C based DIEs (which cannot contribute to ODR violations)
+ * - Symbols in the ignore list (which assumes they are not user-defined)
+ * - Self-referential types (which cannot contribute to ODR violations)
+ *
+ * @param d The DIE to evaluate
+ * @param attributes The attribute sequence associated with the DIE
+ * 
+ * @return true if the DIE should be skipped, false if it should be processed
+ *
+ * @pre The DIE and its attributes must be properly initialized
+ * @post `true` if the DIE should be excluded from ODR violation detection;
+ *       `false` otherwise.
+ */
+bool dwarf::implementation::is_skippable_die(die& d, const attribute_sequence& attributes) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Red);
@@ -1793,7 +1922,20 @@ void dwarf::implementation::report_die_processing_failure(std::size_t die_addres
 }
 
 /**************************************************************************************************/
-
+/**
+ * @brief This function is the main entry point for DWARF DIE processing
+ *
+ * This function reads and processes all DIEs from the debug_info section of a DWARF file.
+ * It traverses the DIE tree and processes the attributes of each, collecting some metadata
+ * along the way. After processing all DIEs, it registers them with the global DIE registry.
+ *
+ * @pre The DWARF implementation must be ready to process DIEs, meaning that required DWARF sections (like `debug_info`) have been registered
+ *
+ * @post All DIEs in the debug_info section are processed and registered
+ * @post The path identifier stack is restored to its original state
+ *
+ * @throws std::runtime_error If DIE processing fails and cannot be recovered
+ */
 void dwarf::implementation::process_all_dies() {
     if (!_ready && !register_sections_done()) return;
     ADOBE_PRECONDITION(_ready);
@@ -1862,6 +2004,8 @@ void dwarf::implementation::process_all_dies() {
                     break; // end of the compilation unit
                 }
 
+                // If we are here, it means we've hit the end of a list of children for a DIE
+                // and can short-circuit the rest of this routine to tackle the next DIE.
                 continue;
             } else if (die._tag == dw::tag::compile_unit || die._tag == dw::tag::partial_unit) {
                 post_process_compilation_unit_die(die, attributes);
@@ -1908,7 +2052,8 @@ void dwarf::implementation::process_all_dies() {
                 path_identifier_push();
             }
 
-            die._skippable = skip_die(die, attributes);
+            // collect some metadata about this DIE for later ODR processing
+            die._skippable = is_skippable_die(die, attributes);
             die._ofd_index = _ofd_index;
             die._hash = die_hash(die, attributes);
             die._fatal_attribute_hash = fatal_attribute_hash(attributes);
@@ -1933,13 +2078,35 @@ void dwarf::implementation::process_all_dies() {
         }
     }
 
+    // Shrink the vector to the actual number of DIEs we have. This will ensure
+    // the vector takes up no more memory than necessary as it will live for the
+    // duration of the ODR processing.
     dies.shrink_to_fit();
 
+    // Register the DIEs with the global DIE registry.
     orc::register_dies(std::move(dies));
 }
 
 /**************************************************************************************************/
-
+/**
+ * @brief Processes a compilation unit DIE after it has been parsed
+ *
+ * This function handles post-processing tasks for a compilation unit DIE, including:
+ * - Storing the compilation unit DIE offset for future reference
+ * - Clearing and rebuilding the declaration files list
+ * - Reading line information if a statement list is available
+ * - Capturing the compilation directory for resolving relative paths
+ *
+ * @param die The compilation unit DIE to process
+ * @param attributes The attribute sequence associated with the compilation unit DIE
+ *
+ * @pre The DIE must be a compilation unit or partial unit DIE
+ * @pre The `_decl_files` vector must have at least one entry (the object file name)
+ *
+ * @post The `_cu_die_offset` is set to the DIE's offset
+ * @post The `_decl_files` list is updated with file information from `debug_line`
+ * @post The `_cu_compilation_directory` is set if available in the attributes
+ */
 void dwarf::implementation::post_process_compilation_unit_die(
     const die& die, const attribute_sequence& attributes) {
     _cu_die_offset = die._offset;
@@ -1973,7 +2140,24 @@ void dwarf::implementation::post_process_compilation_unit_die(
 }
 
 /**************************************************************************************************/
-
+/**
+ * @brief Post-processes a DIE's type attributes to resolve their references
+ *
+ * This function transforms DIE attributes that reference types by resolving
+ * those references to their actual type names. It specifically handles `DW_AT_type`
+ * (the immediate type of the DIE) and `DW_AT_containing_type` (the containing type
+ * in inheritance relationships). Neither attribute is required.
+ *
+ * @param attributes The attribute sequence to process, which may be modified
+ *
+ * @pre The attributes parameter must be a valid attribute_sequence
+ * @pre The DWARF information must be properly loaded to resolve type references
+ * 
+ * @post The `DW_AT_type` and `DW_AT_containing_type` attributes in the sequence
+ * will have their values replaced with resolved type names
+ *
+ * @note `attributes` is an out-arg for performance reasons. 
+ */
 void dwarf::implementation::post_process_die_attributes(attribute_sequence& attributes) {
     if (attributes.has(dw::at::type)) {
         auto& attribute = attributes.get(dw::at::type);
@@ -1987,7 +2171,25 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
 }
 
 /**************************************************************************************************/
-
+/**
+ * @brief Fetches a single DIE (Debug Information Entry) from the DWARF data
+ *
+ * This function retrieves a DIE and its attributes from a specific offset in the `debug_info` section.
+ * The function first processes the compilation unit DIE to establish necessary context before
+ * fetching the requested DIE.
+ *
+ * @param die_offset The offset of the DIE to fetch within the `debug_info` section
+ * @param cu_header_offset The offset of the compilation unit header containing this DIE
+ * @param cu_die_offset The offset of the compilation unit DIE containing this DIE
+ *
+ * @return A `die_pair` containing the DIE and its attribute sequence
+ *
+ * @pre The DWARF sections must be registered and valid
+ * @pre The offsets must point to valid locations within the `debug_info` section
+ * @post The returned DIE will have its type attributes resolved to type names
+ *
+ * @throws std::runtime_error If the processing setup failed or required sections are missing
+ */
 die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
                                               std::size_t cu_header_offset,
                                               std::size_t cu_die_offset) {

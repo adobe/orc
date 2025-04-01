@@ -158,7 +158,12 @@ inline bool operator!=(const attribute& x, const attribute& y) { return !(x == y
 std::ostream& operator<<(std::ostream& s, const attribute& x);
 
 /**************************************************************************************************/
-// I'm not a fan of this name.
+// I'm not a fan of the name `attribute_sequence`.
+//
+// TODO: Consider using `std::array` instead of `std::vector` to avoid dynamic allocation. This
+// would require we cap the max number of attributes at compile time, which should be okay as long
+// as we pick a reasonable number. On the other hand, that would make DIEs with smaller sets of
+// attributes less memory efficient. It's the classic space/time tradeoff.
 struct attribute_sequence {
     using attributes_type = std::vector<attribute>;
     using value_type = typename attributes_type::value_type;
@@ -253,10 +258,15 @@ private:
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
 /**************************************************************************************************/
-
+/**
+ * @brief Represents a source code location in a file
+ *
+ * This structure stores information about a specific location in source code,
+ * typically used to identify where a symbol is defined or declared in DWARF debug info.
+ */
 struct location {
-    pool_string file;
-    std::uint64_t loc{0};
+    pool_string file; /// The source file path or name
+    std::uint64_t loc{0}; /// The 1-indexed line number within the file
 };
 
 inline bool operator==(const location& x, const location& y) {
@@ -278,6 +288,24 @@ struct std::hash<location> {
 
 std::ostream& operator<<(std::ostream&, const location&);
 
+/**************************************************************************************************/
+/**
+ * @brief Derives the source code location where a symbol is defined
+ *
+ * This function extracts location information from a DIE's attributes to determine
+ * where a symbol is defined in the source code. It primarily looks for `DW_AT_decl_file
+ * and DW_AT_decl_line attributes, but may fall back to other location-related attributes
+ * if the primary ones aren't available.
+ *
+ * @param x The attribute sequence from which to derive the location information
+ *
+ * @return An optional `location structure containing the file and line information,
+ *         or `std::nullopt if no valid location information could be found
+ *
+ * @pre The attribute sequence must be properly initialized
+ * @post If a valid location is found, the returned optional contains a location with
+ *       non-empty file name and a line number greater than 0
+ */
 std::optional<location> derive_definition_location(const attribute_sequence& x);
 
 /**************************************************************************************************/
@@ -294,7 +322,19 @@ enum class arch : std::uint8_t {
 const char* to_string(arch arch);
 
 /**************************************************************************************************/
-
+/**
+ * @brief Represents the ancestry of an object file
+ *
+ * Object files can be stored within an arbitrarily nested set of archive formats. For example,
+ * the `.o` file may be stored within an archive (`.a`) file, which itself may be stored within another
+ * archive, etc. This structure keeps track of the file(s) that contain the object file in
+ * question. This facilitates reporting when ODRVs are found, giving the user a breadcrumb as
+ * to how the ODRV is being introduced. For efficiency purposes, we fix the max number of ancestors
+ * at compile time, but this can be adjusted if necessary.
+ * 
+ * TODO: Does it make sense to extract this "static vector" type into a template, so that it can
+ * be used in other contexts? (e.g., `attribute_sequence`?)
+ */
 struct object_ancestry {
     std::array<pool_string, 5> _ancestors;
     std::size_t _count{0};
@@ -335,31 +375,39 @@ struct object_ancestry {
 std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
 
 /**************************************************************************************************/
-// A die is constructed by reading an abbreviation entry, then filling in the abbreviation's
-// attribute values with data taken from _debug_info. Thus it is possible for more than one die to
-// use the same abbreviation, but because the die is listed in a different place in the debug_info
-// data block, it's values will be different than previous "stampings" of the abbreviation.
+// DIE is an acronym for "Debug Information Entry". It is the basic unit of information in DWARF.
+//
+// A DIE is constructed by reading an abbreviation entry, then filling in the abbreviation's
+// attribute values with data taken from `_debug_info`. Thus it is possible for more than one DIE to
+// use the same abbreviation, but because the DIE is listed in a different place in the `debug_info`
+// data block, its values will be different than previous "stampings" of the abbreviation.
 //
 // A NOTE ON ADDRESS V. OFFSET (because I keep confusing myself)
 //     * An ADDRESS is absolute relative to the _top of the file_. Address-based variables
 //       are always relative to the top of the file, so need no additional annotation.
-//     * An OFFSET is relative to either __debug_info or the start of the compilation unit
-//       (whose offset is relative to __debug_info.) Offsets should always be annotated with
+//     * An OFFSET is relative to either `__debug_info` or the start of the compilation unit
+//       (whose offset is relative to `__debug_info`.) Offsets should always be annotated with
 //       what their value is relative to.
 // All DWARF/DIE/scanning related variables should follow the above conventions.
+//
+// During an ORC scan, multiple translation units worth of DIEs are brought together to determine
+// if any of them violate the One Definition Rule. DIEs across those units that are "the same" will
+// have the same `_hash` value, and will be linked together via the `_next_die` pointer. The top-level
+// ORC scan will then have a collection of singly-linked lists, one per unique symbol / `_hash`.
+// Once all these lists are constructed, each are checked individually for ODRVs.
 struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    pool_string _path;
-    die* _next_die{nullptr};
-    std::optional<location> _location; // file_decl and file_line, if they exit for the die.
-    std::size_t _hash{0};
-    std::size_t _fatal_attribute_hash{0};
+    pool_string _path; // the user-readable symbol name, "pathed"/namespaced by containing DIEs. May be mangled.
+    die* _next_die{nullptr}; // pointer to the next DIE that has the same `_hash` value.
+    std::optional<location> _location; // file_decl and file_line, if they exist for the DIE.
+    std::size_t _hash{0}; // uniquely identifies the DIE across differing targets (e.g., the same symbol in a FAT binary.)
+    std::size_t _fatal_attribute_hash{0}; // within a target, a hash of attributes that contribute to ODRVs.
     std::uint32_t _ofd_index{0}; // object file descriptor index
-    std::size_t _cu_header_offset{0}; // offset to the compilation unit that contains this die; relative to __debug_info
-    std::size_t _cu_die_offset{0}; // offset to the associated compilation unit die entry; relative to __debug_info
-    std::size_t _offset{0}; // offset of this die; relative to __debug_info
+    std::size_t _cu_header_offset{0}; // offset to the compilation unit that contains this DIE; relative to `__debug_info`
+    std::size_t _cu_die_offset{0}; // offset to the associated compilation unit DIE entry; relative to `__debug_info`
+    std::size_t _offset{0}; // offset of this DIE; relative to `__debug_info`
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
     bool _has_children{false};

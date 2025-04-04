@@ -2055,8 +2055,8 @@ void dwarf::implementation::process_all_dies() {
             // collect some metadata about this DIE for later ODR processing
             die._skippable = is_skippable_die(die, attributes);
             die._ofd_index = _ofd_index;
-            die._hash = die_hash(die, attributes);
-            die._fatal_attribute_hash = fatal_attribute_hash(attributes);
+            die._hash = die_hash(die, attributes); // DIE "thumbprint" to determine if two DIEs are "equal"
+            die._fatal_attribute_hash = fatal_attribute_hash(attributes); // If the thumbprints are equal but this is not, it's an ODRV.
             die._location = derive_definition_location(attributes);
 
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)

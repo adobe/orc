@@ -325,6 +325,50 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     // clang-tidy on
 };
 
+/**
+ * @brief Compute a hash value to be used by `fatal_attribute_hash`.
+ * This value can start out as just the size of the 'subprogram', but as it evolves it may include e.g.,
+ * a hash of the code itself (which should be the same if the implementations are identical).
+ */
+std::size_t derive_subprogram_hash(const attribute& low_pc, const attribute& high_pc) {
+    // SPECREF: DWARF5 page 70 (52) line 12-15 --
+    // If the value of the DW_AT_high_pc is of class address, it is the address of the first location
+    // past the last instruction associated with the entity; if it is of class constant, the value is an
+    // unsigned integer offset which when added to the low PC gives the address of the
+    // first location past the last instruction associated with the entity.
+    switch (high_pc._form) {
+        // SPECREF: DWARF5 page 231 (213) line 3-20
+        case dw::form::addr: [[fallthrough]];
+        case dw::form::addrx: [[fallthrough]];
+        case dw::form::addrx1: [[fallthrough]];
+        case dw::form::addrx2: [[fallthrough]];
+        case dw::form::addrx3: [[fallthrough]];
+        case dw::form::addrx4:
+            // The high_pc is an address, so we can just subtract the low_pc from it.
+            return high_pc.uint() - low_pc.uint();
+
+        // SPECREF: DWARF5 page 232 (214) line 8-27
+        case dw::form::data1: [[fallthrough]];
+        case dw::form::data2: [[fallthrough]];
+        case dw::form::data4: [[fallthrough]];
+        case dw::form::data8: [[fallthrough]];
+        case dw::form::data16:[[fallthrough]];
+        case dw::form::sdata: [[fallthrough]];
+        case dw::form::udata:
+            if (high_pc.has(attribute_value::type::uint)) {
+                return high_pc.uint();
+            } else if (high_pc.has(attribute_value::type::sint)) {
+                return high_pc.sint();
+            } else {
+                ADOBE_INVARIANT(!"unknown form data type");
+            }
+            return high_pc.uint();
+        default:
+            // Unsupported form for high_pc
+            ADOBE_INVARIANT(!"Unsupported form for high_pc");
+    }
+};
+
 /**************************************************************************************************/
 /**
  * @brief Represents the header of a DWARF compilation unit
@@ -583,6 +627,20 @@ bool skip_tagged_die(const die& d) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Verifies if a DIE is a function implementation or not.
+ */
+bool _is_function_implementation(const die& die, const attribute_sequence& attributes) {
+    // We don't care about non-functions or declarations or artificial (compiler generated) functions.
+    if (die._tag != dw::tag::subprogram || attributes.has(dw::at::declaration) || attributes.has(dw::at::artificial))
+        return false;
+    bool is_implementation = attributes.has(dw::at::low_pc) && attributes.has(dw::at::high_pc);
+    // TODO: should we check for dw::at::external (external linkage) as well?
+    return is_implementation;
+}
+
+/**************************************************************************************************/
+
 enum class process_mode {
     complete,
     single,
@@ -607,7 +665,7 @@ struct dwarf::implementation {
     void report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error);
     void process_all_dies();
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
-    void post_process_die_attributes(attribute_sequence& attributes);
+    void post_process_die_attributes(const die& die, attribute_sequence& attributes);
 
     bool is_skippable_die(die& d, const attribute_sequence& attributes);
 
@@ -2021,7 +2079,7 @@ void dwarf::implementation::process_all_dies() {
                 }
             }
 
-            post_process_die_attributes(attributes);
+            post_process_die_attributes(die, attributes);
 
             // See https://github.com/adobe/orc/issues/84
             // This code accounts for unnamed structs that are part of
@@ -2158,7 +2216,7 @@ void dwarf::implementation::post_process_compilation_unit_die(
  *
  * @note `attributes` is an out-arg for performance reasons. 
  */
-void dwarf::implementation::post_process_die_attributes(attribute_sequence& attributes) {
+void dwarf::implementation::post_process_die_attributes(const die& die, attribute_sequence& attributes) {
     if (attributes.has(dw::at::type)) {
         auto& attribute = attributes.get(dw::at::type);
         attribute._value.string(resolve_type(attribute));
@@ -2167,6 +2225,25 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
     if (attributes.has(dw::at::containing_type)) {
         auto& attribute = attributes.get(dw::at::containing_type);
         attribute._value.string(resolve_type(attribute));
+    }
+
+    // This assumes the values of these attributes are correct, which may not be true,
+    // so we'll need some test cases to make sure we're pulling these values properly.
+    //
+    // The goal here is to take the low and high pc attribute values and compute an
+    // additional hash value to be used by `fatal_attribute_hash`. This value can start
+    // out as just the size of the 'subprogram', but as it evolves it may include e.g.,
+    // a hash of the code itself (which should be the same if the implementations are identical.)
+    //
+    // Once we have this "implementation hash" we don't need the actual high_pc
+    // value anymore. So we replace that value with the hash and fatal attribute hash
+    // will pick it up automatically.
+    if (_is_function_implementation(die, attributes)) {
+        const auto& low_pc_value = attributes.get(dw::at::low_pc);
+        const auto& high_pc_value = attributes.get(dw::at::high_pc);
+        const auto program_hash = derive_subprogram_hash(low_pc_value, high_pc_value);
+        auto& attribute = attributes.get(dw::at::high_pc);
+        attribute._value.uint(program_hash);
     }
 }
 
@@ -2224,7 +2301,7 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
 
     auto result = abbreviation_to_die(die_address, process_mode::single);
 
-    post_process_die_attributes(std::get<1>(result));
+    post_process_die_attributes(std::get<0>(result), std::get<1>(result));
 
     return result;
 }

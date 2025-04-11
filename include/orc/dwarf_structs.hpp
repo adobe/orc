@@ -146,6 +146,7 @@ struct attribute {
     auto reference() const { return _value.reference(); }
     const auto& string() const { return _value.string(); }
     auto uint() const { return _value.uint(); }
+    auto sint() const { return _value.sint(); }
     auto string_hash() const { return _value.string_hash(); }
 };
 

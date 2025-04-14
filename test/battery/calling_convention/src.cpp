@@ -3,4 +3,9 @@ struct object {
 };
 
 // Required so the compiler generates a symbol.
-int (object::*api_pointer)() const  = &object::api;
+
+typedef int (object::*api_pointer)() const;
+
+api_pointer foo() {
+    return &object::api;
+}

@@ -17,8 +17,9 @@
     symbol = "object"
 
 [[odrv]]
-    category = "subprogram:virtuality, subprogram:vtable_elem_location"
-    symbol = "object::api() const"
+    category = "subprogram:high_pc"
+    symbol = "foo()"
 
 [orc_test_flags]
     disable = false
+    preserve_object_files = false

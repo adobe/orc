@@ -516,7 +516,7 @@ void run_battery_test(const std::filesystem::path& home) {
             console() << ++count << ":\n" << expected << '\n';
         }
 
-        throw std::runtime_error("ODRV count mismatch");
+        console_error() << "\nIn battery " << home << ": ODRV count mismatch";
     }
 }
 

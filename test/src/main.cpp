@@ -63,7 +63,7 @@ auto& toml_out() {
 
 /**************************************************************************************************/
 
-} // namespace {
+} // namespace
 
 /**************************************************************************************************/
 
@@ -126,7 +126,7 @@ void error(const std::string& message,
 
 /**************************************************************************************************/
 
-} // namespace log
+} // namespace logging
 
 /**************************************************************************************************/
 
@@ -321,7 +321,7 @@ std::vector<compilation_unit> derive_compilation_units(const std::filesystem::pa
 /// improved.
 std::string sanitize(const std::filesystem::path& in) {
     std::string result = in.string();
-    auto new_end = std::remove_if(result.begin(), result.end(), [](char c){
+    auto new_end = std::remove_if(result.begin(), result.end(), [](char c) {
         return !(std::isalnum(c) || c == '/' || c == '.' || c == '_');
     });
     result.erase(new_end, result.end());
@@ -357,7 +357,8 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
             throw std::runtime_error("unexpected compilation failure");
         }
         object_files.emplace_back(std::move(temp_path));
-        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename() << '\n';
+        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename()
+                  << '\n';
     }
     return object_files;
 }
@@ -407,9 +408,9 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
     const std::string& linkage_name = demangle(odrv.linkage_name().c_str());
     if (!linkage_name.empty()) {
         const auto& die_pair = report.conflict_map().begin()->second;
-        const char* report_linkage_name = demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
-        if (linkage_name != report_linkage_name)
-            return false;
+        const char* report_linkage_name =
+            demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
+        if (linkage_name != report_linkage_name) return false;
     }
     return true;
 }
@@ -422,65 +423,66 @@ constexpr const char* tomlname_k = "odrv_test.toml";
 
 std::size_t run_battery_test(const std::filesystem::path& home) {
     static bool first_s = false;
-    
+
     if (!first_s) {
         console() << '\n';
     } else {
         first_s = false;
     }
-    
+
     assume(is_directory(home), "\"" + home.string() + "\" is not a directory");
     std::filesystem::path tomlpath = home / tomlname_k;
     assume(is_regular_file(tomlpath), "\"" + tomlpath.string() + "\" is not a regular file");
     toml::table settings;
-    
+
     console() << "-=-=- Test: " << home << "\n";
-    
+
     try {
         settings = toml::parse_file(tomlpath.string());
     } catch (const toml::parse_error& error) {
         console_error() << error << '\n';
         throw std::runtime_error("settings file parsing error");
     }
-    
+
     // Save this for debugging purposes.
     // console_error() << toml::json_formatter{settings} << '\n';
-    
+
     const bool skip_test = settings["orc_test_flags"]["disable"].value_or(false);
-    
+
     if (skip_test) {
         logging::notice("test disabled");
         return 0;
     }
-    
+
     auto test_name = home.stem().string();
-    
+
     auto compilation_units = derive_compilation_units(home, settings);
     if (compilation_units.empty()) {
         throw std::runtime_error("found no sources to compile");
     }
-    
+
     auto expected_odrvs = derive_expected_odrvs(home, settings);
     if (expected_odrvs.empty()) {
         logging::notice("Found no expected ODRVs for this test", test_name);
     }
-    
+
     auto object_files = compile_compilation_units(home, settings, compilation_units);
-    
+
     orc_reset();
-    
+
     // save for debugging.
     // settings::instance()._parallel_processing = false;
-    
+
     auto reports = orc_process(std::move(object_files));
-    
-    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
-    
+
+    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size()
+              << '\n';
+
     toml::table result;
     result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
     result.insert("reported", static_cast<toml::int64_t>(reports.size()));
     toml_out().insert(test_name, std::move(result));
-    
+
     // At this point, the reports.size() should match the expected_odrvs.size()
     bool unexpected_result = false;
     if (expected_odrvs.size() != reports.size()) {
@@ -488,36 +490,34 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
     } else {
         for (const auto& report : reports) {
             auto found =
-            std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
-                         [&](const auto& odrv) {
-                return odrv_report_match(odrv, report);
-            });
-            
+                std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
+                             [&](const auto& odrv) { return odrv_report_match(odrv, report); });
+
             if (found == expected_odrvs.end()) {
                 unexpected_result = true;
                 break;
             }
-            
+
             console() << "    Found expected ODRV: " << report.reporting_categories() << "\n";
         }
     }
-    
+
     if (unexpected_result) {
         console_error() << "Reported ODRV(s):\n";
-        
+
         // If there's an error in the test, dump what we've found to assist debugging.
         for (const auto& report : reports) {
             console() << report << '\n';
         }
-        
+
         console_error() << "Expected ODRV(s):\n";
         std::size_t count{0};
         for (const auto& expected : expected_odrvs) {
             console() << ++count << ":\n" << expected << '\n';
         }
-        
+
         console_error() << "\nIn battery " << home << ": ODRV count mismatch";
-        
+
         return 1;
     }
 
@@ -534,7 +534,7 @@ std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
     if (exists(directory / tomlname_k)) {
         errors += run_battery_test(directory);
     }
-    
+
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         try {
             if (is_directory(entry)) {
@@ -574,9 +574,7 @@ int main(int argc, char** argv) try {
     std::size_t errors = traverse_directory_tree(battery_path);
 
     if (test_settings()._json_mode) {
-        cout_safe([&](auto& s){
-            s << toml::json_formatter{ toml_out() } << '\n';
-        });
+        cout_safe([&](auto& s) { s << toml::json_formatter{toml_out()} << '\n'; });
     }
 
     return errors ? EXIT_FAILURE : EXIT_SUCCESS;

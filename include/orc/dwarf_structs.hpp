@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+// adobe contract checks
+#include "adobe/contract_checks.hpp"
+
 // application
 #include "orc/dwarf_constants.hpp"
 #include "orc/hash.hpp"
@@ -54,7 +57,7 @@ struct attribute_value {
     }
 
     auto uint() const {
-        assert(has(type::uint));
+        ADOBE_PRECONDITION(has(type::uint));
         return _uint;
     }
 
@@ -64,7 +67,7 @@ struct attribute_value {
     }
 
     auto sint() const {
-        assert(has(type::sint));
+        ADOBE_PRECONDITION(has(type::sint));
         return _int;
     }
 
@@ -74,12 +77,12 @@ struct attribute_value {
     }
 
     const auto& string() const {
-        assert(has(type::string));
+        ADOBE_PRECONDITION(has(type::string));
         return _string;
     }
 
     auto string_hash() const {
-        assert(has(type::string));
+        ADOBE_PRECONDITION(has(type::string));
         return _string.hash();
     }
 
@@ -89,7 +92,7 @@ struct attribute_value {
     }
 
     auto reference() const {
-        assert(has(type::reference));
+        ADOBE_PRECONDITION(has(type::reference));
         return _uint;
     }
 
@@ -182,7 +185,7 @@ struct attribute_sequence {
 
     bool has(dw::at name, enum attribute_value::type t) const {
         auto [valid, iterator] = find(name);
-        return valid ? iterator->has(t) : false;
+        return valid && iterator->has(t);
     }
 
     bool has_uint(dw::at name) const {
@@ -199,13 +202,13 @@ struct attribute_sequence {
 
     auto& get(dw::at name) {
         auto [valid, iterator] = find(name);
-        assert(valid);
+        ADOBE_INVARIANT(valid);
         return *iterator;
     }
 
     const auto& get(dw::at name) const {
         auto [valid, iterator] = find(name);
-        assert(valid);
+        ADOBE_INVARIANT(valid);
         return *iterator;
     }
 
@@ -238,7 +241,18 @@ struct attribute_sequence {
     auto end() { return _attributes.end(); }
     auto end() const { return _attributes.end(); }
 
+    void erase(dw::at name) {
+        auto [valid, iterator] = find(name);
+        ADOBE_INVARIANT(valid);
+        _attributes.erase(iterator);
+    }
+
+    void move_append(attribute_sequence&& rhs) {
+        _attributes.insert(_attributes.end(), std::move_iterator(rhs.begin()), std::move_iterator(rhs.end()));
+    }
+
 private:
+    /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, iterator> find(dw::at name) {
         auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
             return attr._name == name;
@@ -246,6 +260,7 @@ private:
         return std::make_tuple(result != _attributes.end(), result);
     }
 
+    /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, const_iterator> find(dw::at name) const {
         auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
             return attr._name == name;

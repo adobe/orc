@@ -120,6 +120,7 @@ violation_report = [
     'member:alignment',
 #     'member:type',
     'structure:byte_size',
+    'subprogram:high_pc',
     'subprogram:virtuality',
     'subprogram:vtable_elem_location'
 ]

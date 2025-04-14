@@ -288,7 +288,10 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
  * @return A size_t hash value that uniquely identifies the DIE
  *
  * @note Struct and class tags are treated as equivalent
- * @note The declaration attribute is included to distinguish between declarations and definitions
+ * @note The `declaration` attribute is included to distinguish between
+ *       non-defining or incomplete declarations and subsequent definitions.
+ *       (This may be redundant, as `is_skippable_die` flags dies that have
+ *       the `declaration` attribute as skippable.)
  *
  * @pre The DIE and its attributes must be properly initialized
  * @post The returned hash can be used to identify potentially equivalent DIEs
@@ -665,7 +668,7 @@ struct dwarf::implementation {
     void report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error);
     void process_all_dies();
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
-    void post_process_die_attributes(const die& die, attribute_sequence& attributes);
+    void post_process_die_attributes(die& die, attribute_sequence& attributes);
 
     bool is_skippable_die(die& d, const attribute_sequence& attributes);
 
@@ -706,6 +709,7 @@ struct dwarf::implementation {
     attribute_value evaluate_blockn(std::uint32_t size, dw::at attribute);
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
+    void update_die_identifier_and_path(die& die, const attribute_sequence& attributes);
 
     die_pair offset_to_die_pair(std::size_t offset);
     attribute_sequence offset_to_attribute_sequence(std::size_t offset);
@@ -1752,6 +1756,22 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
 }
 
 /**************************************************************************************************/
+// A die contains a `path` which is a fully-qualified, user-readable name for the symbol in
+// question. The identifier stack is used to create the path, and is populated by a die's
+// attributes in anticipation of being a parent die to some nested one. The die's path is then
+// derived from that stack of identifiers, in addition to a name or other symbol-name-like
+// attribute in this die. This two-step process is called a handful of times within this file as
+// the dies are being constructed (either processing dies in bulk or one-shot.)
+//
+// After this call has happened, the current identifier stack entry will be updated from
+// information in this die's attributes, and the `path` of the die will be set to something
+// user-readable for ODRV reporting purposes. `die` is an out-arg for performance reasons.
+void dwarf::implementation::update_die_identifier_and_path(die& die, const attribute_sequence& attributes) {
+    path_identifier_set(die_identifier(die, attributes));
+    die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+}
+
+/**************************************************************************************************/
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -1797,10 +1817,8 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
                    });
 
     if (mode == process_mode::complete) {
-        // These statements must be kept in sync with the ones dealing with issue 84 below.
         // See https://github.com/adobe/orc/issues/84
-        path_identifier_set(die_identifier(die, attributes));
-        die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+        update_die_identifier_and_path(die, attributes);
     }
 
     return std::make_tuple(std::move(die), std::move(attributes));
@@ -1875,9 +1893,39 @@ bool dwarf::implementation::is_skippable_die(die& d, const attribute_sequence& a
         return true;
     }
 
-    // According to DWARF 3.3.1, a subprogram tag that is missing the external
-    // flag means the function is invisible outside its compilation unit. As
-    // such, it cannot contribute to an ODRV.
+    // SPECREF DWARF5 67 (49) line 9 --
+    // The presence of the `declaration` flag means this DIE is
+    // incomplete or non-defining, so cannot contribute to an ODRV.
+    if (has_flag_attribute(attributes, dw::at::declaration)) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+            ZoneTextL("skipping: declaration flag");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
+    // SPECREF DWARF4 67 (53) lines 11-13 --
+    // According to DWARF4 section 3.3.1, a subprogram tag that is missing the external flag means
+    // the function is invisible outside its compilation unit. As such, it cannot contribute to an
+    // ODRV.
+    //
+    // 2025-04-14 fosterbrereton: The above comment is accurate, however I think it is also
+    // incomplete. I am observing several `subprogram` entries for the same subroutine within a
+    // single compilation unit. I suspect these multiple DIEs describe different aspects of the
+    // same subroutine (though I am not sure why they are separated.) In one `subprogram` DIE the
+    // `external` flag is present and `true`, while in the other DIE it is missing (but contains
+    // e.g., `low_pc` and `high_pc` data about where the subprogram instructions lie).
+    //
+    // SPECREF DWARF5 67 (49) line 15 --
+    // Subprogram debugging information has been seen busted up across multiple entries. Subsequent
+    // DIEs should have the `specification` attribute that references the original DIE. We do not
+    // check for the presence or lack of the `specification` attribute, as it doesn't add anything
+    // semantically distinct to the debugging information - it just links two DIEs together. It
+    // does explain why/how there are multiple entries about the same subprogram, however.
+    //
+    // This has been resolved elsewhere (in `post_process_die_attributes`) with the merging of a
+    // `specification`'s original die with this one if the `specification` flag is found. This
+    // should cause a fully-defined subprogram die entry to have both the `external` flag and the
+    // `high_pc` value for ODRV analysis.
     if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: non-external subprogram");
@@ -2099,9 +2147,7 @@ void dwarf::implementation::process_all_dies() {
                 name._value.string(_last_typedef_name);
                 attributes.push_back(name);
 
-                // These two statements must be in sync with the ones in `abbreviation_to_die`
-                path_identifier_set(die_identifier(die, attributes));
-                die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+                update_die_identifier_and_path(die, attributes);
 
                 _last_typedef_name = pool_string(); // reset it to avoid misuse
             }
@@ -2216,7 +2262,7 @@ void dwarf::implementation::post_process_compilation_unit_die(
  *
  * @note `attributes` is an out-arg for performance reasons. 
  */
-void dwarf::implementation::post_process_die_attributes(const die& die, attribute_sequence& attributes) {
+void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequence& attributes) {
     if (attributes.has(dw::at::type)) {
         auto& attribute = attributes.get(dw::at::type);
         attribute._value.string(resolve_type(attribute));
@@ -2227,23 +2273,40 @@ void dwarf::implementation::post_process_die_attributes(const die& die, attribut
         attribute._value.string(resolve_type(attribute));
     }
 
-    // This assumes the values of these attributes are correct, which may not be true,
-    // so we'll need some test cases to make sure we're pulling these values properly.
+    // SPECREF DWARF5 67 (49) line 15 -- If a `specification` attribute is found, we look for a
+    // previous DIE at the referenced offset and merge its contents into this one. I am pretty sure
+    // the DIE referenced by `specification` will be a `declaration` (non-defining / incomplete)
+    // DIE, and this one is the better candidate to fully define the debugging information entry
+    // and thus use it for ODRV analysis.
+    if (attributes.has(dw::at::specification)) {
+        const auto original_die_offset = attributes.reference(dw::at::specification);
+        auto original_die_pair = temp_seek(_s, 0, [&](){
+            return fetch_one_die(original_die_offset,
+                                 die._cu_header_offset,
+                                 die._cu_die_offset);
+        });
+        attributes.move_append(std::move(std::get<attribute_sequence>(original_die_pair)));
+        attributes.erase(dw::at::specification);
+        attributes.erase(dw::at::declaration);
+
+        update_die_identifier_and_path(die, attributes);
+    }
+
+    // This assumes the values of these attributes are correct, which may not be true, so we'll need
+    // some test cases to make sure we're pulling these values properly.
     //
-    // The goal here is to take the low and high pc attribute values and compute an
-    // additional hash value to be used by `fatal_attribute_hash`. This value can start
-    // out as just the size of the 'subprogram', but as it evolves it may include e.g.,
-    // a hash of the code itself (which should be the same if the implementations are identical.)
+    // The goal here is to take the low and high pc attribute values and compute an additional hash
+    // value to be used by `fatal_attribute_hash`. This value can start out as just the size of
+    // the 'subprogram', but as it evolves it may include e.g., a hash of the code itself
+    // (which should be the same if the implementations are identical.)
     //
-    // Once we have this "implementation hash" we don't need the actual high_pc
-    // value anymore. So we replace that value with the hash and fatal attribute hash
-    // will pick it up automatically.
+    // Once we have this "implementation hash" we don't need the actual high_pc value anymore. So we
+    // replace that value with the hash and fatal attribute hash will pick it up automatically.
     if (_is_function_implementation(die, attributes)) {
-        const auto& low_pc_value = attributes.get(dw::at::low_pc);
-        const auto& high_pc_value = attributes.get(dw::at::high_pc);
-        const auto program_hash = derive_subprogram_hash(low_pc_value, high_pc_value);
-        auto& attribute = attributes.get(dw::at::high_pc);
-        attribute._value.uint(program_hash);
+        const auto& low_pc = attributes.get(dw::at::low_pc);
+        auto& high_pc = attributes.get(dw::at::high_pc);
+        const auto program_hash = derive_subprogram_hash(low_pc, high_pc);
+        high_pc._value.uint(program_hash);
     }
 }
 
@@ -2301,7 +2364,9 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
 
     auto result = abbreviation_to_die(die_address, process_mode::single);
 
+    path_identifier_push();
     post_process_die_attributes(std::get<0>(result), std::get<1>(result));
+    path_identifier_pop();
 
     return result;
 }

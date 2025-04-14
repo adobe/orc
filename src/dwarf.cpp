@@ -633,12 +633,20 @@ bool skip_tagged_die(const die& d) {
 /**
  * @brief Verifies if a DIE is a function implementation or not.
  */
-bool _is_function_implementation(const die& die, const attribute_sequence& attributes) {
+bool is_function_implementation(const die& die, const attribute_sequence& attributes) {
     // We don't care about non-functions or declarations or artificial (compiler generated) functions.
     if (die._tag != dw::tag::subprogram || attributes.has(dw::at::declaration) || attributes.has(dw::at::artificial))
         return false;
-    bool is_implementation = attributes.has(dw::at::low_pc) && attributes.has(dw::at::high_pc);
-    // TODO: should we check for dw::at::external (external linkage) as well?
+
+    // NOTE: If the subprogram is not external, it cannot contribute to an ODRV, so we return
+    // `false` to keep any extra work from happening that will get thrown away. (`external` is
+    // orthogonal to this check, but here is as good a place as any.)
+    bool is_implementation = attributes.has(dw::at::low_pc) &&
+                             attributes.has(dw::at::high_pc) &&
+                             attributes.has(dw::at::external);
+
+    // TODO: handle at::ranges when we observe cases that use those instead of low_pc/high_pc
+
     return is_implementation;
 }
 
@@ -2260,7 +2268,7 @@ void dwarf::implementation::post_process_compilation_unit_die(
  * @post The `DW_AT_type` and `DW_AT_containing_type` attributes in the sequence
  * will have their values replaced with resolved type names
  *
- * @note `attributes` is an out-arg for performance reasons. 
+ * @note `die` and `attributes` are out-args for performance reasons. 
  */
 void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequence& attributes) {
     if (attributes.has(dw::at::type)) {
@@ -2285,10 +2293,18 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
                                  die._cu_header_offset,
                                  die._cu_die_offset);
         });
+
+        // Smash the original and this die's attributes together into an aggregate, well-defined set
+        // of attributes for this symbol. Because the original still has the `declaration` flag in
+        // it, it will be ignored for the purposes of ODR analysis; only this die will be
+        // considered.
         attributes.move_append(std::move(std::get<attribute_sequence>(original_die_pair)));
+
+        // Erase the two attributes that would otherwise flag this die as being incomplete.
         attributes.erase(dw::at::specification);
         attributes.erase(dw::at::declaration);
 
+        // a little bit of identifier/path housekeeping.
         update_die_identifier_and_path(die, attributes);
     }
 
@@ -2302,7 +2318,9 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
     //
     // Once we have this "implementation hash" we don't need the actual high_pc value anymore. So we
     // replace that value with the hash and fatal attribute hash will pick it up automatically.
-    if (_is_function_implementation(die, attributes)) {
+    if (is_function_implementation(die, attributes)) {
+        // TODO: Once we observe usage of the `ranges` attribute, `derive_subprogram_hash` should
+        // take `attributes` and figure out which ones to use.
         const auto& low_pc = attributes.get(dw::at::low_pc);
         auto& high_pc = attributes.get(dw::at::high_pc);
         const auto program_hash = derive_subprogram_hash(low_pc, high_pc);

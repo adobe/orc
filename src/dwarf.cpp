@@ -208,10 +208,24 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a DWARF section in the object file
+ * 
+ * This struct stores information about a DWARF section, including its offset
+ * and size within the object file. It is used to track the location of various
+ * DWARF debug sections like .debug_info, .debug_abbrev, etc.
+ */
 struct section {
-    std::size_t _offset{0};
-    std::size_t _size{0};
+    std::size_t _offset{0}; ///< The offset of the section within the file
+    std::size_t _size{0};   ///< The size of the section in bytes
 
+    /**
+     * @brief Checks if the section is valid
+     * 
+     * A section is considered valid if it has both a non-zero offset and size.
+     * 
+     * @return true if the section is valid, false otherwise
+     */
     bool valid() const { return _offset != 0 && _size != 0; }
 };
 
@@ -226,6 +240,17 @@ struct abbrev {
     bool _has_children{false}; /// whether the DIE has children
     std::vector<attribute> _attributes; /// the attributes of the DIE
 
+    /**
+     * @brief Reads an abbreviation entry from the file
+     * 
+     * This function reads the abbreviation entry from the file reader,
+     * parsing its code, tag, children flag, and attributes.
+     * 
+     * @param s The file reader to read from
+     * 
+     * @pre The file reader must be positioned at the start of an abbreviation entry
+     * @post The file reader will be positioned after the abbreviation entry
+     */
     void read(freader& s);
 };
 
@@ -258,11 +283,18 @@ void abbrev::read(freader& s) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a source file entry in DWARF debug information
+ * 
+ * This struct stores information about a source file referenced in the DWARF
+ * debug information, including its name, directory index, modification time,
+ * and length.
+ */
 struct file_name {
-    std::string_view _name;
-    std::uint32_t _directory_index{0};
-    std::uint32_t _mod_time{0};
-    std::uint32_t _file_length{0};
+    std::string_view _name; ///< The name of the source file
+    std::uint32_t _directory_index{0}; ///< Index into the include directories list
+    std::uint32_t _mod_time{0}; ///< File modification time
+    std::uint32_t _file_length{0}; ///< Length of the file in bytes
 };
 
 /**************************************************************************************************/
@@ -380,13 +412,25 @@ std::size_t derive_subprogram_hash(const attribute& low_pc, const attribute& hig
  * version, unit type, and the offset of the debug_abbrev section.
  */
 struct cu_header {
-    std::uint64_t _length{0}; // 4 bytes (or 12 if extended length is used.)
-    bool _is_64_bit{false}; // whether the DWARF is 64-bit
-    std::uint16_t _version{0}; // DWARF spec version (DWARF4, DWARF5, etc.)
-    std::uint8_t _unit_type{0}; // SPECREF: DWARF5 page 218 (200) line 15
-    std::uint64_t _debug_abbrev_offset{0}; // 4 (!_is_64_bit) or 8 (_is_64_bit) bytes
-    std::uint32_t _address_size{0}; // size of an address in bytes (currently unused)
+    std::uint64_t _length{0}; ///< Length of the compilation unit (4 or 12 bytes (if extended length is used))
+    bool _is_64_bit{false}; ///< Whether the DWARF is 64-bit
+    std::uint16_t _version{0}; ///< DWARF spec version (DWARF4, DWARF5, etc.)
+    std::uint8_t _unit_type{0}; ///< Type of compilation unit (SPECREF: DWARF5 page 218 (200) line 15)
+    std::uint64_t _debug_abbrev_offset{0}; ///< Offset to debug abbreviations section
+    std::uint32_t _address_size{0}; ///< Size of an address in bytes
 
+    /**
+     * @brief Reads a compilation unit header from the file
+     * 
+     * This function reads the compilation unit header from the file reader,
+     * parsing its length, version, and other metadata.
+     * 
+     * @param s The file reader to read from
+     * @param needs_byteswap Whether the data needs byte swapping
+     * 
+     * @pre The file reader must be positioned at the start of a compilation unit header
+     * @post The file reader will be positioned after the header
+     */
     void read(freader& s, bool needs_byteswap);
 };
 
@@ -446,28 +490,50 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a DWARF line number program header
+ * 
+ * This struct stores information from a DWARF line number program header,
+ * which contains metadata about how line number information is encoded
+ * in the debug information. For ORC's purposes, this is largely ignored
+ * except for `_file_names` and `_include_directories`.
+ */
 struct line_header {
     // DWARF spec section 6.2.4 The Line Number Program Header.
     // Note this will change for DWARF5, so we need to look out
     // for DWARF data that uses the new version number and
     // account for it differently.
-    std::uint64_t _length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
-    std::uint16_t _version{0};
-    std::int8_t _address_size{0}; // new for DWARF5
-    std::int8_t _segment_selector_size{0}; // new for DWARF5
-    std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
-    std::uint32_t _min_instruction_length{0};
-    std::uint32_t _max_ops_per_instruction{0}; // DWARF4 or greater
-    std::uint32_t _default_is_statement{0};
-    std::int32_t _line_base{0};
-    std::uint32_t _line_range{0};
-    std::uint32_t _opcode_base{0};
-    std::vector<std::uint32_t> _standard_opcode_lengths;
-    std::vector<std::string_view> _include_directories;
-    std::vector<file_name> _file_names;
+    std::uint64_t _length{0}; ///< Length of the header (4 or 8 bytes)
+    std::uint16_t _version{0}; ///< DWARF version
+    std::int8_t _address_size{0}; ///< Size of an address in bytes (DWARF5)
+    std::int8_t _segment_selector_size{0}; ///< Size of segment selector (DWARF5)
+    std::uint32_t _header_length{0}; ///< Length of the header (4 (DWARF) or 8 (DWARF64) bytes)
+    std::uint32_t _min_instruction_length{0}; ///< Minimum instruction length
+    std::uint32_t _max_ops_per_instruction{0}; ///< Maximum operations per instruction (DWARF4+)
+    std::uint32_t _default_is_statement{0}; ///< Default is_statement value
+    std::int32_t _line_base{0}; ///< Base value for line number calculations
+    std::uint32_t _line_range{0}; ///< Range of line numbers
+    std::uint32_t _opcode_base{0}; ///< Base value for opcodes
+    std::vector<std::uint32_t> _standard_opcode_lengths; ///< Lengths of standard opcodes
+    std::vector<std::string_view> _include_directories; ///< Include directories
+    std::vector<file_name> _file_names; ///< Source file names
 
+    /**
+     * @brief Reads a line number program header from the file
+     * 
+     * This function reads the line number program header from the file reader,
+     * parsing its version, opcode information, and file/directory lists.
+     * 
+     * @param s The file reader to read from
+     * @param needs_byteswap Whether the data needs byte swapping
+     * 
+     * @pre The file reader must be positioned at the start of a line number program header
+     * @post The file reader will be positioned after the header
+     */
     void read(freader& s, bool needs_byteswap);
 };
+
+/**************************************************************************************************/
 
 void line_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s, needs_byteswap);

@@ -439,6 +439,22 @@ using dies = std::vector<die>;
 
 /**************************************************************************************************/
 
+/**
+ * @brief Determines if a DWARF attribute is considered non-fatal for ODRV purposes
+ * 
+ * This function identifies attributes that can be safely ignored when checking for
+ * One Definition Rule Violations (ODRVs). These attributes typically contain
+ * information that doesn't affect the actual definition of a symbol, such as
+ * debug-specific metadata or compiler-specific extensions.
+ *
+ * @param at The DWARF attribute to check
+ * 
+ * @return true if the attribute is non-fatal and can be ignored for ODRV checks,
+ *         false if the attribute must be considered when checking for ODRVs
+ * 
+ * @pre The attribute must be a valid DWARF attribute
+ * @post The return value will be consistent with the internal list of nonfatal attributes
+ */
 bool nonfatal_attribute(dw::at at);
 inline bool fatal_attribute(dw::at at) { return !nonfatal_attribute(at); }
 

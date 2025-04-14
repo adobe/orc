@@ -549,6 +549,20 @@ enum class tag : std::uint16_t {
 
 const char* to_string(tag t);
 
+/**
+ * @brief Determines if a given DWARF tag represents a type
+ * 
+ * This function classifies whether a given DWARF tag represents a type definition
+ * or declaration. This is used to identify type-related DIEs in the DWARF debug
+ * information.
+ *
+ * @param t The DWARF tag to check
+ * 
+ * @return true if the tag represents a type, false otherwise
+ * 
+ * @pre The tag must be a valid DWARF tag
+ * @post The return value will be true for all type-related tags and false for all others
+ */
 bool is_type(tag t);
 
 /**************************************************************************************************/

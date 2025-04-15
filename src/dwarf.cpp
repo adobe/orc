@@ -744,7 +744,7 @@ struct dwarf::implementation {
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
     void post_process_die_attributes(die& die, attribute_sequence& attributes);
 
-    bool is_skippable_die(die& d, const attribute_sequence& attributes);
+    bool is_skippable_die(const die& d, const attribute_sequence& attributes);
 
     die_pair fetch_one_die(std::size_t die_offset,
                            std::size_t cu_header_offset,
@@ -1928,30 +1928,34 @@ bool dwarf::implementation::register_sections_done() {
 
 /**************************************************************************************************/
 /**
- * @brief Determines if a DIE should be skipped during ODR processing
- *
- * This function applies various filtering rules to determine if a DIE (DWARF Information Entry)
- * should be excluded from ODR (One Definition Rule) violation detection. It checks for:
- * - DIEs with tags that are explicitly marked for skipping
- * - Non-external subprograms (invisible outside their compilation unit)
- * - Anonymous/unnamed DIEs (with empty paths)
- * - Reserved symbols (containing "__")
- * - Vendor/compiler-defined symbols
- * - Lambda expressions (which cannot contribute to ODR violations)
- * - Objective-C based DIEs (which cannot contribute to ODR violations)
- * - Symbols in the ignore list (which assumes they are not user-defined)
- * - Self-referential types (which cannot contribute to ODR violations)
- *
- * @param d The DIE to evaluate
+ * @brief Determines if a DIE should be skipped during processing
+ * 
+ * This function applies a series of filters to determine if a DIE should be skipped
+ * during processing. It checks for various conditions that would make a DIE unsuitable
+ * for registration, such as:
+ * - Certain tags that are explicitly not handled
+ * - Declaration DIEs that are incomplete or non-defining
+ * - Non-external subprograms that are invisible outside their compilation unit
+ * - Anonymous/unnamed DIEs
+ * - Reserved symbols (those containing "__")
+ * - Vendor- or compiler-defined symbols
+ * - Lambdas
+ * - Objective-C based DIEs
+ * - Symbols listed in the ignore list
+ * - Self-referential types
+ * 
+ * @param d The DIE to check
  * @param attributes The attribute sequence associated with the DIE
  * 
- * @return true if the DIE should be skipped, false if it should be processed
- *
  * @pre The DIE and its attributes must be properly initialized
- * @post `true` if the DIE should be excluded from ODR violation detection;
- *       `false` otherwise.
+ * @pre The DIE's tag and path must be set
+ * @pre The attributes sequence must contain all relevant attributes for the DIE
+ * 
+ * @return true if the DIE should be skipped, false if it should be processed
+ * 
+ * @note Some filters are architecture-specific (e.g., handling of Objective-C)
  */
-bool dwarf::implementation::is_skippable_die(die& d, const attribute_sequence& attributes) {
+bool dwarf::implementation::is_skippable_die(const die& d, const attribute_sequence& attributes) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Red);

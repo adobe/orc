@@ -2358,6 +2358,13 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
     // and thus use it for ODRV analysis.
     if (attributes.has(dw::at::specification)) {
         const auto original_die_offset = attributes.reference(dw::at::specification);
+        // I'm not super keen on this call: there is a lot that `fetch_one_die` does that we don't
+        // need here (for example, we don't need to re-parse the compilation unit die.) It may also
+        // degrade performance. We may want to split out the stuff we do need from that routine into
+        // a separate function.
+        //
+        // Passing `0` here as the offset is okay because `fetch_one_die` will seek to the correct
+        // offset before calling `abbreviation_to_die`.
         auto original_die_pair = temp_seek(_s, 0, [&](){
             return fetch_one_die(original_die_offset,
                                  die._cu_header_offset,

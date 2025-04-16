@@ -51,15 +51,28 @@ struct settings {
 
 /**************************************************************************************************/
 
-struct globals {
-    static globals& instance();
-    ~globals();
+struct atomic_metrics {
+    // Don't call this in the middle of processing, or you're going to get inconsistent numbers.
+    void reset() {
+        _object_file_count = 0;
+        _odrv_count = 0;
+        _unique_symbol_count = 0;
+        _die_processed_count = 0;
+        _die_skipped_count = 0;
+    }
 
     std::atomic_size_t _object_file_count{0};
     std::atomic_size_t _odrv_count{0};
     std::atomic_size_t _unique_symbol_count{0};
     std::atomic_size_t _die_processed_count{0};
     std::atomic_size_t _die_skipped_count{0};
+};
+
+struct globals {
+    static globals& instance();
+    ~globals();
+
+    atomic_metrics _metrics;
     std::ofstream _fp;
 
 private:

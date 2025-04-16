@@ -402,7 +402,7 @@ void read_macho(object_ancestry&& ancestry,
         macho_reader macho(ofd_index, std::move(_s), std::move(_details), std::move(_params));
 
         if (macho.register_dies_mode()) {
-            ++globals::instance()._object_file_count;
+            ++globals::instance()._metrics._object_file_count;
             macho.dwarf().process_all_dies();
         } else if (macho.derive_dylibs_mode()) {
             macho.derive_dependencies();

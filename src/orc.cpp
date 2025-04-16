@@ -620,7 +620,7 @@ namespace orc {
 void register_dies(dies die_vector) {
     ZoneScoped;
 
-    globals::instance()._die_processed_count += die_vector.size();
+    globals::instance()._metrics._die_processed_count += die_vector.size();
 
     // pre-process the vector of dies by partitioning them into those that are skippable and those
     // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
@@ -654,7 +654,7 @@ void register_dies(dies die_vector) {
 
         auto result = global_die_map().insert(std::make_pair(d._hash, &d));
         if (result.second) {
-            ++globals::instance()._unique_symbol_count;
+            ++globals::instance()._metrics._unique_symbol_count;
             continue;
         }
 
@@ -667,7 +667,7 @@ void register_dies(dies die_vector) {
         d_in_map._next_die = &d;
     }
 
-    globals::instance()._die_skipped_count += skip_count;
+    globals::instance()._metrics._die_skipped_count += skip_count;
 }
 
 /**************************************************************************************************/
@@ -688,12 +688,12 @@ std::string to_json(const std::vector<odrv_report>& reports) {
 
     const auto& g = globals::instance();
     nlohmann::json synopsis;
-    synopsis["violations"] = g._odrv_count.load();
-    synopsis["object_files_scanned"] = g._object_file_count.load();
-    synopsis["dies_processed"] = g._die_processed_count.load();
-    synopsis["dies_skipped"] = g._die_skipped_count.load();
-    synopsis["dies_skipped_pct"] = g._die_processed_count ? (g._die_skipped_count * 100. / g._die_processed_count) : 0;
-    synopsis["unique_symbols"] = g._unique_symbol_count.load();
+    synopsis["violations"] = g._metrics._odrv_count.load();
+    synopsis["object_files_scanned"] = g._metrics._object_file_count.load();
+    synopsis["dies_processed"] = g._metrics._die_processed_count.load();
+    synopsis["dies_skipped"] = g._metrics._die_skipped_count.load();
+    synopsis["dies_skipped_pct"] = g._metrics._die_processed_count ? (g._metrics._die_skipped_count * 100. / g._metrics._die_processed_count) : 0;
+    synopsis["unique_symbols"] = g._metrics._unique_symbol_count.load();
 
     nlohmann::json result = nlohmann::json::object_t {
         { "violations", std::move(violations) },
@@ -721,6 +721,7 @@ std::string version_json() {
 void orc_reset() {
     global_die_map().clear();
     with_global_die_collection([](auto& collection) { collection.clear(); });
+    globals::instance()._metrics.reset();
 }
 
 /**************************************************************************************************/

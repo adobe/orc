@@ -220,7 +220,7 @@ struct attribute_sequence {
         return get(name).uint();
     }
 
-    std::uint64_t sint(dw::at name) const {
+    std::int64_t sint(dw::at name) const {
         return get(name).sint();
     }
 

@@ -220,6 +220,10 @@ struct attribute_sequence {
         return get(name).uint();
     }
 
+    std::uint64_t sint(dw::at name) const {
+        return get(name).sint();
+    }
+
     pool_string string(dw::at name) const {
         return get(name).string();
     }

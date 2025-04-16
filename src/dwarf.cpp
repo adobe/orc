@@ -1191,6 +1191,17 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             case 3: result._value.string(empool("qualified")); break;
             // otherwise, leave the value unchanged.
         }
+    } else if (result._name == dw::at::inline_) {
+        // SPECREF DWARF5 251 (233) line 1
+        auto inline_ = result._value.sint();
+        ADOBE_INVARIANT(inline_ >= 0 && inline_ <= 3);
+        switch (inline_) {
+            case 0: result._value.string(empool("not-inlined")); break;
+            case 1: result._value.string(empool("inlined")); break;
+            case 2: result._value.string(empool("declared-not-inlined")); break;
+            case 3: result._value.string(empool("declared-inlined")); break;
+            // otherwise, leave the value unchanged.
+        }
     } else if (result._name == dw::at::apple_property) {
         auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
@@ -1663,9 +1674,15 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     };
 
     switch (attr._form) {
-        case dw::form::udata:
-        case dw::form::implicit_const: {
+        case dw::form::udata: {
             result.uint(read_uleb());
+        } break;
+        case dw::form::implicit_const: {
+            // SPECREF DWARF5 225 (207) lines 11-14
+            // "The value of [the number read during `read_abbreviations`] is
+            // used as the value of the attribute, and no value is stored
+            // in the .debug_info section."
+            result = attr._value;
         } break;
         case dw::form::sdata: {
             result.uint(read_uleb()); // sdata is expecting unsigned values?
@@ -1977,6 +1994,21 @@ bool dwarf::implementation::is_skippable_die(const die& d, const attribute_seque
     if (has_flag_attribute(attributes, dw::at::declaration)) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneTextL("skipping: declaration flag");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
+    // SPECREF DWARF5 100 (82) lines 1-24 --
+    // An abstract instance root (and all of its children) that is anything other
+    // than "not inlined" (according to the `dw::at::inline_` attribute) does not
+    // have instance-identifying information, so cannot contribute to an ODRV.
+    // REVISIT (fosterbrereton) : I only think `inline_` is given to the root
+    // of the tree, so this won't catch children nested within the root. Not sure
+    // how big of a deal that will be.
+    // SPECREF DWARF5 251 (233) line 1 -- value of 0 -> "not inlined"
+    if (attributes.has(dw::at::inline_) && attributes.sint(dw::at::inline_) != 0) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+            ZoneTextL("skipping: abstract instance root / tree");
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
         return true;
     }

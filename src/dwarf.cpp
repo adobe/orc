@@ -1193,7 +1193,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::inline_) {
         // SPECREF DWARF5 251 (233) line 1
-        auto inline_ = result._value.sint();
+        auto inline_ = result._value.uint();
         ADOBE_INVARIANT(inline_ >= 0 && inline_ <= 3);
         switch (inline_) {
             case 0: result._value.string(empool("not-inlined")); break;
@@ -2006,7 +2006,7 @@ bool dwarf::implementation::is_skippable_die(const die& d, const attribute_seque
     // of the tree, so this won't catch children nested within the root. Not sure
     // how big of a deal that will be.
     // SPECREF DWARF5 251 (233) line 1 -- value of 0 -> "not inlined"
-    if (attributes.has(dw::at::inline_) && attributes.sint(dw::at::inline_) != 0) {
+    if (attributes.has(dw::at::inline_) && attributes.uint(dw::at::inline_) != 0) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneTextL("skipping: abstract instance root / tree");
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)

@@ -1135,7 +1135,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     // completely- these are the cases when a value needs contextual interpretation. For example,
     // decl_file comes back as a uint, but that's a debug_str offset that needs to be resolved.
     if (result._name == dw::at::decl_file) {
-        auto decl_file_index = result._value.uint();
+        const auto decl_file_index = result._value.uint();
         if (decl_file_index < _decl_files.size()) {
             pool_string decl_file = _decl_files[decl_file_index];
 
@@ -1152,7 +1152,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             result._value.string(empool("<unsupported file index>"));
         }
     } else if (result._name == dw::at::calling_convention) {
-        auto convention = result._value.uint();
+        const auto convention = result._value.uint();
         ADOBE_INVARIANT(convention > 0 && convention <= 0xff);
         switch (convention) {
             case 0x01: result._value.string(empool("normal")); break;
@@ -1165,7 +1165,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::accessibility) {
-        auto accessibility = result._value.uint();
+        const auto accessibility = result._value.uint();
         ADOBE_INVARIANT(accessibility >= 1 && accessibility <= 3);
         switch (accessibility) {
             case 1: result._value.string(empool("public")); break;
@@ -1174,7 +1174,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
-        auto virtuality = result._value.uint();
+        const auto virtuality = result._value.uint();
         ADOBE_INVARIANT(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
             case 0: result._value.string(empool("none")); break;
@@ -1183,7 +1183,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::visibility) {
-        auto visibility = result._value.uint();
+        const auto visibility = result._value.uint();
         ADOBE_INVARIANT(visibility > 0 && visibility <= 3);
         switch (visibility) {
             case 1: result._value.string(empool("local")); break;
@@ -1193,7 +1193,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
         }
     } else if (result._name == dw::at::inline_) {
         // SPECREF DWARF5 251 (233) line 1
-        auto inline_ = result._value.uint();
+        const auto inline_ = result._value.number();
         ADOBE_INVARIANT(inline_ >= 0 && inline_ <= 3);
         switch (inline_) {
             case 0: result._value.string(empool("not-inlined")); break;
@@ -1203,7 +1203,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::apple_property) {
-        auto property = result._value.uint();
+        const auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
         switch (property) {
             case 0x01: result._value.string(empool("readonly")); break;
@@ -2002,11 +2002,13 @@ bool dwarf::implementation::is_skippable_die(const die& d, const attribute_seque
     // An abstract instance root (and all of its children) that is anything other
     // than "not inlined" (according to the `dw::at::inline_` attribute) does not
     // have instance-identifying information, so cannot contribute to an ODRV.
+    //
     // REVISIT (fosterbrereton) : I only think `inline_` is given to the root
     // of the tree, so this won't catch children nested within the root. Not sure
     // how big of a deal that will be.
+    //
     // SPECREF DWARF5 251 (233) line 1 -- value of 0 -> "not inlined"
-    if (attributes.has(dw::at::inline_) && attributes.uint(dw::at::inline_) != 0) {
+    if (attributes.has(dw::at::inline_) && attributes.number(dw::at::inline_) != 0) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
             ZoneTextL("skipping: abstract instance root / tree");
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)

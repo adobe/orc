@@ -71,6 +71,19 @@ struct attribute_value {
         return _int;
     }
 
+    // Return _either_ sint or uint; some attributes
+    // may be one or the other, but in some cases the
+    // valid values could be represented by either type
+    // (e.g., the number cannot be negative or larger
+    // than the largest possible signed value.)
+    // This routine is useful when the caller doesn't
+    // care how it was stored and just wants the value.
+    // If this attribute value has _both_, it is assumed
+    // they are equal.
+    int number() const {
+        return has(type::sint) ? sint() : uint();
+    }
+    
     void string(pool_string x) {
         _type |= type::string;
         _string = x;
@@ -218,6 +231,10 @@ struct attribute_sequence {
 
     std::uint64_t uint(dw::at name) const {
         return get(name).uint();
+    }
+
+    int number(dw::at name) const {
+        return get(name)._value.number();
     }
 
     std::int64_t sint(dw::at name) const {

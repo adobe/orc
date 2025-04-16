@@ -47,7 +47,7 @@ log_level = 'warning'
 #
 # The default value is `false`.
 
-standalone_mode = true
+standalone_mode = false
 
 # Scan the binary passed in to the command line for its Mach-O dependencies, specifically any
 # dylibs it depends on (and rpaths where they might be found.) Then perform a scan over that
@@ -96,7 +96,7 @@ print_object_file_list = false
 #
 # The default value is `true`.
 
-parallel_processing = false
+parallel_processing = true
 
 # `symbol_ignore` is a list of symbol names ORC should ignore.
 

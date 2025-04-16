@@ -1,0 +1,18 @@
+#
+# This is a binary test to ensure ORC can process the `inline` attribute.
+#
+# The following command line was used to compile `inline.o` such that the
+# compiler inlined a function and called it out in the debug symbols:
+#
+#     c++ --std=c++20 -c inline.cpp -g -o inline.o -O3
+#
+
+[[object]]
+    path = "inline.o"
+
+[metrics]
+    object_file_count = 1
+    odrv_count = 0
+    unique_symbol_count = 116
+    die_processed_count = 1519
+    die_skipped_count = 1403

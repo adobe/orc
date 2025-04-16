@@ -63,6 +63,12 @@ ORC was originally conceived on macOS. While its current implementation is focus
 
 ## Building ORC
 
+### Enable Git Large File Storage (LFS)
+
+ORC uses Large File Storage (LFS) to track binary test data (object files). You will need to [install](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage) git LFS in order for `orc_test` to work properly.
+
+### Build the Project File
+
 ORC is managed by cmake, and is built using the typical build conventions of a CMake-managed project:
 
 1. clone the repository

@@ -85,6 +85,19 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         });
     };
 
+    // This lambda will return how many bytes
+    // were read in order to process the ULEB;
+    // this is different than `leb_block` in
+    // that the value of the ULEB is immaterial.
+    auto leb_length = [&] {
+        return temp_seek(s, [&]{
+            const std::size_t beginning = s.tellg();
+            (void)uleb128(s); // do the uleb read to find out how much was read.
+            const std::size_t end = s.tellg();
+            return static_cast<std::uint32_t>(end - beginning);
+        });
+    };
+    
     switch (f) {
         case dw::form::addr:
             return 8;
@@ -152,12 +165,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
                 // addrx has changed to be a single ULEB;
                 // therefore we need to return the length
                 // of the ULEB instead of its value.
-                return temp_seek(s, [&]{
-                    const std::size_t beginning = s.tellg();
-                    (void)uleb128(s); // do the uleb read to find out how much was read.
-                    const std::size_t end = s.tellg();
-                    return static_cast<std::uint32_t>(end - beginning);
-                });
+                return leb_length();
             } else {
                 ADOBE_INVARIANT(!"unhandled DWARF version");
             }
@@ -174,9 +182,13 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         case dw::form::implicit_const:
             return 0;
         case dw::form::loclistx:
-            return uleb128(s); // length of LEB _not_ included
+            // SPECREF DWARF5 239 (221) line 0 -- `loclistx` is new for DWARF5.
+            // SPECREF DWARF5 234 (216) lines 23-29 -- return the length of the ULEB.
+            return leb_length();
         case dw::form::rnglistx:
-            return uleb128(s); // length of LEB _not_ included
+            // SPECREF DWARF5 239 (221) line 0 -- `rnglistx` is new for DWARF5.
+            // SPECREF DWARF5 234 (216) lines 12-16 -- return the length of the ULEB.
+            return leb_length();
         case dw::form::ref_sup8:
             return 8;
         case dw::form::strx1:

@@ -106,6 +106,8 @@ enum class at : std::uint16_t {
     abstract_origin = 0x31,
     accessibility = 0x32,
     address_class = 0x33,
+    // DW_AT_artificial attribute indicates that the associated entity (e.g., a function, variable, or parameter)
+    // is compiler-generated rather than explicitly written by the programmer in the source code.
     artificial = 0x34,
     base_types = 0x35,
     calling_convention = 0x36,
@@ -114,9 +116,27 @@ enum class at : std::uint16_t {
     decl_column = 0x39,
     decl_file = 0x3a,
     decl_line = 0x3b,
+    // DW_AT_declaration indicates that the associated entity is a declaration rather than a definition.
+    // A function declaration is typically represented as a DW_TAG_subprogram entry with the attribute
+    // DW_AT_declaration set to true (or 1).
+    // It does not have attributes like DW_AT_low_pc or DW_AT_high_pc, as it does not correspond to actual code.
+    // Example:
+    // <1><0x0000003a>    DW_TAG_subprogram
+    //                     DW_AT_name                  ("myFunction")
+    //                     DW_AT_declaration           (true)
+
+    // A function implementation is also represented as a DW_TAG_subprogram entry but does not have the DW_AT_declaration attribute.
+    // Instead, it includes attributes like DW_AT_low_pc and DW_AT_high_pc (or DW_AT_ranges),
+    // which specify the address range of the function's code in memory.
+    // Example:
+    // <1><0x0000003a>    DW_TAG_subprogram
+    //                     DW_AT_name                  ("myFunction")
+    //                     DW_AT_low_pc                (0x0000000000401000)
+    //                     DW_AT_high_pc               (0x0000000000401020)
     declaration = 0x3c,
     discr_list = 0x3d,
     encoding = 0x3e,
+    // DW_AT_external attribute indicates that the corresponding entity (e.g., a variable, function, or type) has external linkage. 
     external = 0x3f,
     frame_base = 0x40,
     friend_ = 0x41,
@@ -125,6 +145,10 @@ enum class at : std::uint16_t {
     namelist_item = 0x44,
     priority = 0x45,
     segment = 0x46,
+    // DW_AT_specification attribute is used to reference a declaration of an entity
+    // (such as a function, variable, or type) that is defined elsewhere.
+    // It essentially links the current entry to its corresponding declaration,
+    // which is typically represented by a DW_TAG_subprogram, DW_TAG_variable, or similar tag.
     specification = 0x47,
     static_link = 0x48,
     type = 0x49,
@@ -525,6 +549,20 @@ enum class tag : std::uint16_t {
 
 const char* to_string(tag t);
 
+/**
+ * @brief Determines if a given DWARF tag represents a type
+ * 
+ * This function classifies whether a given DWARF tag represents a type definition
+ * or declaration. This is used to identify type-related DIEs in the DWARF debug
+ * information.
+ *
+ * @param t The DWARF tag to check
+ * 
+ * @return true if the tag represents a type, false otherwise
+ * 
+ * @pre The tag must be a valid DWARF tag
+ * @post The return value will be true for all type-related tags and false for all others
+ */
 bool is_type(tag t);
 
 /**************************************************************************************************/

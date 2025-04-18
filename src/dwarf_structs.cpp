@@ -38,6 +38,14 @@ const char* to_string(arch arch) {
 void attribute::read(freader& s) {
     _name = static_cast<dw::at>(uleb128(s));
     _form = static_cast<dw::form>(uleb128(s));
+
+    // SPECREF DWARF5 225 (207) lines 11-14 --
+    // `implicit_const` is a special case where the value of the attribute we be an sleb immediately
+    // after the form. There is no value in the `debug_info` in this case. When we process this
+    // attribute in `process_form`, we'll source its value from here into the result.
+    if (_form == dw::form::implicit_const) {
+        _value.sint(sleb128(s));
+    }
 }
 
 /**************************************************************************************************/

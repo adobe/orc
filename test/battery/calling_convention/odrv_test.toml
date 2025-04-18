@@ -16,9 +16,5 @@
     category = "structure:byte_size, structure:calling_convention"
     symbol = "object"
 
-[[odrv]]
-    category = "subprogram:virtuality, subprogram:vtable_elem_location"
-    symbol = "object::api() const"
-
 [orc_test_flags]
     disable = false

@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+// adobe contract checks
+#include "adobe/contract_checks.hpp"
+
 // application
 #include "orc/dwarf_constants.hpp"
 #include "orc/hash.hpp"
@@ -54,7 +57,7 @@ struct attribute_value {
     }
 
     auto uint() const {
-        assert(has(type::uint));
+        ADOBE_PRECONDITION(has(type::uint));
         return _uint;
     }
 
@@ -64,22 +67,35 @@ struct attribute_value {
     }
 
     auto sint() const {
-        assert(has(type::sint));
+        ADOBE_PRECONDITION(has(type::sint));
         return _int;
     }
 
+    // Return _either_ sint or uint; some attributes
+    // may be one or the other, but in some cases the
+    // valid values could be represented by either type
+    // (e.g., the number cannot be negative or larger
+    // than the largest possible signed value.)
+    // This routine is useful when the caller doesn't
+    // care how it was stored and just wants the value.
+    // If this attribute value has _both_, it is assumed
+    // they are equal.
+    int number() const {
+        return has(type::sint) ? sint() : uint();
+    }
+    
     void string(pool_string x) {
         _type |= type::string;
         _string = x;
     }
 
     const auto& string() const {
-        assert(has(type::string));
+        ADOBE_PRECONDITION(has(type::string));
         return _string;
     }
 
     auto string_hash() const {
-        assert(has(type::string));
+        ADOBE_PRECONDITION(has(type::string));
         return _string.hash();
     }
 
@@ -89,7 +105,7 @@ struct attribute_value {
     }
 
     auto reference() const {
-        assert(has(type::reference));
+        ADOBE_PRECONDITION(has(type::reference));
         return _uint;
     }
 
@@ -146,6 +162,7 @@ struct attribute {
     auto reference() const { return _value.reference(); }
     const auto& string() const { return _value.string(); }
     auto uint() const { return _value.uint(); }
+    auto sint() const { return _value.sint(); }
     auto string_hash() const { return _value.string_hash(); }
 };
 
@@ -181,7 +198,7 @@ struct attribute_sequence {
 
     bool has(dw::at name, enum attribute_value::type t) const {
         auto [valid, iterator] = find(name);
-        return valid ? iterator->has(t) : false;
+        return valid && iterator->has(t);
     }
 
     bool has_uint(dw::at name) const {
@@ -198,13 +215,13 @@ struct attribute_sequence {
 
     auto& get(dw::at name) {
         auto [valid, iterator] = find(name);
-        assert(valid);
+        ADOBE_INVARIANT(valid);
         return *iterator;
     }
 
     const auto& get(dw::at name) const {
         auto [valid, iterator] = find(name);
-        assert(valid);
+        ADOBE_INVARIANT(valid);
         return *iterator;
     }
 
@@ -214,6 +231,14 @@ struct attribute_sequence {
 
     std::uint64_t uint(dw::at name) const {
         return get(name).uint();
+    }
+
+    int number(dw::at name) const {
+        return get(name)._value.number();
+    }
+
+    std::int64_t sint(dw::at name) const {
+        return get(name).sint();
     }
 
     pool_string string(dw::at name) const {
@@ -237,7 +262,18 @@ struct attribute_sequence {
     auto end() { return _attributes.end(); }
     auto end() const { return _attributes.end(); }
 
+    void erase(dw::at name) {
+        auto [valid, iterator] = find(name);
+        ADOBE_INVARIANT(valid);
+        _attributes.erase(iterator);
+    }
+
+    void move_append(attribute_sequence&& rhs) {
+        _attributes.insert(_attributes.end(), std::move_iterator(rhs.begin()), std::move_iterator(rhs.end()));
+    }
+
 private:
+    /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, iterator> find(dw::at name) {
         auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
             return attr._name == name;
@@ -245,6 +281,7 @@ private:
         return std::make_tuple(result != _attributes.end(), result);
     }
 
+    /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, const_iterator> find(dw::at name) const {
         auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
             return attr._name == name;
@@ -423,6 +460,22 @@ using dies = std::vector<die>;
 
 /**************************************************************************************************/
 
+/**
+ * @brief Determines if a DWARF attribute is considered non-fatal for ODRV purposes
+ * 
+ * This function identifies attributes that can be safely ignored when checking for
+ * One Definition Rule Violations (ODRVs). These attributes typically contain
+ * information that doesn't affect the actual definition of a symbol, such as
+ * debug-specific metadata or compiler-specific extensions.
+ *
+ * @param at The DWARF attribute to check
+ * 
+ * @return true if the attribute is non-fatal and can be ignored for ODRV checks,
+ *         false if the attribute must be considered when checking for ODRVs
+ * 
+ * @pre The attribute must be a valid DWARF attribute
+ * @post The return value will be consistent with the internal list of nonfatal attributes
+ */
 bool nonfatal_attribute(dw::at at);
 inline bool fatal_attribute(dw::at at) { return !nonfatal_attribute(at); }
 

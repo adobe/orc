@@ -85,6 +85,19 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         });
     };
 
+    // This lambda will return how many bytes
+    // were read in order to process the ULEB;
+    // this is different than `leb_block` in
+    // that the value of the ULEB is immaterial.
+    auto leb_length = [&] {
+        return temp_seek(s, [&]{
+            const std::size_t beginning = s.tellg();
+            (void)uleb128(s); // do the uleb read to find out how much was read.
+            const std::size_t end = s.tellg();
+            return static_cast<std::uint32_t>(end - beginning);
+        });
+    };
+    
     switch (f) {
         case dw::form::addr:
             return 8;
@@ -152,12 +165,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
                 // addrx has changed to be a single ULEB;
                 // therefore we need to return the length
                 // of the ULEB instead of its value.
-                return temp_seek(s, [&]{
-                    const std::size_t beginning = s.tellg();
-                    (void)uleb128(s); // do the uleb read to find out how much was read.
-                    const std::size_t end = s.tellg();
-                    return static_cast<std::uint32_t>(end - beginning);
-                });
+                return leb_length();
             } else {
                 ADOBE_INVARIANT(!"unhandled DWARF version");
             }
@@ -174,9 +182,13 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
         case dw::form::implicit_const:
             return 0;
         case dw::form::loclistx:
-            return uleb128(s); // length of LEB _not_ included
+            // SPECREF DWARF5 239 (221) line 0 -- `loclistx` is new for DWARF5.
+            // SPECREF DWARF5 234 (216) lines 23-29 -- return the length of the ULEB.
+            return leb_length();
         case dw::form::rnglistx:
-            return uleb128(s); // length of LEB _not_ included
+            // SPECREF DWARF5 239 (221) line 0 -- `rnglistx` is new for DWARF5.
+            // SPECREF DWARF5 234 (216) lines 12-16 -- return the length of the ULEB.
+            return leb_length();
         case dw::form::ref_sup8:
             return 8;
         case dw::form::strx1:
@@ -208,10 +220,24 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a DWARF section in the object file
+ * 
+ * This struct stores information about a DWARF section, including its offset
+ * and size within the object file. It is used to track the location of various
+ * DWARF debug sections like .debug_info, .debug_abbrev, etc.
+ */
 struct section {
-    std::size_t _offset{0};
-    std::size_t _size{0};
+    std::size_t _offset{0}; ///< The offset of the section within the file
+    std::size_t _size{0};   ///< The size of the section in bytes
 
+    /**
+     * @brief Checks if the section is valid
+     * 
+     * A section is considered valid if it has both a non-zero offset and size.
+     * 
+     * @return true if the section is valid, false otherwise
+     */
     bool valid() const { return _offset != 0 && _size != 0; }
 };
 
@@ -226,6 +252,17 @@ struct abbrev {
     bool _has_children{false}; /// whether the DIE has children
     std::vector<attribute> _attributes; /// the attributes of the DIE
 
+    /**
+     * @brief Reads an abbreviation entry from the file
+     * 
+     * This function reads the abbreviation entry from the file reader,
+     * parsing its code, tag, children flag, and attributes.
+     * 
+     * @param s The file reader to read from
+     * 
+     * @pre The file reader must be positioned at the start of an abbreviation entry
+     * @post The file reader will be positioned after the abbreviation entry
+     */
     void read(freader& s);
 };
 
@@ -258,11 +295,18 @@ void abbrev::read(freader& s) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a source file entry in DWARF debug information
+ * 
+ * This struct stores information about a source file referenced in the DWARF
+ * debug information, including its name, directory index, modification time,
+ * and length.
+ */
 struct file_name {
-    std::string_view _name;
-    std::uint32_t _directory_index{0};
-    std::uint32_t _mod_time{0};
-    std::uint32_t _file_length{0};
+    std::string_view _name; ///< The name of the source file
+    std::uint32_t _directory_index{0}; ///< Index into the include directories list
+    std::uint32_t _mod_time{0}; ///< File modification time
+    std::uint32_t _file_length{0}; ///< Length of the file in bytes
 };
 
 /**************************************************************************************************/
@@ -288,7 +332,10 @@ bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
  * @return A size_t hash value that uniquely identifies the DIE
  *
  * @note Struct and class tags are treated as equivalent
- * @note The declaration attribute is included to distinguish between declarations and definitions
+ * @note The `declaration` attribute is included to distinguish between
+ *       non-defining or incomplete declarations and subsequent definitions.
+ *       (This may be redundant, as `is_skippable_die` flags dies that have
+ *       the `declaration` attribute as skippable.)
  *
  * @pre The DIE and its attributes must be properly initialized
  * @post The returned hash can be used to identify potentially equivalent DIEs
@@ -333,13 +380,25 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
  * version, unit type, and the offset of the debug_abbrev section.
  */
 struct cu_header {
-    std::uint64_t _length{0}; // 4 bytes (or 12 if extended length is used.)
-    bool _is_64_bit{false}; // whether the DWARF is 64-bit
-    std::uint16_t _version{0}; // DWARF spec version (DWARF4, DWARF5, etc.)
-    std::uint8_t _unit_type{0}; // SPECREF: DWARF5 page 218 (200) line 15
-    std::uint64_t _debug_abbrev_offset{0}; // 4 (!_is_64_bit) or 8 (_is_64_bit) bytes
-    std::uint32_t _address_size{0}; // size of an address in bytes (currently unused)
+    std::uint64_t _length{0}; ///< Length of the compilation unit (4 or 12 bytes (if extended length is used))
+    bool _is_64_bit{false}; ///< Whether the DWARF is 64-bit
+    std::uint16_t _version{0}; ///< DWARF spec version (DWARF4, DWARF5, etc.)
+    std::uint8_t _unit_type{0}; ///< Type of compilation unit (SPECREF: DWARF5 page 218 (200) line 15)
+    std::uint64_t _debug_abbrev_offset{0}; ///< Offset to debug abbreviations section
+    std::uint32_t _address_size{0}; ///< Size of an address in bytes
 
+    /**
+     * @brief Reads a compilation unit header from the file
+     * 
+     * This function reads the compilation unit header from the file reader,
+     * parsing its length, version, and other metadata.
+     * 
+     * @param s The file reader to read from
+     * @param needs_byteswap Whether the data needs byte swapping
+     * 
+     * @pre The file reader must be positioned at the start of a compilation unit header
+     * @post The file reader will be positioned after the header
+     */
     void read(freader& s, bool needs_byteswap);
 };
 
@@ -399,28 +458,50 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 
 /**************************************************************************************************/
 
+/**
+ * @brief Represents a DWARF line number program header
+ * 
+ * This struct stores information from a DWARF line number program header,
+ * which contains metadata about how line number information is encoded
+ * in the debug information. For ORC's purposes, this is largely ignored
+ * except for `_file_names` and `_include_directories`.
+ */
 struct line_header {
     // DWARF spec section 6.2.4 The Line Number Program Header.
     // Note this will change for DWARF5, so we need to look out
     // for DWARF data that uses the new version number and
     // account for it differently.
-    std::uint64_t _length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
-    std::uint16_t _version{0};
-    std::int8_t _address_size{0}; // new for DWARF5
-    std::int8_t _segment_selector_size{0}; // new for DWARF5
-    std::uint32_t _header_length{0}; // 4 (DWARF) or 8 (DWARF64) bytes
-    std::uint32_t _min_instruction_length{0};
-    std::uint32_t _max_ops_per_instruction{0}; // DWARF4 or greater
-    std::uint32_t _default_is_statement{0};
-    std::int32_t _line_base{0};
-    std::uint32_t _line_range{0};
-    std::uint32_t _opcode_base{0};
-    std::vector<std::uint32_t> _standard_opcode_lengths;
-    std::vector<std::string_view> _include_directories;
-    std::vector<file_name> _file_names;
+    std::uint64_t _length{0}; ///< Length of the header (4 or 8 bytes)
+    std::uint16_t _version{0}; ///< DWARF version
+    std::int8_t _address_size{0}; ///< Size of an address in bytes (DWARF5)
+    std::int8_t _segment_selector_size{0}; ///< Size of segment selector (DWARF5)
+    std::uint32_t _header_length{0}; ///< Length of the header (4 (DWARF) or 8 (DWARF64) bytes)
+    std::uint32_t _min_instruction_length{0}; ///< Minimum instruction length
+    std::uint32_t _max_ops_per_instruction{0}; ///< Maximum operations per instruction (DWARF4+)
+    std::uint32_t _default_is_statement{0}; ///< Default is_statement value
+    std::int32_t _line_base{0}; ///< Base value for line number calculations
+    std::uint32_t _line_range{0}; ///< Range of line numbers
+    std::uint32_t _opcode_base{0}; ///< Base value for opcodes
+    std::vector<std::uint32_t> _standard_opcode_lengths; ///< Lengths of standard opcodes
+    std::vector<std::string_view> _include_directories; ///< Include directories
+    std::vector<file_name> _file_names; ///< Source file names
 
+    /**
+     * @brief Reads a line number program header from the file
+     * 
+     * This function reads the line number program header from the file reader,
+     * parsing its version, opcode information, and file/directory lists.
+     * 
+     * @param s The file reader to read from
+     * @param needs_byteswap Whether the data needs byte swapping
+     * 
+     * @pre The file reader must be positioned at the start of a line number program header
+     * @post The file reader will be positioned after the header
+     */
     void read(freader& s, bool needs_byteswap);
 };
+
+/**************************************************************************************************/
 
 void line_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s, needs_byteswap);
@@ -607,9 +688,9 @@ struct dwarf::implementation {
     void report_die_processing_failure(std::size_t die_absolute_offset, std::string&& error);
     void process_all_dies();
     void post_process_compilation_unit_die(const die& die, const attribute_sequence& attributes);
-    void post_process_die_attributes(attribute_sequence& attributes);
+    void post_process_die_attributes(die& die, attribute_sequence& attributes);
 
-    bool is_skippable_die(die& d, const attribute_sequence& attributes);
+    bool is_skippable_die(const die& d, const attribute_sequence& attributes);
 
     die_pair fetch_one_die(std::size_t die_offset,
                            std::size_t cu_header_offset,
@@ -648,6 +729,7 @@ struct dwarf::implementation {
     attribute_value evaluate_blockn(std::uint32_t size, dw::at attribute);
 
     pool_string die_identifier(const die& a, const attribute_sequence& attributes) const;
+    void update_die_identifier_and_path(die& die, const attribute_sequence& attributes);
 
     die_pair offset_to_die_pair(std::size_t offset);
     attribute_sequence offset_to_attribute_sequence(std::size_t offset);
@@ -999,7 +1081,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     // completely- these are the cases when a value needs contextual interpretation. For example,
     // decl_file comes back as a uint, but that's a debug_str offset that needs to be resolved.
     if (result._name == dw::at::decl_file) {
-        auto decl_file_index = result._value.uint();
+        const auto decl_file_index = result._value.uint();
         if (decl_file_index < _decl_files.size()) {
             pool_string decl_file = _decl_files[decl_file_index];
 
@@ -1016,7 +1098,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             result._value.string(empool("<unsupported file index>"));
         }
     } else if (result._name == dw::at::calling_convention) {
-        auto convention = result._value.uint();
+        const auto convention = result._value.uint();
         ADOBE_INVARIANT(convention > 0 && convention <= 0xff);
         switch (convention) {
             case 0x01: result._value.string(empool("normal")); break;
@@ -1029,7 +1111,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::accessibility) {
-        auto accessibility = result._value.uint();
+        const auto accessibility = result._value.uint();
         ADOBE_INVARIANT(accessibility >= 1 && accessibility <= 3);
         switch (accessibility) {
             case 1: result._value.string(empool("public")); break;
@@ -1038,7 +1120,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::virtuality) {
-        auto virtuality = result._value.uint();
+        const auto virtuality = result._value.uint();
         ADOBE_INVARIANT(virtuality >= 0 && virtuality <= 2);
         switch (virtuality) {
             case 0: result._value.string(empool("none")); break;
@@ -1047,7 +1129,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             // otherwise, leave the value unchanged.
         }
     } else if (result._name == dw::at::visibility) {
-        auto visibility = result._value.uint();
+        const auto visibility = result._value.uint();
         ADOBE_INVARIANT(visibility > 0 && visibility <= 3);
         switch (visibility) {
             case 1: result._value.string(empool("local")); break;
@@ -1055,8 +1137,19 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
             case 3: result._value.string(empool("qualified")); break;
             // otherwise, leave the value unchanged.
         }
+    } else if (result._name == dw::at::inline_) {
+        // SPECREF DWARF5 251 (233) line 1
+        const auto inline_ = result._value.number();
+        ADOBE_INVARIANT(inline_ >= 0 && inline_ <= 3);
+        switch (inline_) {
+            case 0: result._value.string(empool("not-inlined")); break;
+            case 1: result._value.string(empool("inlined")); break;
+            case 2: result._value.string(empool("declared-not-inlined")); break;
+            case 3: result._value.string(empool("declared-inlined")); break;
+            // otherwise, leave the value unchanged.
+        }
     } else if (result._name == dw::at::apple_property) {
-        auto property = result._value.uint();
+        const auto property = result._value.uint();
         // this looks like a bitfield; a switch may not suffice.
         switch (property) {
             case 0x01: result._value.string(empool("readonly")); break;
@@ -1527,9 +1620,15 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     };
 
     switch (attr._form) {
-        case dw::form::udata:
-        case dw::form::implicit_const: {
+        case dw::form::udata: {
             result.uint(read_uleb());
+        } break;
+        case dw::form::implicit_const: {
+            // SPECREF DWARF5 225 (207) lines 11-14
+            // "The value of [the number read during `read_abbreviations`] is
+            // used as the value of the attribute, and no value is stored
+            // in the .debug_info section."
+            result = attr._value;
         } break;
         case dw::form::sdata: {
             result.uint(read_uleb()); // sdata is expecting unsigned values?
@@ -1694,6 +1793,22 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
 }
 
 /**************************************************************************************************/
+// A die contains a `path` which is a fully-qualified, user-readable name for the symbol in
+// question. The identifier stack is used to create the path, and is populated by a die's
+// attributes in anticipation of being a parent die to some nested one. The die's path is then
+// derived from that stack of identifiers, in addition to a name or other symbol-name-like
+// attribute in this die. This two-step process is called a handful of times within this file as
+// the dies are being constructed (either processing dies in bulk or one-shot.)
+//
+// After this call has happened, the current identifier stack entry will be updated from
+// information in this die's attributes, and the `path` of the die will be set to something
+// user-readable for ODRV reporting purposes. `die` is an out-arg for performance reasons.
+void dwarf::implementation::update_die_identifier_and_path(die& die, const attribute_sequence& attributes) {
+    path_identifier_set(die_identifier(die, attributes));
+    die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+}
+
+/**************************************************************************************************/
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -1739,10 +1854,8 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
                    });
 
     if (mode == process_mode::complete) {
-        // These statements must be kept in sync with the ones dealing with issue 84 below.
         // See https://github.com/adobe/orc/issues/84
-        path_identifier_set(die_identifier(die, attributes));
-        die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+        update_die_identifier_and_path(die, attributes);
     }
 
     return std::make_tuple(std::move(die), std::move(attributes));
@@ -1778,30 +1891,34 @@ bool dwarf::implementation::register_sections_done() {
 
 /**************************************************************************************************/
 /**
- * @brief Determines if a DIE should be skipped during ODR processing
- *
- * This function applies various filtering rules to determine if a DIE (DWARF Information Entry)
- * should be excluded from ODR (One Definition Rule) violation detection. It checks for:
- * - DIEs with tags that are explicitly marked for skipping
- * - Non-external subprograms (invisible outside their compilation unit)
- * - Anonymous/unnamed DIEs (with empty paths)
- * - Reserved symbols (containing "__")
- * - Vendor/compiler-defined symbols
- * - Lambda expressions (which cannot contribute to ODR violations)
- * - Objective-C based DIEs (which cannot contribute to ODR violations)
- * - Symbols in the ignore list (which assumes they are not user-defined)
- * - Self-referential types (which cannot contribute to ODR violations)
- *
- * @param d The DIE to evaluate
+ * @brief Determines if a DIE should be skipped during processing
+ * 
+ * This function applies a series of filters to determine if a DIE should be skipped
+ * during processing. It checks for various conditions that would make a DIE unsuitable
+ * for registration, such as:
+ * - Certain tags that are explicitly not handled
+ * - Declaration DIEs that are incomplete or non-defining
+ * - Non-external subprograms that are invisible outside their compilation unit
+ * - Anonymous/unnamed DIEs
+ * - Reserved symbols (those containing "__")
+ * - Vendor- or compiler-defined symbols
+ * - Lambdas
+ * - Objective-C based DIEs
+ * - Symbols listed in the ignore list
+ * - Self-referential types
+ * 
+ * @param d The DIE to check
  * @param attributes The attribute sequence associated with the DIE
  * 
- * @return true if the DIE should be skipped, false if it should be processed
- *
  * @pre The DIE and its attributes must be properly initialized
- * @post `true` if the DIE should be excluded from ODR violation detection;
- *       `false` otherwise.
+ * @pre The DIE's tag and path must be set
+ * @pre The attributes sequence must contain all relevant attributes for the DIE
+ * 
+ * @return true if the DIE should be skipped, false if it should be processed
+ * 
+ * @note Some filters are architecture-specific (e.g., handling of Objective-C)
  */
-bool dwarf::implementation::is_skippable_die(die& d, const attribute_sequence& attributes) {
+bool dwarf::implementation::is_skippable_die(const die& d, const attribute_sequence& attributes) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
     ZoneScoped;
     ZoneColor(tracy::Color::ColorType::Red);
@@ -1817,9 +1934,56 @@ bool dwarf::implementation::is_skippable_die(die& d, const attribute_sequence& a
         return true;
     }
 
-    // According to DWARF 3.3.1, a subprogram tag that is missing the external
-    // flag means the function is invisible outside its compilation unit. As
-    // such, it cannot contribute to an ODRV.
+    // SPECREF DWARF5 67 (49) line 9 --
+    // The presence of the `declaration` flag means this DIE is
+    // incomplete or non-defining, so cannot contribute to an ODRV.
+    if (has_flag_attribute(attributes, dw::at::declaration)) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+            ZoneTextL("skipping: declaration flag");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
+    // SPECREF DWARF5 100 (82) lines 1-24 --
+    // An abstract instance root (and all of its children) that is anything other
+    // than "not inlined" (according to the `dw::at::inline_` attribute) does not
+    // have instance-identifying information, so cannot contribute to an ODRV.
+    //
+    // REVISIT (fosterbrereton) : I only think `inline_` is given to the root
+    // of the tree, so this won't catch children nested within the root. Not sure
+    // how big of a deal that will be.
+    //
+    // SPECREF DWARF5 251 (233) line 1 -- value of 0 -> "not inlined"
+    if (attributes.has(dw::at::inline_) && attributes.number(dw::at::inline_) != 0) {
+#if ORC_FEATURE(PROFILE_DIE_DETAILS)
+            ZoneTextL("skipping: abstract instance root / tree");
+#endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
+        return true;
+    }
+
+    // SPECREF DWARF4 67 (53) lines 11-13 --
+    // According to DWARF4 section 3.3.1, a subprogram tag that is missing the external flag means
+    // the function is invisible outside its compilation unit. As such, it cannot contribute to an
+    // ODRV.
+    //
+    // 2025-04-14 fosterbrereton: The above comment is accurate, however I think it is also
+    // incomplete. I am observing several `subprogram` entries for the same subroutine within a
+    // single compilation unit. I suspect these multiple DIEs describe different aspects of the
+    // same subroutine (though I am not sure why they are separated.) In one `subprogram` DIE the
+    // `external` flag is present and `true`, while in the other DIE it is missing (but contains
+    // e.g., `low_pc` and `high_pc` data about where the subprogram instructions lie).
+    //
+    // SPECREF DWARF5 67 (49) line 15 --
+    // Subprogram debugging information has been seen busted up across multiple entries. Subsequent
+    // DIEs should have the `specification` attribute that references the original DIE. We do not
+    // check for the presence or lack of the `specification` attribute, as it doesn't add anything
+    // semantically distinct to the debugging information - it just links two DIEs together. It
+    // does explain why/how there are multiple entries about the same subprogram, however.
+    //
+    // This has been resolved elsewhere (in `post_process_die_attributes`) with the merging of a
+    // `specification`'s original die with this one if the `specification` flag is found. This
+    // should cause a fully-defined subprogram die entry to have both the `external` flag and the
+    // `high_pc` value for ODRV analysis.
     if (d._tag == dw::tag::subprogram && !has_flag_attribute(attributes, dw::at::external)) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
         ZoneTextL("skipping: non-external subprogram");
@@ -2021,7 +2185,7 @@ void dwarf::implementation::process_all_dies() {
                 }
             }
 
-            post_process_die_attributes(attributes);
+            post_process_die_attributes(die, attributes);
 
             // See https://github.com/adobe/orc/issues/84
             // This code accounts for unnamed structs that are part of
@@ -2041,9 +2205,7 @@ void dwarf::implementation::process_all_dies() {
                 name._value.string(_last_typedef_name);
                 attributes.push_back(name);
 
-                // These two statements must be in sync with the ones in `abbreviation_to_die`
-                path_identifier_set(die_identifier(die, attributes));
-                die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
+                update_die_identifier_and_path(die, attributes);
 
                 _last_typedef_name = pool_string(); // reset it to avoid misuse
             }
@@ -2156,9 +2318,9 @@ void dwarf::implementation::post_process_compilation_unit_die(
  * @post The `DW_AT_type` and `DW_AT_containing_type` attributes in the sequence
  * will have their values replaced with resolved type names
  *
- * @note `attributes` is an out-arg for performance reasons. 
+ * @note `die` and `attributes` are out-args for performance reasons. 
  */
-void dwarf::implementation::post_process_die_attributes(attribute_sequence& attributes) {
+void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequence& attributes) {
     if (attributes.has(dw::at::type)) {
         auto& attribute = attributes.get(dw::at::type);
         attribute._value.string(resolve_type(attribute));
@@ -2167,6 +2329,40 @@ void dwarf::implementation::post_process_die_attributes(attribute_sequence& attr
     if (attributes.has(dw::at::containing_type)) {
         auto& attribute = attributes.get(dw::at::containing_type);
         attribute._value.string(resolve_type(attribute));
+    }
+
+    // SPECREF DWARF5 67 (49) line 15 -- If a `specification` attribute is found, we look for a
+    // previous DIE at the referenced offset and merge its contents into this one. I am pretty sure
+    // the DIE referenced by `specification` will be a `declaration` (non-defining / incomplete)
+    // DIE, and this one is the better candidate to fully define the debugging information entry
+    // and thus use it for ODRV analysis.
+    if (attributes.has(dw::at::specification)) {
+        const auto original_die_offset = attributes.reference(dw::at::specification);
+        // I'm not super keen on this call: there is a lot that `fetch_one_die` does that we don't
+        // need here (for example, we don't need to re-parse the compilation unit die.) It may also
+        // degrade performance. We may want to split out the stuff we do need from that routine into
+        // a separate function.
+        //
+        // Passing `0` here as the offset is okay because `fetch_one_die` will seek to the correct
+        // offset before calling `abbreviation_to_die`.
+        auto original_die_pair = temp_seek(_s, 0, [&](){
+            return fetch_one_die(original_die_offset,
+                                 die._cu_header_offset,
+                                 die._cu_die_offset);
+        });
+
+        // Smash the original and this die's attributes together into an aggregate, well-defined set
+        // of attributes for this symbol. Because the original still has the `declaration` flag in
+        // it, it will be ignored for the purposes of ODR analysis; only this die will be
+        // considered.
+        attributes.move_append(std::move(std::get<attribute_sequence>(original_die_pair)));
+
+        // Erase the two attributes that would otherwise flag this die as being incomplete.
+        attributes.erase(dw::at::specification);
+        attributes.erase(dw::at::declaration);
+
+        // a little bit of identifier/path housekeeping.
+        update_die_identifier_and_path(die, attributes);
     }
 }
 
@@ -2224,7 +2420,9 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
 
     auto result = abbreviation_to_die(die_address, process_mode::single);
 
-    post_process_die_attributes(std::get<1>(result));
+    path_identifier_push();
+    post_process_die_attributes(std::get<0>(result), std::get<1>(result));
+    path_identifier_pop();
 
     return result;
 }

@@ -1003,11 +1003,15 @@ std::string dwarf::implementation::qualified_symbol_name(
     ZoneScoped;
 #endif // ORC_FEATURE(PROFILE_DIE_DETAILS)
 
-    // There are some attributes that contain the mangled name of the symbol.
-    // This is a much better representation of the symbol than the derived path
-    // we are using, so let's use that instead here.
-    // (We may want to store the path off in the die elsewhere anyhow, as it
-    // could aid in ODRV analysis by the user.)
+    //
+    // There are some attributes that contain the mangled name of the symbol. This is a *the actual*
+    // symbol name and preferred over a derived path, so we use that here if we find it.
+    //
+    // For symbols that could contribute to an ODRV, they should have a linkage name. This includes
+    // those that inherit a linkage name through their specification attribute, whose attributes
+    // `post_process_die_attributes` should copy into this die. However, this routine may be called
+    // before `post_process_die_attributes` is, so we look to that attribute directly here, too.
+    // 
 
     const dw::at qualified_attributes[] = {
         dw::at::linkage_name,
@@ -1030,6 +1034,11 @@ std::string dwarf::implementation::qualified_symbol_name(
         }
     }
 
+    // If we don't have a linkage name for this die but did set something for
+    // its identifier, we construct the fully qualified path name and return
+    // it as the "symbol name" of this DIE. Not ideal, and could be a smell
+    // that this DIE cannot actually contribute to an ODRV (however, one of its
+    // children might?)
     std::string result;
     for (const auto& identifier : _path) {
         result += "::" + identifier.allocate_string();
@@ -1209,11 +1218,11 @@ pool_string dwarf::implementation::die_identifier(const die& d,
     // clang-format off
     const dw::at string_attributes[] = {
         dw::at::linkage_name,
-        dw::at::name,
-        dw::at::type,
-        dw::at::import_,
-        dw::at::abstract_origin,
         dw::at::specification,
+        dw::at::name, // REVISIT (fosterbrereton): remove?
+        dw::at::type, // REVISIT (fosterbrereton): remove?
+        dw::at::import_, // REVISIT (fosterbrereton): remove?
+        dw::at::abstract_origin, // REVISIT (fosterbrereton): remove?
     };
     // clang-format on
     for (const auto& at : string_attributes)

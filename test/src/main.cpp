@@ -448,7 +448,7 @@ bool metrics_validation(const toml::table& settings) {
     }
 
     const toml::table& expected = *expected_ptr;
-    const atomic_metrics& metrics = globals::instance()._metrics;
+    const globals& metrics = globals::instance();
     bool failure = false;
 
     const auto compare_field = [&expected](const std::atomic_size_t& field, const char* key) -> bool {
@@ -531,7 +531,7 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
     // settings::instance()._parallel_processing = false;
 
     const std::vector<odrv_report> reports = orc_process(std::move(object_files));
-    const atomic_metrics& metrics = globals::instance()._metrics;
+    const globals& metrics = globals::instance();
 
     console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size()
               << '\n';

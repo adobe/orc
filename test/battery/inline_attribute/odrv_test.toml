@@ -1,5 +1,6 @@
 #
 # This is a binary test to ensure ORC can process the `inline` attribute.
+# There are no ODR violations in this test.
 #
 # The following command line was used to compile `inline.o` such that the
 # compiler inlined a function and called it out in the debug symbols:

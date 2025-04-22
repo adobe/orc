@@ -63,7 +63,7 @@ auto& toml_out() {
 
 /**************************************************************************************************/
 
-} // namespace {
+} // namespace
 
 /**************************************************************************************************/
 
@@ -126,7 +126,7 @@ void error(const std::string& message,
 
 /**************************************************************************************************/
 
-} // namespace log
+} // namespace logging
 
 /**************************************************************************************************/
 
@@ -344,7 +344,7 @@ std::vector<compilation_unit> derive_compilation_units(const std::filesystem::pa
 /// improved.
 std::string sanitize(const std::filesystem::path& in) {
     std::string result = in.string();
-    auto new_end = std::remove_if(result.begin(), result.end(), [](char c){
+    auto new_end = std::remove_if(result.begin(), result.end(), [](char c) {
         return !(std::isalnum(c) || c == '/' || c == '.' || c == '_');
     });
     result.erase(new_end, result.end());
@@ -380,7 +380,8 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
             throw std::runtime_error("unexpected compilation failure");
         }
         object_files.emplace_back(std::move(temp_path));
-        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename() << '\n';
+        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename()
+                  << '\n';
     }
     return object_files;
 }
@@ -430,9 +431,9 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
     const std::string& linkage_name = demangle(odrv.linkage_name().c_str());
     if (!linkage_name.empty()) {
         const auto& die_pair = report.conflict_map().begin()->second;
-        const char* report_linkage_name = demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
-        if (linkage_name != report_linkage_name)
-            return false;
+        const char* report_linkage_name =
+            demangle(die_pair._attributes.string(dw::at::linkage_name).view().begin());
+        if (linkage_name != report_linkage_name) return false;
     }
     return true;
 }
@@ -479,7 +480,7 @@ constexpr const char* tomlname_k = "odrv_test.toml";
 
 /**************************************************************************************************/
 
-void run_battery_test(const std::filesystem::path& home) {
+std::size_t run_battery_test(const std::filesystem::path& home) {
     static bool first_s = false;
 
     if (!first_s) {
@@ -507,7 +508,7 @@ void run_battery_test(const std::filesystem::path& home) {
 
     if (settings["orc_test_flags"]["disable"].value_or(false)) {
         logging::notice("test disabled");
-        return;
+        return 0;
     }
 
     auto test_name = home.stem().string();
@@ -532,7 +533,8 @@ void run_battery_test(const std::filesystem::path& home) {
     const std::vector<odrv_report> reports = orc_process(std::move(object_files));
     const atomic_metrics& metrics = globals::instance()._metrics;
 
-    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size() << '\n';
+    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size()
+              << '\n';
 
     toml::table result;
     result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
@@ -565,9 +567,7 @@ void run_battery_test(const std::filesystem::path& home) {
         for (const auto& report : reports) {
             auto found =
                 std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
-                             [&](const auto& odrv) {
-                        return odrv_report_match(odrv, report);
-                });
+                             [&](const auto& odrv) { return odrv_report_match(odrv, report); });
 
             if (found == expected_odrvs.end()) {
                 unexpected_result = true;
@@ -600,23 +600,27 @@ void run_battery_test(const std::filesystem::path& home) {
 
 /**************************************************************************************************/
 
-void traverse_directory_tree(const std::filesystem::path& directory) {
+std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
     assert(is_directory(directory));
 
+    std::size_t errors = 0;
+
     if (exists(directory / tomlname_k)) {
-        run_battery_test(directory);
+        errors += run_battery_test(directory);
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         try {
             if (is_directory(entry)) {
-                traverse_directory_tree(entry.path());
+                errors += traverse_directory_tree(entry.path());
             }
         } catch (...) {
             console_error() << "\nIn battery " << entry.path() << ":";
             throw;
         }
     }
+
+    return errors;
 }
 
 /**************************************************************************************************/
@@ -641,15 +645,13 @@ int main(int argc, char** argv) try {
 
     test_settings()._json_mode = argc > 2 && std::string(argv[2]) == "--json_mode";
 
-    traverse_directory_tree(battery_path);
+    std::size_t errors = traverse_directory_tree(battery_path);
 
     if (test_settings()._json_mode) {
-        cout_safe([&](auto& s){
-            s << toml::json_formatter{ toml_out() } << '\n';
-        });
+        cout_safe([&](auto& s) { s << toml::json_formatter{toml_out()} << '\n'; });
     }
 
-    return EXIT_SUCCESS;
+    return errors ? EXIT_FAILURE : EXIT_SUCCESS;
 } catch (const std::exception& error) {
     logging::error(error.what(), "Fatal error");
     return EXIT_FAILURE;

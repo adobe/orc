@@ -65,7 +65,7 @@ ORC was originally conceived on macOS. While its current implementation is focus
 
 ### Enable Git Large File Storage (LFS)
 
-ORC uses Large File Storage (LFS) to track binary test data (object files). You will need to [install](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage) git LFS in order for `orc_test` to work properly.
+ORC uses Large File Storage (LFS) to track binary data (object files) for some `orc_test` tests. You will need to [install](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage) git LFS in order for every test in the `orc_test` battery to succeed. If you do not have LFS installed, test object files will not download and the associated tests will fail.
 
 ### Build the Project File
 

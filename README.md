@@ -255,3 +255,23 @@ The following flags are not currently in use or will undergo heavy changes as th
 - `[orc_test_flags]`: A series of runtime settings to pass to the test app for this test.
 
 - `[orc_flags]`: A series of runtime settings to pass to the ORC engine for this test.
+
+# Appendix A: Destructor Implementations
+
+It has been observed that the destructor of a given class can be different sizes across translation units. This is because the Itanium ABI defines [several destructor types](https://itanium-cxx-abi.github.io/cxx-abi/abi.html#vague-ctor) which may contribute to the confusion. [Mark Rowe](https://www.linkedin.com/in/bdash/) provides an excellent synopsis:
+
+> Presumably since you're seeing these destructors in multiple object files, they are declared in the header. The definitions have what is referred to as "vague linkage". For Mach-O this typically means they're emitted as weak definitions.
+>
+> At link time, the linker will use a strong definition for the symbol if it exists, otherwise it'll pick one of the weak definitions to use. If the symbol is not exported from the binary it'll be converted to a strong definition, otherwise it'll remain weak and the dynamic loader will do the same resolution process at load time (strong definition if one exists, otherwise pick one of the available weak definitions).
+>
+> If all of the various definitions are equivalent from an ABI point of view, it should not matter if they compile to slightly different code. However, if they are not ABI compatible, you'll have bugs that can be very hard to track down.
+>
+> `-fomit-frame-pointer` being used in some translation units and not others will result in code being generated for the same function. Different optimization levels will as well. Those should still be ABI-compatible though.
+>
+> Things like class members or virtual functions that are conditionally included or can change types based on `#if`s are a common source of problems.
+>
+> The other thing to be aware of is that for classes with virtual member functions, the compiler will often generate two destructors: the regular destructor, and the so-called "deleting" destructor. The deleting destructor is effectively a call to the regular destructor followed by a call to the appropriate `operator delete` implementation. If you're not distinguishing between these two types of destructors that may lead you to believe they're different sizes.
+>
+> The different destructor types are described in the Itanium ABI and can be distinguished via their mangled names.
+
+(This appendix should be kept around until there is reasonable confidence that ORC is discerning between the various types and minimizing false positives.)

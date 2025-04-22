@@ -13,6 +13,7 @@
 // stdc++
 #include <bit>
 #include <cstdio>
+#include <format>
 
 // system
 #include <fcntl.h> // open
@@ -164,7 +165,7 @@ void parse_file(std::string_view object_name,
 
     switch (detection._format) {
         case file_details::format::unknown:
-            throw std::runtime_error("unknown format");
+            throw std::runtime_error(std::format("unknown format: {}", object_name));
         case file_details::format::macho:
             return read_macho(std::move(new_ancestry), s, end_pos, std::move(detection),
                               std::move(params));

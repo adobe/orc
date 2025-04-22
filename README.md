@@ -260,7 +260,7 @@ The following flags are not currently in use or will undergo heavy changes as th
 
 - _C++ standard library ABI compatibility_, MaskRay. https://maskray.me/blog/2023-06-25-c++-standard-library-abi-compatibility
 - _How does the linker handle duplicate template instantiations across TUs?_, Mike Kinghan. https://stackoverflow.com/a/44346057/153535
-_ _Why are there symbols in my object file with `[abi:de180100]` appended?_, Mike Kinghan. https://stackoverflow.com/a/79586263/153535
+- _Why are there symbols in my object file with `[abi:de180100]` appended?_, Mike Kinghan. https://stackoverflow.com/a/79586263/153535
 
 # Appendix A: Destructor Implementations
 

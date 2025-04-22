@@ -256,6 +256,12 @@ The following flags are not currently in use or will undergo heavy changes as th
 
 - `[orc_flags]`: A series of runtime settings to pass to the ORC engine for this test.
 
+# Links
+
+- _C++ standard library ABI compatibility_, MaskRay. https://maskray.me/blog/2023-06-25-c++-standard-library-abi-compatibility
+- _How does the linker handle duplicate template instantiations across TUs?_, Mike Kinghan. https://stackoverflow.com/a/44346057/153535
+_ _Why are there symbols in my object file with `[abi:de180100]` appended?_, Mike Kinghan. https://stackoverflow.com/a/79586263/153535
+
 # Appendix A: Destructor Implementations
 
 It has been observed that the destructor of a given class can be different sizes across translation units. This is because the Itanium ABI defines [several destructor types](https://itanium-cxx-abi.github.io/cxx-abi/abi.html#vague-ctor) which may contribute to the confusion. [Mark Rowe](https://www.linkedin.com/in/bdash/) provides an excellent synopsis:

@@ -86,7 +86,6 @@ FetchContent_MakeAvailable(tracy)
 
 ####################################################################################################
 
-
 if (NOT TARGET TBB::tbb)
     message(STATUS "ORC third-party: creating target 'TBB::tbb'...")
     FetchContent_Declare(
@@ -126,6 +125,17 @@ add_executable(orc_dogfood
 )
 add_executable(orc::dogfood ALIAS orc_dogfood)
 set_target_properties(orc_dogfood PROPERTIES OUTPUT_NAME "orc_dogfood")
+
+#
+# These are toggleable within Xcode's scheme editor, and will override any
+# found orc_config files. This way developers can set up ORC for
+# development/debugging without having to change the orc_config file.
+#
+if (PROJECT_IS_TOP_LEVEL)
+    if (CMAKE_GENERATOR MATCHES "Xcode")
+        set_property(TARGET orc_orc PROPERTY XCODE_SCHEME_ENVIRONMENT "ORC_PARALLEL_PROCESSING=0;ORC_STANDALONE_MODE=1")
+    endif()
+endif()
 
 foreach(_TARGET_NAME IN ITEMS orc_orc orc_dogfood)
 

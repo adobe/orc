@@ -721,6 +721,7 @@ std::string version_json() {
 void orc_reset() {
     global_die_map().clear();
     with_global_die_collection([](auto& collection) { collection.clear(); });
+    globals::instance().reset();
 }
 
 /**************************************************************************************************/

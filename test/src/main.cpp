@@ -274,6 +274,29 @@ void validate_compilation_unit(const compilation_unit& unit) {
 }
 
 /**************************************************************************************************/
+/// rummage through the settings toml for any object file specifications (that is, object files
+/// included as part of the test, not ones that first need to be compiled from source.)
+std::vector<std::filesystem::path> derive_object_files(const std::filesystem::path& home,
+                                                       const toml::table& settings) {
+    std::vector<std::filesystem::path> result;
+    const toml::array* arr = settings["object"].as_array();
+    if (!arr) return result;
+    for (const toml::node& src_node : *arr) {
+        const toml::table* src_ptr = src_node.as_table();
+        if (!src_ptr) {
+            throw std::runtime_error(std::string("expected an object table, found: ") +
+                                     to_string(src_node.type()));
+        }
+        const toml::table& src = *src_ptr;
+        std::optional<std::string_view> path = src["path"].value<std::string_view>();
+        if (path) {
+            result.push_back(home / *path);
+        }
+    }
+    return result;
+}
+
+/**************************************************************************************************/
 
 std::vector<compilation_unit> derive_compilation_units(const std::filesystem::path& home,
                                                        const toml::table& settings) {
@@ -416,6 +439,42 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
 }
 
 /**************************************************************************************************/
+// return `false` if no error, or `true` on error.
+bool metrics_validation(const toml::table& settings) {
+    const toml::table* expected_ptr = settings["metrics"].as_table();
+
+    if (!expected_ptr) {
+        return false;
+    }
+
+    const toml::table& expected = *expected_ptr;
+    const globals& metrics = globals::instance();
+    bool failure = false;
+
+    const auto compare_field = [&expected](const std::atomic_size_t& field, const char* key) -> bool {
+        const toml::value<int64_t>* file_count_ptr = expected[key].as_integer();
+        if (!file_count_ptr) return false;
+        int64_t expected = **file_count_ptr;
+        if (expected == field) return false;
+        console_error() << key
+                        << " mismatch (expected "
+                        << expected
+                        << "; calculated "
+                        << field
+                        << ")\n";
+        return true;
+    };
+
+    failure += compare_field(metrics._object_file_count, "object_file_count");
+    failure += compare_field(metrics._odrv_count, "odrv_count");
+    failure += compare_field(metrics._unique_symbol_count, "unique_symbol_count");
+    failure += compare_field(metrics._die_processed_count, "die_processed_count");
+    failure += compare_field(metrics._die_skipped_count, "die_skipped_count");
+
+    return failure;
+}
+
+/**************************************************************************************************/
 
 constexpr const char* tomlname_k = "odrv_test.toml";
 
@@ -447,33 +506,32 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
     // Save this for debugging purposes.
     // console_error() << toml::json_formatter{settings} << '\n';
 
-    const bool skip_test = settings["orc_test_flags"]["disable"].value_or(false);
-
-    if (skip_test) {
+    if (settings["orc_test_flags"]["disable"].value_or(false)) {
         logging::notice("test disabled");
         return 0;
     }
 
     auto test_name = home.stem().string();
+    std::vector<std::filesystem::path> object_files;
 
     auto compilation_units = derive_compilation_units(home, settings);
-    if (compilation_units.empty()) {
-        throw std::runtime_error("found no sources to compile");
+    if (!compilation_units.empty()) {
+        object_files = compile_compilation_units(home, settings, compilation_units);
     }
 
+    std::vector<std::filesystem::path> direct_object_files = derive_object_files(home, settings);
+    object_files.insert(object_files.end(), std::move_iterator(direct_object_files.begin()), std::move_iterator(direct_object_files.end()));
+
+    // we can have zero of these now, it's okay.
     auto expected_odrvs = derive_expected_odrvs(home, settings);
-    if (expected_odrvs.empty()) {
-        logging::notice("Found no expected ODRVs for this test", test_name);
-    }
-
-    auto object_files = compile_compilation_units(home, settings, compilation_units);
 
     orc_reset();
 
     // save for debugging.
     // settings::instance()._parallel_processing = false;
 
-    auto reports = orc_process(std::move(object_files));
+    const std::vector<odrv_report> reports = orc_process(std::move(object_files));
+    const globals& metrics = globals::instance();
 
     console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size()
               << '\n';
@@ -481,13 +539,31 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
     toml::table result;
     result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
     result.insert("reported", static_cast<toml::int64_t>(reports.size()));
+
+    toml::table toml_metrics;
+    toml_metrics.insert("object_file_count", static_cast<toml::int64_t>(metrics._object_file_count));
+    toml_metrics.insert("odrv_count", static_cast<toml::int64_t>(metrics._odrv_count));
+    toml_metrics.insert("unique_symbol_count", static_cast<toml::int64_t>(metrics._unique_symbol_count));
+    toml_metrics.insert("die_processed_count", static_cast<toml::int64_t>(metrics._die_processed_count));
+    toml_metrics.insert("die_skipped_count", static_cast<toml::int64_t>(metrics._die_skipped_count));
+    result.insert("metrics", std::move(toml_metrics));
+
     toml_out().insert(test_name, std::move(result));
 
+    //
+    // metrics validation
+    //
+    bool metrics_failure = metrics_validation(settings);
+    
+    //
+    // ODRV report validation
+    //
     // At this point, the reports.size() should match the expected_odrvs.size()
-    bool unexpected_result = false;
-    if (expected_odrvs.size() != reports.size()) {
-        unexpected_result = true;
-    } else {
+    //
+    bool unexpected_result = expected_odrvs.size() != reports.size();
+
+    // If things are okay so far, make sure each ODRV reported is expected.
+    if (!unexpected_result) {
         for (const auto& report : reports) {
             auto found =
                 std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
@@ -517,11 +593,9 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
         }
 
         console_error() << "\nIn battery " << home << ": ODRV count mismatch";
-
-        return 1;
     }
 
-    return 0;
+    return metrics_failure + unexpected_result;
 }
 
 /**************************************************************************************************/
@@ -559,7 +633,7 @@ int main(int argc, char** argv) try {
     orc::profiler::initialize();
 
     if (argc < 2) {
-        console_error() << "Usage: " << argv[0] << " /path/to/test/battery/\n";
+        console_error() << "Usage: " << argv[0] << " /path/to/test/battery/ [--json_mode]\n";
         throw std::runtime_error("no path to test battery given");
     }
 

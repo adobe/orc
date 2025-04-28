@@ -81,7 +81,7 @@ struct attribute_value {
     // If this attribute value has _both_, it is assumed
     // they are equal.
     int number() const {
-        return has(type::sint) ? sint() : uint();
+        return has(type::sint) ? static_cast<int>(sint()) : static_cast<int>(uint());
     }
     
     void string(pool_string x) {

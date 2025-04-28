@@ -434,7 +434,10 @@ void cu_header::read(freader& s, bool needs_byteswap) {
 
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
 
-    if (_version == 4) {
+    if (_version == 2) {
+        // Do nothing...? This version is so old, I'm not sure
+        // what we should be doing with it...
+    } else if (_version == 4) {
         // Do nothing. We started this project with DWARF4
         // so the baseline implementation should match that.
     } else if (_version == 5) {
@@ -510,7 +513,9 @@ void line_header::read(freader& s, bool needs_byteswap) {
         throw std::runtime_error("unsupported length");
     }
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
-    if (_version == 4) {
+    if (_version == 2) {
+        /* do nothing */
+    } else if (_version == 4) {
         /* do nothing */
     } else if (_version == 5) {
         // SPECREF: DWARF5 page 26 (8) line 11 -- changes from DWARF4 to DWARF5

@@ -34,6 +34,9 @@
 // tbb
 #include <tbb/concurrent_unordered_map.h>
 
+// adobe contract checks
+#include "adobe/contract_checks.hpp"
+
 // application
 #include "orc/async.hpp"
 #include "orc/dwarf.hpp"
@@ -114,8 +117,8 @@ std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x,
     for (const auto name : intersection) {
         auto xfound = std::find_if(xf, xl, [&](auto& x) { return name == x._name; });
         auto yfound = std::find_if(yf, yl, [&](auto& y) { return name == y._name; });
-        assert(xfound != xl);
-        assert(yfound != yl);
+        ADOBE_INVARIANT(xfound != xl);
+        ADOBE_INVARIANT(yfound != yl);
         if (!attributes_conflict(name, *xfound, *yfound)) continue;
         result.push_back(name);
     }
@@ -184,10 +187,10 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
     auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
 
     auto [die, attributes] = dwarf.fetch_one_die(d._offset, d._cu_header_offset, d._cu_die_offset);
-    assert(die._tag == d._tag);
-    assert(die._arch == d._arch);
-    assert(die._has_children == d._has_children);
-    assert(die._offset == d._offset);
+    ADOBE_INVARIANT(die._tag == d._tag);
+    ADOBE_INVARIANT(die._arch == d._arch);
+    ADOBE_INVARIANT(die._has_children == d._has_children);
+    ADOBE_INVARIANT(die._offset == d._offset);
     return std::move(attributes);
 }
 
@@ -202,7 +205,7 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     // Too verbose for larger projects, but keep around for debugging/smaller projects.
     // ZoneScoped;
 
-    assert(_list_head->_conflict);
+    ADOBE_INVARIANT(_list_head->_conflict);
 
     // Construct a map of unique definitions of the conflicting symbol.
     // Each entry in `conflict_map` will be a collection of dies
@@ -227,7 +230,7 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
         }
     }
 
-    assert(_conflict_map.size() > 1);
+    ADOBE_INVARIANT(_conflict_map.size() > 1);
 
     // Derive the ODRV categories.
     const auto conflict_first = _conflict_map.begin();
@@ -395,8 +398,8 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
         dies[i++] = ptr;
     }
 
-    assert(dies.front() == base);
-    assert(dies.back() != nullptr);
+    ADOBE_INVARIANT(dies.front() == base);
+    ADOBE_INVARIANT(dies.back() != nullptr);
 
     // Theory: if multiple copies of the same source file were compiled,
     // the ancestry might not be unique. We assume that's an edge case
@@ -637,7 +640,7 @@ void register_dies(dies die_vector) {
     });
 
     for (auto& d : dies) {
-        assert(!d._skippable);
+        ADOBE_INVARIANT(!d._skippable);
 
         //
         // At this point we know we're going to register the die. Hereafter belongs
@@ -672,7 +675,7 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     nlohmann::json violations = nlohmann::json::object_t();
 
     for (const auto& report : reports) {
-        assert(violations.count(report._symbol) == 0);
+        ADOBE_INVARIANT(violations.count(report._symbol) == 0);
         violations[report._symbol] = report;
     }
 

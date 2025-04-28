@@ -18,7 +18,7 @@
 #include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // very minimal file reader. Uses mmap to bring the file into memory, and subsequently unmaps it
 // when the reader destructs. Doesn't do any kinds of bounds checking while reading (that's a
 // responsibility of the user at this point, but we could change it if it's more valuable to do so
@@ -95,7 +95,7 @@ private:
     char* _l{0};
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // temp_seek will move the read pointer of the incoming reader to the specified location, execute
 // the lambda, and then reset the read points to the location it was at when the routine began.
 // the read pointer will be correctly reset even if the lambda throws.
@@ -144,7 +144,7 @@ auto read_exactly(freader& s, std::size_t size, F&& f) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct file_details {
     enum class format {
@@ -160,7 +160,7 @@ struct file_details {
     bool _needs_byteswap{false};
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 template <typename T>
 void endian_swap(T& c) {
@@ -175,7 +175,7 @@ void endian_swap(T& c) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 template <typename T>
 T read_pod(freader& s) {
@@ -204,12 +204,12 @@ inline bool read_pod(freader& s, bool) {
     return read_pod<char>(s) != 0;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::uint32_t uleb128(freader& s);
 std::int32_t sleb128(freader& s);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /*
     For functions that take values by rvalue reference (aka sink functions), it can be helpful to be
     explicit about the object being passed in. In such cases, the object can only be moved or
@@ -224,7 +224,7 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
     return std::decay_t<T>{static_cast<T&&>(value)};
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 enum class macho_reader_mode {
     invalid,
@@ -247,4 +247,4 @@ void parse_file(std::string_view object_name,
                 std::istream::pos_type end_pos,
                 macho_params params);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

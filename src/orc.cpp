@@ -51,18 +51,18 @@
 #include "orc/tracy.hpp"
 #include "orc/version.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::mutex& ostream_safe_mutex() {
     static std::mutex m;
     return m;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::string_view path_to_symbol(std::string_view path) {
     // lop off the prefix. In most cases it'll be "::[u]::" - in some it'll be just "::[u]" (in
@@ -73,7 +73,7 @@ std::string_view path_to_symbol(std::string_view path) {
     return path.size() < 7 ? std::string_view() : path.substr(7);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool type_equivalent(const attribute& x, const attribute& y);
 
@@ -126,7 +126,7 @@ std::vector<dw::at> find_attribute_conflict(const attribute_sequence& x,
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool type_equivalent(const attribute& x, const attribute& y) {
     // types are pretty convoluted, so we pull their comparison out here in an effort to
@@ -144,7 +144,7 @@ bool type_equivalent(const attribute& x, const attribute& y) {
     return false;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 auto& unsafe_global_die_collection() {
     static decltype(auto) collection_s = orc::make_leaky<std::list<dies>>();
@@ -158,7 +158,7 @@ auto with_global_die_collection(F&& f) {
     return f(unsafe_global_die_collection());
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 auto& global_die_map() {
     static decltype(auto) map_s =
@@ -166,7 +166,7 @@ auto& global_die_map() {
     return map_s;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct cmdline_results {
     std::vector<std::filesystem::path> _file_object_list;
@@ -174,11 +174,11 @@ struct cmdline_results {
     bool _libtool_mode{false};
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 const char* problem_prefix() { return settings::instance()._graceful_exit ? "warning" : "error"; }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 attribute_sequence fetch_attributes_for_die(const die& d) {
     // Too verbose for larger projects, but keep around for debugging/smaller projects.
@@ -194,11 +194,11 @@ attribute_sequence fetch_attributes_for_die(const die& d) {
     return std::move(attributes);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     : _symbol(symbol), _list_head(list_head) {
@@ -247,7 +247,7 @@ odrv_report::odrv_report(std::string_view symbol, const die* list_head)
     sort_unique(_conflicting_attributes);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool should_report_category(const std::string& category) {
     auto& settings = settings::instance();
@@ -263,7 +263,7 @@ bool should_report_category(const std::string& category) {
     return true;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Returns a comma-separated serialization of categories NOT considered when determining an ODRV.
 std::string odrv_report::filtered_categories() const {
     std::string result;
@@ -285,7 +285,7 @@ std::string odrv_report::filtered_categories() const {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Returns a comma-separated serialization of categories considered when determining an ODRV.
 std::string odrv_report::reporting_categories() const {
     std::string result;
@@ -307,14 +307,14 @@ std::string odrv_report::reporting_categories() const {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Generates a category "slug" based on this symbol's kind + the category (e.g. member:type).
 std::string odrv_report::category(std::size_t n) const {
     return to_string(_conflict_map.begin()->second._tag) + std::string(":") +
            (_conflicting_attributes.empty() ? "<none>" : to_string(_conflicting_attributes[n]));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Given an ODRV report, we need to decide if the report's categories are ones we should
 // report for, or if we should filter this report out.
 bool emit_report(const odrv_report& report) {
@@ -329,7 +329,7 @@ bool emit_report(const odrv_report& report) {
     return false;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 template <class MapType>
 auto sorted_keys(const MapType& map) {
@@ -341,7 +341,7 @@ auto sorted_keys(const MapType& map) {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     const std::string_view& symbol = report._symbol;
@@ -368,7 +368,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& report) {
     return s;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     ZoneScoped;
@@ -438,11 +438,11 @@ die* enforce_odrv_for_die_list(die* base, std::vector<odrv_report>& results) {
     return dies.front();
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void parse_dsym(const std::filesystem::path& dsym) {
     // This may be making a lot of assumptions about the various files, nuances, metadata, directory
@@ -463,11 +463,11 @@ void parse_dsym(const std::filesystem::path& dsym) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_list) {
     // First stage: (optional) dependency/dylib preprocessing
@@ -551,7 +551,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void to_json(nlohmann::json& j, const attribute_value& a) {
     // limitation: only one of these types will be output,
@@ -614,11 +614,11 @@ void to_json(nlohmann::json& j, const odrv_report& p) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace orc {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void register_dies(dies die_vector) {
     ZoneScoped;
@@ -663,7 +663,7 @@ void register_dies(dies die_vector) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::string to_json(const std::vector<odrv_report>& reports) {
 #ifndef NDEBUG
@@ -705,11 +705,11 @@ std::string version_json() {
     return result.dump();
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace orc
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void orc_reset() {
     global_die_map().clear();
@@ -717,7 +717,7 @@ void orc_reset() {
     globals::instance().reset();
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 const char* demangle(const char* x) {
     // The returned char* is good until the next call to demangle() on the same thread.
@@ -730,4 +730,4 @@ const char* demangle(const char* x) {
     return p;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

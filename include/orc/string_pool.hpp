@@ -15,7 +15,7 @@
 
 #include "orc/features.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct pool_string;
 
@@ -108,4 +108,4 @@ private:
 // and don't remove this unless you are careful about performance of large projects.
 static_assert(sizeof(pool_string) <= sizeof(intptr_t), "pool_string is design to be as small and fast to copy as a pointer.");
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

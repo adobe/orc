@@ -47,15 +47,15 @@
 //     - DWARF5: https://dwarfstd.org/doc/DWARF5.pdf
 //
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 #define ORC_PRIVATE_FEATURE_PROFILE_DIE_DETAILS() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 ///
 /// Calculates the length of a DWARF form value in bytes.
 ///
@@ -218,7 +218,7 @@ std::uint32_t form_length(dw::form f, freader& s, std::uint16_t version) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 /**
  * @brief Represents a DWARF section in the object file
@@ -241,7 +241,7 @@ struct section {
     bool valid() const { return _offset != 0 && _size != 0; }
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // An abbreviation (abbreviated 'abbrev' througout a lot of the DWARF spec) is a template of sorts.
 // Think of it like a cookie cutter that needs to get stamped on some dough to make an actual
 // cookie. Only in this case instead of a cookie, it'll make a DIE (DWARF Information Entry.)
@@ -293,7 +293,7 @@ void abbrev::read(freader& s) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 /**
  * @brief Represents a source file entry in DWARF debug information
@@ -309,13 +309,13 @@ struct file_name {
     std::uint32_t _file_length{0}; ///< Length of the file in bytes
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool has_flag_attribute(const attribute_sequence& attributes, dw::at name) {
     return attributes.has_uint(name) && attributes.uint(name) == 1;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Calculates a hash value for a DWARF Information Entry (DIE)
  *
@@ -372,7 +372,7 @@ std::size_t die_hash(const die& d, const attribute_sequence& attributes) {
     // clang-tidy on
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Represents the header of a DWARF compilation unit
  *
@@ -402,7 +402,7 @@ struct cu_header {
     void read(freader& s, bool needs_byteswap);
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Reads a DWARF compilation unit header from the input stream
  *
@@ -456,7 +456,7 @@ void cu_header::read(freader& s, bool needs_byteswap) {
     _address_size = read_pod<std::uint8_t>(s);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 /**
  * @brief Represents a DWARF line number program header
@@ -501,7 +501,7 @@ struct line_header {
     void read(freader& s, bool needs_byteswap);
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void line_header::read(freader& s, bool needs_byteswap) {
     _length = read_pod<std::uint32_t>(s, needs_byteswap);
@@ -562,7 +562,7 @@ void line_header::read(freader& s, bool needs_byteswap) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // It is fixed to keep allocations from happening.
 constexpr std::size_t max_names_k{32};
 using fixed_attribute_array = std::array<dw::at, max_names_k>;
@@ -598,7 +598,7 @@ fixed_attribute_array fatal_attributes_within(const attribute_sequence& attribut
     return names;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Calculates a hash value for fatal attributes in a DIE
  *
@@ -646,7 +646,7 @@ std::size_t fatal_attribute_hash(const attribute_sequence& attributes) {
     return h;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool skip_tagged_die(const die& d) {
     static const dw::tag skip_tags[] = {
@@ -662,18 +662,18 @@ bool skip_tagged_die(const die& d) {
     return std::find(first, last, d._tag) != last;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 enum class process_mode {
     complete,
     single,
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct dwarf::implementation {
     implementation(std::uint32_t ofd_index,
@@ -760,7 +760,7 @@ struct dwarf::implementation {
     bool _ready{false};
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 template <class T>
 T dwarf::implementation::read() {
@@ -801,7 +801,7 @@ std::uint64_t dwarf::implementation::read_initial_length() {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::register_section(const std::string& name,
                                              std::size_t offset,
@@ -826,7 +826,7 @@ void dwarf::implementation::register_section(const std::string& name,
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::read_abbreviations() {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -845,7 +845,7 @@ void dwarf::implementation::read_abbreviations() {
     });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::read_lines(std::size_t header_offset) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -873,7 +873,7 @@ void dwarf::implementation::read_lines(std::size_t header_offset) {
     });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const {
     auto found = std::lower_bound(_abbreviations.begin(), _abbreviations.end(), code,
@@ -884,7 +884,7 @@ const abbrev& dwarf::implementation::find_abbreviation(std::uint32_t code) const
     return *found;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 #define ORC_PRIVATE_FEATURE_DEBUG_STR_CACHE() (ORC_PRIVATE_FEATURE_TRACY() && 0)
 
@@ -930,7 +930,7 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
                                                 [&] { return empool(_s.read_c_string_view()); });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // SPECREF: DWARF5 page 26 (8) line 28 -- v4 -> v5 changes
 pool_string dwarf::implementation::read_debug_str_offs(std::size_t entry) {
     if (const auto found = _debug_str_offs_cache.find(entry); found != _debug_str_offs_cache.end()) {
@@ -980,22 +980,22 @@ pool_string dwarf::implementation::read_debug_str_offs(std::size_t entry) {
                                                     [&] { return empool(_s.read_c_string_view()); });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::path_identifier_push() { _path.push_back(pool_string()); }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::path_identifier_set(pool_string name) {
     ADOBE_PRECONDITION(!_path.empty());
     _path.back() = name;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::path_identifier_pop() { _path.pop_back(); }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::string dwarf::implementation::qualified_symbol_name(
     const die& d, const attribute_sequence& attributes) const {
@@ -1046,7 +1046,7 @@ std::string dwarf::implementation::qualified_symbol_name(
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // incoming path comes from e.g., `file_decl` attribute, or one of the `_file_decl` entries.
 // Given what we know of the Mach-O file, attempt to canonicalize the path, making it absolute
 // if it is relative, and we have a `_cu_compilation_directory`. This is a relatively expensive
@@ -1070,7 +1070,7 @@ pool_string dwarf::implementation::make_path_canonical(pool_string candidate) {
     return empool(std::move(path).string());
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // This "flattens" the template into an evaluated value, based on both the attribute and the
 // current read position in debug_info.
 attribute dwarf::implementation::process_attribute(const attribute& attr,
@@ -1188,7 +1188,7 @@ attribute dwarf::implementation::process_attribute(const attribute& attr,
     // clang-format on
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 pool_string dwarf::implementation::die_identifier(const die& d,
                                                   const attribute_sequence& attributes) const {
@@ -1233,7 +1233,7 @@ pool_string dwarf::implementation::die_identifier(const die& d,
     return pool_string();
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression_size) {
     std::vector<std::int64_t> stack;
@@ -1502,7 +1502,7 @@ attribute_value dwarf::implementation::evaluate_exprloc(std::uint32_t expression
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 attribute_value dwarf::implementation::evaluate_constant(std::uint32_t size) {
     // read block bytes one at a time, accumulating them in an unsigned 64-bit value. This
@@ -1525,7 +1525,7 @@ attribute_value dwarf::implementation::evaluate_constant(std::uint32_t size) {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Where the handling of an essential block takes place. We get a size amount from
 // `maybe_handle_block` telling us how many bytes are in this block that we need to process.
 attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::at attribute) {
@@ -1551,7 +1551,7 @@ attribute_value dwarf::implementation::evaluate_blockn(std::uint32_t size, dw::a
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 attribute_value dwarf::implementation::process_form(const attribute& attr,
                                                     std::size_t cur_die_offset) {
@@ -1736,20 +1736,20 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 die_pair dwarf::implementation::offset_to_die_pair(std::size_t offset) {
     return temp_seek(_s, offset + _debug_info._offset,
                      [&]() { return abbreviation_to_die(_s.tellg(), process_mode::single); });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 attribute_sequence dwarf::implementation::offset_to_attribute_sequence(std::size_t offset) {
     return std::get<1>(offset_to_die_pair(offset));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 pool_string dwarf::implementation::resolve_type(attribute type) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -1801,7 +1801,7 @@ pool_string dwarf::implementation::resolve_type(attribute type) {
     return _type_cache[reference] = result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // A die contains a `path` which is a fully-qualified, user-readable name for the symbol in
 // question. The identifier stack is used to create the path, and is populated by a die's
 // attributes in anticipation of being a parent die to some nested one. The die's path is then
@@ -1817,7 +1817,7 @@ void dwarf::implementation::update_die_identifier_and_path(die& die, const attri
     die._path = empool(std::string_view(qualified_symbol_name(die, attributes)));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, process_mode mode) {
 #if ORC_FEATURE(PROFILE_DIE_DETAILS)
@@ -1870,7 +1870,7 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     return std::make_tuple(std::move(die), std::move(attributes));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool dwarf::implementation::register_sections_done() {
     ADOBE_PRECONDITION(!_ready);
@@ -1898,7 +1898,7 @@ bool dwarf::implementation::register_sections_done() {
     return true;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Determines if a DIE should be skipped during processing
  * 
@@ -2073,7 +2073,7 @@ bool dwarf::implementation::is_skippable_die(const die& d, const attribute_seque
     return false;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void dwarf::implementation::report_die_processing_failure(std::size_t die_address,
                                                           std::string&& error) {
@@ -2094,7 +2094,7 @@ void dwarf::implementation::report_die_processing_failure(std::size_t die_addres
     throw std::runtime_error("DWARF `debug_info` processing abort");
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief This function is the main entry point for DWARF DIE processing
  *
@@ -2258,7 +2258,7 @@ void dwarf::implementation::process_all_dies() {
     orc::register_dies(std::move(dies));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Processes a compilation unit DIE after it has been parsed
  *
@@ -2310,7 +2310,7 @@ void dwarf::implementation::post_process_compilation_unit_die(
     _decl_files[0] = attributes.string(dw::at::name);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Post-processes a DIE's type attributes to resolve their references
  *
@@ -2375,7 +2375,7 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Fetches a single DIE (Debug Information Entry) from the DWARF data
  *
@@ -2436,7 +2436,7 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 dwarf::dwarf(std::uint32_t ofd_index,
              freader&& s,
@@ -2456,4 +2456,4 @@ die_pair dwarf::fetch_one_die(std::size_t die_offset,
     return _impl->fetch_one_die(die_offset, cu_header_offset, cu_die_offset);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

@@ -27,11 +27,11 @@
 #include "orc/str.hpp"
 #include "orc/tracy.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /*
     This structure holds state while the Mach-O files are being read. Its goal is to 1) populate its
     dwarf field (for die processing within `dwarf.cpp`, or 2) derive dylib dependencies enumerated
@@ -88,7 +88,7 @@ private:
     struct dwarf _dwarf; // must be last
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::read_lc_segment_64_section() {
     auto section = read_pod<section_64>(_s);
@@ -113,7 +113,7 @@ void macho_reader::read_lc_segment_64_section() {
                             section.size);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::read_lc_segment_64() {
     auto lc = read_pod<segment_command_64>(_s);
@@ -136,7 +136,7 @@ void macho_reader::read_lc_segment_64() {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::read_lc_load_dylib() {
     const auto command_start = _s.tellg();
@@ -156,7 +156,7 @@ void macho_reader::read_lc_load_dylib() {
     _s.seekg(padding, std::ios::cur);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::read_lc_rpath() {
     const auto command_start = _s.tellg();
@@ -173,7 +173,7 @@ void macho_reader::read_lc_rpath() {
     _s.seekg(padding, std::ios::cur);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /*
     This is specifically in relation to the dylib scanning mode, where we're looking at a final
     linked artifact that enumerates the dylibs it depends upon.
@@ -250,7 +250,7 @@ void macho_reader::read_lc_symtab() {
     temp_seek(_s, _details._offset + lc.symoff, [&]() { read_stabs(lc.nsyms, lc.stroff); });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::read_load_command() {
     auto command = temp_seek(_s, [&] {
@@ -280,7 +280,7 @@ void macho_reader::read_load_command() {
     // clang-format on
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::optional<std::filesystem::path> resolve_dylib(std::string raw_path,
                                                    const std::filesystem::path& executable_path,
@@ -317,7 +317,7 @@ std::optional<std::filesystem::path> resolve_dylib(std::string raw_path,
     return raw_path;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::derive_dependencies() {
     // See https://itwenty.me/posts/01-understanding-rpath/
@@ -339,7 +339,7 @@ void macho_reader::derive_dependencies() {
     _params._register_dependencies(std::move(resolved_dylibs));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void macho_reader::populate_dwarf() {
     std::size_t load_command_sz{0};
@@ -376,11 +376,11 @@ void macho_reader::populate_dwarf() {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void read_macho(object_ancestry&& ancestry,
                 freader s,
@@ -413,7 +413,7 @@ void read_macho(object_ancestry&& ancestry,
     });
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params) {
     const auto& entry = object_file_fetch(ofd_index);
@@ -424,11 +424,11 @@ dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params) {
     return macho_reader(ofd_index, std::move(s), copy(entry._details), std::move(params)).dwarf();
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Append `src` to the end of `dst` by destructively moving the items out of `src`.
 // Preconditions:
 //     - `dst` and `src` are not the same container.
@@ -440,7 +440,7 @@ void move_append(C& dst, C&& src) {
     dst.insert(dst.end(), std::move_iterator(src.begin()), std::move_iterator(src.end()));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesystem::path>&& files) {
     // eliminate duplicate object files, if any. The discovered order of these things shouldn't
@@ -451,7 +451,7 @@ std::vector<std::filesystem::path> make_sorted_unique(std::vector<std::filesyste
     return files;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // For an incoming `input_path`, this scans just that input and returns any dylibs it depends on.
 // It does not scan those dylibs for additional dependencies. It also does not include `input_path`
 // as one of the returned dependencies.
@@ -495,7 +495,7 @@ std::vector<std::filesystem::path> derive_immediate_dylibs(
     return make_sorted_unique(std::move(result));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path& binary) {
     ZoneScoped;
@@ -551,11 +551,11 @@ std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path
     return scanned;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<std::filesystem::path> macho_derive_dylibs(
     const std::vector<std::filesystem::path>& binaries) {
@@ -575,4 +575,4 @@ std::vector<std::filesystem::path> macho_derive_dylibs(
     return make_sorted_unique(std::move(result));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

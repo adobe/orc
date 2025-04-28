@@ -9,11 +9,11 @@
 // stdc++
 #include <iostream>
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace orc {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // This is an extension of the famous boost hash_combine routine, extending it to take a variable
 // number of input items to hash and then combine together. It's a pack compression of the following
 // kind of expansion:
@@ -49,7 +49,7 @@ inline std::size_t hash_combine(std::size_t seed, const T& x, Args&&... args) {
     return hash_combine(hash_combine(seed, x), std::forward<Args>(args)...);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // An implementation of MurmurHash3 from SMHasher on GitHub, since modified and used here.
 struct murmur_hash {
     static_assert(sizeof(std::size_t) == sizeof(std::uint64_t));
@@ -66,8 +66,8 @@ inline std::size_t murmur3_64(const void* key, int len, uint32_t seed = 0) {
     return hash_combine(result.hi, result.lo);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace orc
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

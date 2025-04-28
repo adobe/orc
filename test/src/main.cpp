@@ -19,11 +19,11 @@
 #include <orc/orc.hpp>
 #include <orc/tracy.hpp>
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct orc_test_settings {
     bool _json_mode{false};
@@ -34,7 +34,7 @@ auto& test_settings() {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::ostream& console() {
     if (test_settings()._json_mode) {
@@ -54,22 +54,22 @@ std::ostream& console_error() {
     return std::cerr;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 auto& toml_out() {
     static toml::table result;
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace logging {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void log(const std::string& type,
          const std::string& message,
@@ -100,7 +100,7 @@ void log(const std::string& type,
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void notice(const std::string& message,
             std::optional<std::string> title = std::nullopt,
@@ -108,7 +108,7 @@ void notice(const std::string& message,
     log("notice", message, title, filename);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void warning(const std::string& message,
              std::optional<std::string> title = std::nullopt,
@@ -116,7 +116,7 @@ void warning(const std::string& message,
     log("warning", message, title, filename);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void error(const std::string& message,
            std::optional<std::string> title = std::nullopt,
@@ -124,22 +124,22 @@ void error(const std::string& message,
     log("error", message, title, filename);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace logging
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 namespace {
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void assume(bool condition, std::string message) {
     if (condition) return;
     throw std::runtime_error(message);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct compilation_unit {
     std::filesystem::path _src;
@@ -159,7 +159,7 @@ struct compilation_unit {
     }
 };
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 auto object_file_path(const std::filesystem::path& battery_path, const compilation_unit& unit) {
     auto stem =
@@ -170,7 +170,7 @@ auto object_file_path(const std::filesystem::path& battery_path, const compilati
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::string exec(std::string cmd) {
     cmd += " 2>&1";
@@ -190,7 +190,7 @@ std::string exec(std::string cmd) {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::string rstrip(std::string s) {
     auto found =
@@ -199,13 +199,13 @@ std::string rstrip(std::string s) {
     return s;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 auto path_to_clang() {
     return rstrip(exec("xcode-select -p")) + "/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++";
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct expected_odrv {
     std::unordered_map<std::string, std::string> _map;
@@ -237,7 +237,7 @@ std::ostream& operator<<(std::ostream& s, const expected_odrv& x) {
     return s;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 const char* to_string(toml::node_type x) {
     switch (x) {
@@ -265,7 +265,7 @@ const char* to_string(toml::node_type x) {
     assert(false);
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 void validate_compilation_unit(const compilation_unit& unit) {
     if (!exists(unit._src)) {
@@ -273,7 +273,7 @@ void validate_compilation_unit(const compilation_unit& unit) {
     }
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /// rummage through the settings toml for any object file specifications (that is, object files
 /// included as part of the test, not ones that first need to be compiled from source.)
 std::vector<std::filesystem::path> derive_object_files(const std::filesystem::path& home,
@@ -296,7 +296,7 @@ std::vector<std::filesystem::path> derive_object_files(const std::filesystem::pa
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<compilation_unit> derive_compilation_units(const std::filesystem::path& home,
                                                        const toml::table& settings) {
@@ -337,7 +337,7 @@ std::vector<compilation_unit> derive_compilation_units(const std::filesystem::pa
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /// Returns a command-line sanitized version of the string, to prevent user input from doing
 /// something troublesome with the command line execution of the compiler. Note this could
 /// also wreak havoc on non-7-bit-ASCII locales. If that becomes a big problem this can be
@@ -351,7 +351,7 @@ std::string sanitize(const std::filesystem::path& in) {
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // REVISIT (fosterbrereton): units is an out-arg here (_path can get modified)
 std::vector<std::filesystem::path> compile_compilation_units(const std::filesystem::path& home,
                                                              const toml::table& settings,
@@ -386,7 +386,7 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
     return object_files;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<expected_odrv> derive_expected_odrvs(const std::filesystem::path& home,
                                                  const toml::table& settings) {
@@ -416,7 +416,7 @@ std::vector<expected_odrv> derive_expected_odrvs(const std::filesystem::path& ho
     return result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
     if (odrv.category() != report.reporting_categories()) {
@@ -438,7 +438,7 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
     return true;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // return `false` if no error, or `true` on error.
 bool metrics_validation(const toml::table& settings) {
     const toml::table* expected_ptr = settings["metrics"].as_table();
@@ -474,11 +474,11 @@ bool metrics_validation(const toml::table& settings) {
     return failure;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 constexpr const char* tomlname_k = "odrv_test.toml";
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::size_t run_battery_test(const std::filesystem::path& home) {
     static bool first_s = false;
@@ -598,7 +598,7 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
     return metrics_failure + unexpected_result;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
     assert(is_directory(directory));
@@ -623,11 +623,11 @@ std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
     return errors;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 } // namespace
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 int main(int argc, char** argv) try {
     orc::profiler::initialize();
@@ -660,4 +660,4 @@ int main(int argc, char** argv) try {
     return EXIT_FAILURE;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

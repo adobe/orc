@@ -17,7 +17,7 @@
 #include "orc/dwarf_structs.hpp"
 #include "orc/settings.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct odrv_report {
     odrv_report(std::string_view symbol, const die* list_head);
@@ -53,7 +53,7 @@ std::ostream& operator<<(std::ostream& s, const odrv_report& x);
 // Return `true` if the ODRV report is one we should emit
 bool emit_report(const odrv_report& report);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&&);
 
@@ -72,7 +72,7 @@ void orc_reset();
 // The returned char* is good until the next call to demangle() on the same thread.
 const char* demangle(const char* x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // TODO: (fosterbrereton) Find a better home for this somewhere?
 template <class C>
 void sort_unique(C& container) {
@@ -81,7 +81,7 @@ void sort_unique(C& container) {
     container.erase(new_end, container.end());
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 std::mutex& ostream_safe_mutex();
 
@@ -106,4 +106,4 @@ void cerr_safe(F&& f) {
     ostream_safe(std::cerr, std::forward<F>(f));
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

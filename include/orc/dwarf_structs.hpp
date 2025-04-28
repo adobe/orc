@@ -22,11 +22,11 @@
 #include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct freader;
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // This is intentionally not a union. The reason is because there are a lot of values that are
 // binary encoded in DWARF, but then require further interpretation (such as references to other
 // DIEs) or can be converted to human-readable strings. In those cases, it can be beneficial to
@@ -148,7 +148,7 @@ inline bool operator==(const attribute_value& x, const attribute_value& y) {
 
 std::ostream& operator<<(std::ostream& s, const attribute_value& x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 struct attribute {
     dw::at _name{0};
@@ -174,7 +174,7 @@ inline bool operator!=(const attribute& x, const attribute& y) { return !(x == y
 
 std::ostream& operator<<(std::ostream& s, const attribute& x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // I'm not a fan of the name `attribute_sequence`.
 //
 // TODO: Consider using `std::array` instead of `std::vector` to avoid dynamic allocation. This
@@ -294,7 +294,7 @@ private:
 
 std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Represents a source code location in a file
  *
@@ -325,7 +325,7 @@ struct std::hash<location> {
 
 std::ostream& operator<<(std::ostream&, const location&);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Derives the source code location where a symbol is defined
  *
@@ -345,7 +345,7 @@ std::ostream& operator<<(std::ostream&, const location&);
  */
 std::optional<location> derive_definition_location(const attribute_sequence& x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 enum class arch : std::uint8_t {
     unknown,
@@ -358,7 +358,7 @@ enum class arch : std::uint8_t {
 
 const char* to_string(arch arch);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Represents the ancestry of an object file
  *
@@ -411,7 +411,7 @@ struct object_ancestry {
 
 std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // DIE is an acronym for "Debug Information Entry". It is the basic unit of information in DWARF.
 //
 // A DIE is constructed by reading an abbreviation entry, then filling in the abbreviation's
@@ -458,7 +458,7 @@ std::ostream& operator<<(std::ostream& s, const die& x);
 
 using dies = std::vector<die>;
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 /**
  * @brief Determines if a DWARF attribute is considered non-fatal for ODRV purposes
@@ -479,7 +479,7 @@ using dies = std::vector<die>;
 bool nonfatal_attribute(dw::at at);
 inline bool fatal_attribute(dw::at at) { return !nonfatal_attribute(at); }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 
 template <class Container, class T>
 bool sorted_has(const Container& c, const T& x) {
@@ -487,7 +487,7 @@ bool sorted_has(const Container& c, const T& x) {
     return found != c.end() && *found == x;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------
 // Quick and dirty type to print an integer value as a padded, fixed-width hex value.
 // e.g., std::cout << hex_print(my_int) << '\n';
 template <class Integral>
@@ -518,4 +518,4 @@ inline std::ostream& operator<<(std::ostream& s, const hex_print_t<Integral>& x)
              << std::setfill('0') << x._x;
 }
 
-/**************************************************************************************************/
+//--------------------------------------------------------------------------------------------------

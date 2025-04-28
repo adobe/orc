@@ -435,8 +435,8 @@ void cu_header::read(freader& s, bool needs_byteswap) {
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
 
     if (_version == 2) {
-        // Do nothing...? This version is so old, I'm not sure
-        // what we should be doing with it...
+        // Do nothing. DWARF2 has been found in some cases
+        // and the current implementation seems to suffice.
     } else if (_version == 4) {
         // Do nothing. We started this project with DWARF4
         // so the baseline implementation should match that.
@@ -446,7 +446,7 @@ void cu_header::read(freader& s, bool needs_byteswap) {
         // it until it is necessary to do so.
         _unit_type = read_pod<std::uint8_t>(s, needs_byteswap);
     } else {
-        throw std::runtime_error("unknown DWARF version: " + std::to_string(_version));
+        ADOBE_INVARIANT(!"unhandled DWARF compilation unit");
     }
 
     // note the read_pod types differ.
@@ -514,9 +514,11 @@ void line_header::read(freader& s, bool needs_byteswap) {
     }
     _version = read_pod<std::uint16_t>(s, needs_byteswap);
     if (_version == 2) {
-        /* do nothing */
+        // Do nothing. DWARF2 has been found in some cases
+        // and the current implementation seems to suffice.
     } else if (_version == 4) {
-        /* do nothing */
+        // Do nothing. We started this project with DWARF4
+        // so the baseline implementation should match that.
     } else if (_version == 5) {
         // SPECREF: DWARF5 page 26 (8) line 11 -- changes from DWARF4 to DWARF5
 
@@ -526,7 +528,7 @@ void line_header::read(freader& s, bool needs_byteswap) {
         // SPECREF: DWARF5 page 172 (154) line 16
         _segment_selector_size = read_pod<std::int8_t>(s, needs_byteswap);
     } else {
-        throw std::runtime_error("unhandled DWARF version (" + std::to_string(_version) + ")");
+        ADOBE_INVARIANT(!"unhandled DWARF line header");
     }
     _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
     _min_instruction_length = read_pod<std::uint8_t>(s);
@@ -660,7 +662,6 @@ bool skip_tagged_die(const die& d) {
         dw::tag::variable,
         dw::tag::formal_parameter,
         dw::tag::template_type_parameter,
-        dw::tag::subprogram,
     };
     static const auto first = std::begin(skip_tags);
     static const auto last = std::end(skip_tags);
@@ -1224,6 +1225,8 @@ pool_string dwarf::implementation::die_identifier(const die& d,
     // clang-format off
     const dw::at string_attributes[] = {
         dw::at::linkage_name,
+        dw::at::mips_linkage_name,
+        dw::at::hp_linkage_name,
         dw::at::specification,
         dw::at::name, // REVISIT (fosterbrereton): remove?
         dw::at::type, // REVISIT (fosterbrereton): remove?

@@ -624,7 +624,7 @@ void register_dies(dies die_vector) {
 
     // Erase the skippable dies and shrink the vector to fit, which will preserve only the necessary
     // dies in a vector whose memory consumption is exactly what's needed.
-    std::size_t skip_count = std::erase_if(die_vector, std::mem_fn(&die::_skippable));
+    globals::instance()._die_skipped_count += std::erase_if(die_vector, std::mem_fn(&die::_skippable));
     die_vector.shrink_to_fit();
 
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
@@ -658,8 +658,6 @@ void register_dies(dies die_vector) {
         d._next_die = d_in_map._next_die;
         d_in_map._next_die = &d;
     }
-
-    globals::instance()._die_skipped_count += skip_count;
 }
 
 /**************************************************************************************************/

@@ -622,17 +622,9 @@ void register_dies(dies die_vector) {
 
     globals::instance()._die_processed_count += die_vector.size();
 
-    // pre-process the vector of dies by partitioning them into those that are skippable and those
-    // that are not. Then, we erase the skippable ones and shrink the vector to fit, which will
-    // cause a reallocation and copying of only the necessary dies into a vector whose memory
-    // consumption is exactly what's needed.
-
-    auto unskipped_end =
-        std::partition(die_vector.begin(), die_vector.end(), std::not_fn(&die::_skippable));
-
-    std::size_t skip_count = std::distance(unskipped_end, die_vector.end());
-
-    die_vector.erase(unskipped_end, die_vector.end());
+    // Erase the skippable dies and shrink the vector to fit, which will preserve only the necessary
+    // dies in a vector whose memory consumption is exactly what's needed.
+    std::size_t skip_count = std::erase_if(die_vector, std::mem_fn(&die::_skippable));
     die_vector.shrink_to_fit();
 
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they

@@ -660,6 +660,7 @@ bool skip_tagged_die(const die& d) {
         dw::tag::variable,
         dw::tag::formal_parameter,
         dw::tag::template_type_parameter,
+        dw::tag::subprogram,
     };
     static const auto first = std::begin(skip_tags);
     static const auto last = std::end(skip_tags);

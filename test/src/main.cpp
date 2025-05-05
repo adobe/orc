@@ -19,6 +19,9 @@
 #include <orc/orc.hpp>
 #include <orc/tracy.hpp>
 
+// Google Test
+#include <gtest/gtest.h>
+
 //--------------------------------------------------------------------------------------------------
 
 namespace {
@@ -631,6 +634,13 @@ std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
 
 int main(int argc, char** argv) try {
     orc::profiler::initialize();
+
+    // Initialize and run Google Test
+    ::testing::InitGoogleTest(&argc, argv);
+    int gtest_result = RUN_ALL_TESTS();
+    if (gtest_result != 0) {
+        return gtest_result;
+    }
 
     if (argc < 2) {
         console_error() << "Usage: " << argv[0] << " /path/to/test/battery/ [--json_mode]\n";

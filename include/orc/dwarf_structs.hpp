@@ -19,6 +19,7 @@
 
 // application
 #include "orc/dwarf_constants.hpp"
+#include "orc/fixed_vector.hpp"
 #include "orc/hash.hpp"
 #include "orc/string_pool.hpp"
 
@@ -176,20 +177,11 @@ std::ostream& operator<<(std::ostream& s, const attribute& x);
 
 //--------------------------------------------------------------------------------------------------
 // I'm not a fan of the name `attribute_sequence`.
-//
-// TODO: Consider using `std::array` instead of `std::vector` to avoid dynamic allocation. This
-// would require we cap the max number of attributes at compile time, which should be okay as long
-// as we pick a reasonable number. On the other hand, that would make DIEs with smaller sets of
-// attributes less memory efficient. It's the classic space/time tradeoff.
 struct attribute_sequence {
-    using attributes_type = std::vector<attribute>;
+    using attributes_type = orc::fixed_vector<attribute, 25>;
     using value_type = typename attributes_type::value_type;
     using iterator = typename attributes_type::iterator;
     using const_iterator = typename attributes_type::const_iterator;
-
-    void reserve(std::size_t size) {
-        _attributes.reserve(size);
-    }
 
     bool has(dw::at name) const {
         auto [valid, iterator] = find(name);

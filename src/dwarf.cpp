@@ -18,6 +18,7 @@
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
+#include "orc/fixed_vector.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/orc.hpp"
 #include "orc/settings.hpp"
@@ -572,7 +573,7 @@ void line_header::read(freader& s, bool needs_byteswap) {
 //--------------------------------------------------------------------------------------------------
 // It is fixed to keep allocations from happening.
 constexpr std::size_t max_names_k{32};
-using fixed_attribute_array = std::array<dw::at, max_names_k>;
+using fixed_attribute_array = orc::fixed_vector<dw::at, max_names_k>;
 
 /**
  * @brief Extracts fatal attributes from an attribute sequence
@@ -592,15 +593,17 @@ using fixed_attribute_array = std::array<dw::at, max_names_k>;
  * @note The function is limited to processing `max_names_k` fatal attributes.
  */
 fixed_attribute_array fatal_attributes_within(const attribute_sequence& attributes) {
-    fixed_attribute_array names{dw::at::none};
-    std::size_t count{0};
+    fixed_attribute_array names;
 
     for (const auto& attr : attributes) {
-        if (nonfatal_attribute(attr._name)) continue;
-        ADOBE_INVARIANT(count < (max_names_k - 1), "fatal_attribute_hash names overflow");
-        names[count++] = attr._name;
+        if (nonfatal_attribute(attr._name)) {
+            continue;
+        }
+
+        names.push_back(attr._name);
     }
-    std::sort(&names[0], &names[count]);
+
+    std::sort(names.begin(), names.end());
 
     return names;
 }
@@ -1861,9 +1864,6 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
 
     die._tag = a._tag;
     die._has_children = a._has_children;
-
-    // Can we get rid of this memory allocation? This happens a lot...
-    attributes.reserve(a._attributes.size());
 
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {

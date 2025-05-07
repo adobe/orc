@@ -708,6 +708,7 @@ struct dwarf::implementation {
 
     std::uint64_t read64();
     std::uint32_t read32();
+    std::uint32_t read24();
     std::uint32_t read16();
     std::uint32_t read8();
     std::uint32_t read_uleb();
@@ -777,6 +778,15 @@ T dwarf::implementation::read() {
 std::uint64_t dwarf::implementation::read64() { return read<std::uint64_t>(); }
 
 std::uint32_t dwarf::implementation::read32() { return read<std::uint32_t>(); }
+
+std::uint32_t dwarf::implementation::read24() {
+    std::uint32_t result{0};
+    _s.read(reinterpret_cast<char*>(&result), 3);
+    if (_details._needs_byteswap) {
+        endian_swap(result);
+    }
+    return result;
+}
 
 std::uint32_t dwarf::implementation::read16() { return read<std::uint16_t>(); }
 
@@ -1731,6 +1741,11 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
             result.string(read_debug_str_offs(read16()));
+        } break;
+        case dw::form::strx3: {
+            // First seen in Xcode 16.1 w/ DWARF5.
+            // SPECREF: DWARF5 page 236 (218) line 31
+            result.string(read_debug_str_offs(read24()));
         } break;
         case dw::form::strx4: {
             // First seen in Xcode 16.1 w/ DWARF5.

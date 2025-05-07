@@ -791,6 +791,18 @@ enum class encoding_class {
 encoding_class attribute_encoding_class(at attribute);
 
 //--------------------------------------------------------------------------------------------------
+// SPECREF: DWARF5 page 255 (237) line 2
+enum class lnct : std::uint16_t {
+    path = 0x1,
+    directory_index = 0x2,
+    timestamp = 0x3,
+    size = 0x4,
+    md5 = 0x5,
+    lo_user = 0x2000,
+    hi_user = 0x3fff,
+};
+
+//--------------------------------------------------------------------------------------------------
 
 } // namespace dw
 

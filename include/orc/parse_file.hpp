@@ -13,6 +13,9 @@
 #include <iostream>
 #include <type_traits>
 
+// adobe contract checks
+#include "adobe/contract_checks.hpp"
+
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/hash.hpp"
@@ -32,18 +35,18 @@ struct freader {
     explicit operator bool() const { return static_cast<bool>(_buffer) && _p <= _l; }
 
     std::size_t size() const {
-        assert(*this);
+        ADOBE_INVARIANT(*this);
         return _l - _f;
     }
 
     std::size_t tellg() const {
-        assert(*this);
+        ADOBE_INVARIANT(*this);
         return _p - _f;
     }
 
     void seekg(std::istream::off_type offset) {
         _p = _f + offset;
-        assert(*this);
+        ADOBE_INVARIANT(*this);
     }
 
     void seekg(std::istream::off_type offset, std::ios::seekdir dir) {
@@ -61,21 +64,21 @@ struct freader {
                 // GNU's libstdc++ has an end-of-options marker that the compiler
                 // will complain about as being unhandled here. It should *never*
                 // be used as a valid value for this enumeration.
-                assert(false);
+                ADOBE_INVARIANT(false);
             } break;
         }
-        assert(*this);
+        ADOBE_INVARIANT(*this);
     }
 
     void read(char* p, std::size_t n) {
         std::memcpy(p, _p, n);
         _p += n;
-        assert(*this);
+        ADOBE_INVARIANT(*this);
     }
 
     char get() {
         char result = *_p++;
-        assert(*this);
+        ADOBE_INVARIANT(*this);
         return result;
     }
 
@@ -84,7 +87,7 @@ struct freader {
         for (; *_p; ++_p) {
         }
         auto n = _p++ - f;
-        assert(*this);
+        ADOBE_INVARIANT(*this);
         return std::string_view(f, n);
     }
 
@@ -134,12 +137,10 @@ auto read_exactly(freader& s, std::size_t size, F&& f) {
     auto start = s.tellg();
     if constexpr (std::is_same<std::invoke_result_t<F, std::size_t>, void>::value) {
         std::forward<F>(f)(size);
-        assert(s.tellg() == start + size);
-        if (s.tellg() != start + size) throw std::runtime_error("read_exactly failure");
+        ADOBE_INVARIANT(s.tellg() == start + size);
     } else {
         auto result = std::forward<F>(f)(size);
-        assert(s.tellg() == start + size);
-        if (s.tellg() != start + size) throw std::runtime_error("read_exactly failure");
+        ADOBE_INVARIANT(s.tellg() == start + size);
         return result;
     }
 }

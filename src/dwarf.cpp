@@ -571,9 +571,8 @@ void line_header::read(freader& s, bool needs_byteswap) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// It is fixed to keep allocations from happening.
-constexpr std::size_t max_names_k{32};
-using fixed_attribute_array = orc::fixed_vector<dw::at, max_names_k>;
+
+using fixed_attribute_array = orc::fixed_vector<dw::at, 10>;
 
 /**
  * @brief Extracts fatal attributes from an attribute sequence

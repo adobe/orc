@@ -360,43 +360,44 @@ const char* to_string(arch arch);
  * question. This facilitates reporting when ODRVs are found, giving the user a breadcrumb as
  * to how the ODRV is being introduced. For efficiency purposes, we fix the max number of ancestors
  * at compile time, but this can be adjusted if necessary.
- * 
- * TODO: Does it make sense to extract this "static vector" type into a template, so that it can
- * be used in other contexts? (e.g., `attribute_sequence`?)
  */
 struct object_ancestry {
-    std::array<pool_string, 5> _ancestors;
-    std::size_t _count{0};
+    orc::fixed_vector<pool_string, 5> _ancestors;
 
+    auto size() const { return _ancestors.size(); }
     auto begin() const { return _ancestors.begin(); }
-    auto end() const { return begin() + _count; }
+    auto end() const { return _ancestors.end(); }
 
     auto& back() {
-        assert(_count);
-        return _ancestors[_count];
+        assert(!_ancestors.empty());
+        return _ancestors.back();
     }
 
     const auto& back() const {
-        assert(_count);
-        return _ancestors[_count];
+        assert(!_ancestors.empty());
+        return _ancestors.back();
     }
 
     void emplace_back(pool_string&& ancestor) {
-        assert((_count + 1) < _ancestors.size());
-        _ancestors[_count++] = std::move(ancestor);
+        assert(_ancestors.size() < _ancestors.capacity());
+        _ancestors.push_back(std::move(ancestor));
     }
 
     bool operator<(const object_ancestry& rhs) const {
-        if (_count < rhs._count)
+        if (_ancestors.size() < rhs._ancestors.size())
             return true;
-        if (_count > rhs._count)
+
+        if (_ancestors.size() > rhs._ancestors.size())
             return false;
-        for(size_t i=0; i<_count; ++i) {
+
+        for (size_t i = 0; i < _ancestors.size(); ++i) {
             if (_ancestors[i].view() < rhs._ancestors[i].view())
                 return true;
+
             if (_ancestors[i].view() > rhs._ancestors[i].view())
                 return false;
         }
+
         return false;
     }
 };

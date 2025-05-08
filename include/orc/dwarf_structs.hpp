@@ -178,10 +178,14 @@ std::ostream& operator<<(std::ostream& s, const attribute& x);
 //--------------------------------------------------------------------------------------------------
 // I'm not a fan of the name `attribute_sequence`.
 struct attribute_sequence {
-    using attributes_type = orc::fixed_vector<attribute, 25>;
+    using attributes_type = std::vector<attribute>;
     using value_type = typename attributes_type::value_type;
     using iterator = typename attributes_type::iterator;
     using const_iterator = typename attributes_type::const_iterator;
+
+    void reserve(std::size_t n) {
+        _attributes.reserve(n);
+    }
 
     bool has(dw::at name) const {
         auto [valid, iterator] = find(name);

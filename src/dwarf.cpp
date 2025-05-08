@@ -1879,6 +1879,9 @@ die_pair dwarf::implementation::abbreviation_to_die(std::size_t die_address, pro
     die._tag = a._tag;
     die._has_children = a._has_children;
 
+    // Can we get rid of this memory allocation? This happens a lot...
+    attributes.reserve(a._attributes.size());
+
     std::transform(a._attributes.begin(), a._attributes.end(), std::back_inserter(attributes),
                    [&](const auto& x) {
                        // If the attribute is nonfatal, we'll pass over it in `process_attribute`.

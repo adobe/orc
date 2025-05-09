@@ -295,18 +295,23 @@ void abbrev::read(freader& s) {
 
 //--------------------------------------------------------------------------------------------------
 
+using md5_hash = std::array<std::uint8_t, 16>;
+
+//--------------------------------------------------------------------------------------------------
 /**
  * @brief Represents a source file entry in DWARF debug information
  * 
  * This struct stores information about a source file referenced in the DWARF
  * debug information, including its name, directory index, modification time,
- * and length.
+ * and length. Used to represent both directories and file names in the
+ * compilation header.
  */
 struct file_name {
-    std::string_view _name; ///< The name of the source file
+    pool_string _name; ///< The name of the source file
     std::uint32_t _directory_index{0}; ///< Index into the include directories list
     std::uint32_t _mod_time{0}; ///< File modification time
     std::uint32_t _file_length{0}; ///< Length of the file in bytes
+    md5_hash _md5{0}; ///< MD5 hash of the source file
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -467,9 +472,11 @@ void cu_header::read(freader& s, bool needs_byteswap) {
  * This struct stores information from a DWARF line number program header,
  * which contains metadata about how line number information is encoded
  * in the debug information. For ORC's purposes, this is largely ignored
- * except for `_file_names` and `_include_directories`.
+ * except for `_directories` and `_file_names`.
  */
 struct line_header {
+    using content_form_pair = std::pair<dw::lnct, dw::form>;
+
     // DWARF spec section 6.2.4 The Line Number Program Header.
     // Note this will change for DWARF5, so we need to look out
     // for DWARF data that uses the new version number and
@@ -486,7 +493,13 @@ struct line_header {
     std::uint32_t _line_range{0}; ///< Range of line numbers
     std::uint32_t _opcode_base{0}; ///< Base value for opcodes
     std::vector<std::uint32_t> _standard_opcode_lengths; ///< Lengths of standard opcodes
-    std::vector<std::string_view> _include_directories; ///< Include directories
+    std::uint8_t _directory_entry_format_count{0}; // DWARF5
+    std::vector<content_form_pair> _directory_entry_format; // DWARF5
+    std::uint32_t _directories_count{0}; // DWARF5
+    std::vector<file_name> _directories; ///< Include directories
+    std::uint8_t _file_name_entry_format_count{0}; // DWARF5
+    std::vector<content_form_pair> _file_name_entry_format; // DWARF5
+    std::uint32_t _file_names_count{0}; // DWARF5
     std::vector<file_name> _file_names; ///< Source file names
 
     /**
@@ -501,73 +514,21 @@ struct line_header {
      * @pre The file reader must be positioned at the start of a line number program header
      * @post The file reader will be positioned after the header
      */
-    void read(freader& s, bool needs_byteswap);
+    void read(dwarf::implementation& dwarf);
+
+    void read_all_path_contents(dwarf::implementation& dwarf,
+                                std::uint8_t& format_count,
+                                std::vector<content_form_pair>& formats,
+                                std::uint32_t& path_count,
+                                std::vector<file_name>& paths);
+
+    file_name read_one_path_content(dwarf::implementation& dwarf,
+                                    const std::vector<content_form_pair>& formats);
+
+    pool_string read_one_path_content_path(dwarf::implementation& dwarf, dw::form form);
+    std::uint32_t read_one_path_content_directory_index(dwarf::implementation& dwarf, dw::form form);
+    md5_hash read_one_path_content_md5(dwarf::implementation& dwarf, dw::form form);
 };
-
-//--------------------------------------------------------------------------------------------------
-
-void line_header::read(freader& s, bool needs_byteswap) {
-    _length = read_pod<std::uint32_t>(s, needs_byteswap);
-    if (_length >= 0xfffffff0) {
-        // REVISIT: (fbrereto) handle extended length / DWARF64
-        throw std::runtime_error("unsupported length");
-    }
-    _version = read_pod<std::uint16_t>(s, needs_byteswap);
-    if (_version == 2) {
-        // Do nothing. DWARF2 has been found in some cases
-        // and the current implementation seems to suffice.
-    } else if (_version == 4) {
-        // Do nothing. We started this project with DWARF4
-        // so the baseline implementation should match that.
-    } else if (_version == 5) {
-        // SPECREF: DWARF5 page 26 (8) line 11 -- changes from DWARF4 to DWARF5
-
-        // SPECREF: DWARF5 page 172 (154) line 10
-        _address_size = read_pod<std::int8_t>(s, needs_byteswap);
-
-        // SPECREF: DWARF5 page 172 (154) line 16
-        _segment_selector_size = read_pod<std::int8_t>(s, needs_byteswap);
-    } else {
-        ADOBE_INVARIANT(!"unhandled DWARF line header");
-    }
-    _header_length = read_pod<std::uint32_t>(s, needs_byteswap);
-    _min_instruction_length = read_pod<std::uint8_t>(s);
-    if (_version >= 4) {
-        _max_ops_per_instruction = read_pod<std::uint8_t>(s);
-    }
-    _default_is_statement = read_pod<std::uint8_t>(s);
-    _line_base = read_pod<std::int8_t>(s);
-    _line_range = read_pod<std::uint8_t>(s);
-    _opcode_base = read_pod<std::uint8_t>(s);
-
-    for (std::size_t i{0}; i < (_opcode_base - 1); ++i) {
-        _standard_opcode_lengths.push_back(read_pod<std::int8_t>(s));
-    }
-
-    while (true) {
-        auto cur_directory = s.read_c_string_view();
-        if (cur_directory.empty()) break;
-        _include_directories.push_back(cur_directory);
-    }
-
-    // REVIST (fosterbrereton): The reading here isn't entirely accurate. The current code stops the
-    // first time an empty name is found, and interprets that as the end of the file names (and thus
-    // the `line_header`). However, the spec (as the end of section 6.2.4) states "A compiler may
-    // generate a single null byte for the file names field and define file names using the
-    // extended opcode DW_LNE_define_file." This loop, then, should iterate through the end of the
-    // defined size of `_header_length` instead of using an empty name as a sentry. Any additional
-    // null bytes should be interpreted as a placeholder file name description. (Admittedly, I
-    // haven't seen one of these in the wild yet.)
-    while (true) {
-        file_name cur_file_name;
-        cur_file_name._name = s.read_c_string_view();
-        if (cur_file_name._name.empty()) break;
-        cur_file_name._directory_index = uleb128(s);
-        cur_file_name._mod_time = uleb128(s);
-        cur_file_name._file_length = uleb128(s);
-        _file_names.push_back(std::move(cur_file_name));
-    }
-}
 
 //--------------------------------------------------------------------------------------------------
 // It is fixed to keep allocations from happening.
@@ -720,6 +681,7 @@ struct dwarf::implementation {
     const abbrev& find_abbreviation(std::uint32_t code) const;
 
     pool_string read_debug_str(std::size_t offset);
+    pool_string read_debug_line_str(std::size_t offset);
     pool_string read_debug_str_offs(std::size_t offset);
 
     void path_identifier_push();
@@ -753,6 +715,7 @@ struct dwarf::implementation {
     std::vector<pool_string> _decl_files;
     std::unordered_map<std::size_t, pool_string> _type_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_cache;
+    std::unordered_map<std::size_t, pool_string> _debug_line_str_cache;
     std::unordered_map<std::size_t, pool_string> _debug_str_offs_cache;
     pool_string _last_typedef_name; // for unnamed structs - see https://github.com/adobe/orc/issues/84
     cu_header _cu_header;
@@ -763,6 +726,7 @@ struct dwarf::implementation {
     section _debug_abbrev;
     section _debug_info;
     section _debug_line;
+    section _debug_line_str;
     section _debug_str;
     section _debug_str_offsets;
     bool _ready{false};
@@ -835,6 +799,8 @@ void dwarf::implementation::register_section(const std::string& name,
         _debug_abbrev = section{offset, size};
     } else if (name == "__debug_line") {
         _debug_line = section{offset, size};
+    } else if (name == "__debug_line_str__DWARF") {
+        _debug_line_str = section{offset, size};
     } else if (name == "__debug_str_offs__DWARF") {
         _debug_str_offsets = section{offset, size};
     } else {
@@ -871,17 +837,17 @@ void dwarf::implementation::read_lines(std::size_t header_offset) {
 
     temp_seek(_s, _debug_line._offset + header_offset, [&] {
         line_header header;
-        header.read(_s, _details._needs_byteswap);
+        header.read(*this);
 
         for (const auto& name : header._file_names) {
             if (name._directory_index > 0) {
-                ADOBE_INVARIANT(name._directory_index - 1 < header._include_directories.size());
-                std::string path(header._include_directories[name._directory_index - 1]);
+                ADOBE_INVARIANT(name._directory_index - 1 < header._directories.size());
+                std::string path = header._directories[name._directory_index - 1]._name.allocate_string();
                 path += '/';
-                path += name._name;
+                path += name._name.allocate_string();
                 _decl_files.push_back(empool(path));
             } else {
-                _decl_files.push_back(empool(name._name));
+                _decl_files.push_back(name._name);
             }
         }
 
@@ -945,6 +911,17 @@ pool_string dwarf::implementation::read_debug_str(std::size_t offset) {
 
     return _debug_str_cache[offset] = temp_seek(_s, _debug_str._offset + offset,
                                                 [&] { return empool(_s.read_c_string_view()); });
+}
+
+//--------------------------------------------------------------------------------------------------
+
+pool_string dwarf::implementation::read_debug_line_str(std::size_t offset) {
+    if (const auto found = _debug_line_str_cache.find(offset); found != _debug_line_str_cache.end()) {
+        return found->second;
+    }
+
+    return _debug_line_str_cache[offset] = temp_seek(_s, _debug_line_str._offset + offset,
+                                                     [&] { return empool(_s.read_c_string_view()); });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2459,6 +2436,302 @@ die_pair dwarf::implementation::fetch_one_die(std::size_t die_offset,
 
     return result;
 }
+
+//--------------------------------------------------------------------------------------------------
+
+namespace {
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads a path string from the DWARF line number program
+ *
+ * This function reads a path string from the DWARF line number program.
+ * According to the DWARF5 specification (page 176, lines 16-37), path strings
+ * can be stored in various forms: string (null-terminated), strp (offset into .debug_str),
+ * or line_strp (offset into .debug_line_str).
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ * @param form The form of the data to be read (string, strp, or line_strp)
+ *
+ * @return A pool_string containing the path string
+ *
+ * @pre The file reader must be positioned at the start of a path string
+ * @pre The form parameter must be one of the supported forms (string, strp, or line_strp)
+ * @post The file reader will be positioned after the path string
+ * @post The returned value will contain the path string in the string pool
+ */
+pool_string line_header::read_one_path_content_path(dwarf::implementation& dwarf, dw::form form) {
+    // SPECREF DWARF5 176 (158) lines 16-37
+    switch (form) {
+        case dw::form::string: {
+            return empool(dwarf._s.read_c_string_view());
+        } break;
+        case dw::form::strp: {
+            return dwarf.read_debug_str(dwarf.read32());
+        } break;
+        case dw::form::line_strp: {
+            return dwarf.read_debug_line_str(dwarf.read32());
+        } break;
+        default: {
+            ADOBE_INVARIANT(!"read_one_path_content_path: unhandled form");
+        } break;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads a directory index from the DWARF line number program
+ *
+ * This function reads a directory index value from the DWARF line number program.
+ * According to the DWARF5 specification (page 177, lines 1-11), directory indices
+ * can be stored in various forms: data1, data2, or udata (ULEB128).
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ * @param form The form of the data to be read (data1, data2, or udata)
+ *
+ * @return A uint32_t containing the directory index value
+ *
+ * @pre The file reader must be positioned at the start of a directory index
+ * @pre The form parameter must be one of the supported forms (data1, data2, or udata)
+ * @post The file reader will be positioned after the directory index
+ * @post The returned value will contain the directory index
+ */
+std::uint32_t line_header::read_one_path_content_directory_index(dwarf::implementation& dwarf, dw::form form) {
+    // SPECREF DWARF5 177 (159) lines 1-11
+    switch (form) {
+        case dw::form::data1: {
+            return dwarf.read8();
+        } break;
+        case dw::form::data2: {
+            return dwarf.read16();
+        } break;
+        case dw::form::udata: {
+            return dwarf.read_uleb();
+        } break;
+        default: {
+            ADOBE_INVARIANT(!"read_one_path_content_directory_index: unhandled form");
+        } break;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads an MD5 hash from the DWARF line number program
+ *
+ * This function reads an MD5 hash value from the DWARF line number program.
+ * According to the DWARF5 specification (page 177, lines 22-24), MD5 hashes
+ * are stored using the data16 form.
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ * @param form The form of the data to be read (must be data16)
+ *
+ * @return An md5_hash containing the 16-byte hash value
+ *
+ * @pre The file reader must be positioned at the start of an MD5 hash
+ * @pre The form parameter must be dw::form::data16
+ * @post The file reader will be positioned after the MD5 hash
+ * @post The returned md5_hash will contain the 16-byte hash value
+ */
+md5_hash line_header::read_one_path_content_md5(dwarf::implementation& dwarf, dw::form form) {
+    // SPECREF DWARF5 177 (159) lines 22-24
+    ADOBE_INVARIANT(form == dw::form::data16);
+    md5_hash result{0};
+    dwarf._s.read(reinterpret_cast<char*>(&result[0]), 16);
+    return result;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads a single path content entry from the DWARF line number program
+ *
+ * This function reads a single path content entry (directory or file name) from the DWARF
+ * line number program based on the provided format specifications. It processes each content
+ * type (path, directory index, MD5 hash) according to its corresponding form.
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ * @param formats A vector of content type and form pairs that define the structure of the path entry
+ *
+ * @return A file_name structure containing the parsed path information
+ *
+ * @pre The file reader must be positioned at the start of a path content entry
+ * @pre The formats vector must contain valid content type and form pairs
+ * @post The file reader will be positioned after the path content entry
+ * @post The returned file_name structure will contain the path information as specified by the formats
+ */
+file_name line_header::read_one_path_content(dwarf::implementation& dwarf,
+                                             const std::vector<content_form_pair>& formats) {
+    file_name result;
+    for (const auto& format : formats) {
+        switch (format.first) {
+            case dw::lnct::path: {
+                result._name = read_one_path_content_path(dwarf, format.second);
+            } break;
+            case dw::lnct::directory_index: {
+                result._directory_index = read_one_path_content_directory_index(dwarf, format.second);
+            } break;
+            case dw::lnct::md5: {
+                result._md5 = read_one_path_content_md5(dwarf, format.second);
+            } break;
+            default: {
+                ADOBE_INVARIANT(!"read_one_path_content: unhandled content type");
+            } break;
+        }
+    }
+    return result;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads all path content entries (directories or file names) from the DWARF line number program
+ *
+ * This function reads a collection of path content entries from the DWARF line number program.
+ * It first reads the format specifications that define the structure of each path entry,
+ * then reads the count of paths, and finally reads each individual path entry according to
+ * the format specifications. This function handles both directory and file name entries,
+ * which share the same structure in DWARF5.
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ * @param format_count Output parameter that will store the number of format entries
+ * @param formats Output parameter that will store the content type and form pairs
+ * @param path_count Output parameter that will store the number of path entries
+ * @param paths Output parameter that will store the parsed path information
+ *
+ * @pre The file reader must be positioned at the start of a path content section
+ * @pre The output parameters must be valid references
+ * @post format_count will contain the number of format entries read
+ * @post formats will contain the content type and form pairs that define the structure of each path entry
+ * @post path_count will contain the number of path entries read
+ * @post paths will contain the parsed path information for all entries
+ * @post The file reader will be positioned after the path content section
+ *
+ * @note This function is used for both directory and file name entries in DWARF5
+ */
+void line_header::read_all_path_contents(dwarf::implementation& dwarf,
+                                         std::uint8_t& format_count,
+                                         std::vector<content_form_pair>& formats,
+                                         std::uint32_t& path_count,
+                                         std::vector<file_name>& paths) {
+    // SPECREF: DWARF5 page 174 (156) lines 10ff. There's a lot of new stuff here with DWARF5.
+    format_count = dwarf.read8();
+
+    // SPECREF: DWARF5 page 339 (321) lines 2-4 --
+    // According to the example, this tells us the metadata to be specified for each of the
+    // subsequent entries to follow. Think of these similar to a die abbreviation, to be stamped
+    // out over the ensuing dies. Only this is the template for the ensuing set of directories.
+    for (std::size_t i{0}; i < format_count; ++i) {
+        // REVISIT: Add some checks here to ensure the values are valid.
+        formats.emplace_back(static_cast<dw::lnct>(dwarf.read_uleb()),
+                             static_cast<dw::form>(dwarf.read_uleb()));
+    }
+
+    // Each path will have `format_count` entries.
+    path_count = dwarf.read_uleb();
+
+    for (std::size_t i{0}; i < path_count; ++i) {
+        paths.push_back(read_one_path_content(dwarf, formats));
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Reads a DWARF line number program header
+ *
+ * This function parses a line number program header from the DWARF debug information.
+ * It handles different DWARF versions (2, 4, and 5) with appropriate version-specific parsing.
+ * The header contains information about how line number information is encoded, including
+ * directories and file names referenced in the program.
+ *
+ * @param dwarf The DWARF implementation providing access to the file reader
+ *
+ * @pre The file reader must be positioned at the start of a line number program header
+ * @pre The DWARF implementation must be properly initialized
+ * @post The line header structure will be populated with the parsed header information
+ * @post The file reader will be positioned after the line number program header
+ */
+void line_header::read(dwarf::implementation& dwarf) {
+    _length = dwarf.read32();
+
+    ADOBE_INVARIANT(_length < 0xfffffff0); // REVISIT: (fbrereto) handle extended length / DWARF64
+
+    _version = dwarf.read16();
+    if (_version == 2) {
+        // Do nothing. DWARF2 has been found in some cases
+        // and the current implementation seems to suffice.
+    } else if (_version == 4) {
+        // Do nothing. We started this project with DWARF4
+        // so the baseline implementation should match that.
+    } else if (_version == 5) {
+        // SPECREF: DWARF5 page 26 (8) line 11 -- changes from DWARF4 to DWARF5
+        
+        // SPECREF: DWARF5 page 172 (154) line 10
+        _address_size = dwarf.read8();
+
+        // SPECREF: DWARF5 page 172 (154) line 16
+        _segment_selector_size = dwarf.read8();
+    } else {
+        ADOBE_INVARIANT(!"unhandled DWARF line header");
+    }
+
+    _header_length = dwarf.read32();
+    _min_instruction_length = dwarf.read8();
+
+    if (_version >= 4) {
+        _max_ops_per_instruction = dwarf.read8();
+    }
+
+    _default_is_statement = dwarf.read8();
+    _line_base = dwarf.read8();
+    _line_range = dwarf.read8();
+    _opcode_base = dwarf.read8();
+    
+    for (std::size_t i{0}; i < (_opcode_base - 1); ++i) {
+        _standard_opcode_lengths.push_back(dwarf.read8());
+    }
+    
+    if (_version < 5) {
+        while (true) {
+            auto cur_directory = dwarf._s.read_c_string_view();
+            if (cur_directory.empty()) break;
+            file_name cur_name;
+            cur_name._name = empool(cur_directory);
+            _directories.push_back(std::move(cur_name));
+        }
+        
+        // REVIST (fosterbrereton): The reading here isn't entirely accurate. The current code stops the
+        // first time an empty name is found, and interprets that as the end of the file names (and thus
+        // the `line_header`). However, the spec (as the end of section 6.2.4) states "A compiler may
+        // generate a single null byte for the file names field and define file names using the
+        // extended opcode DW_LNE_define_file." This loop, then, should iterate through the end of the
+        // defined size of `_header_length` instead of using an empty name as a sentry. Any additional
+        // null bytes should be interpreted as a placeholder file name description. (Admittedly, I
+        // haven't seen one of these in the wild yet.)
+        while (true) {
+            file_name cur_file_name;
+            cur_file_name._name = empool(dwarf._s.read_c_string_view());
+            if (cur_file_name._name.empty()) break;
+            cur_file_name._directory_index = dwarf.read_uleb();
+            cur_file_name._mod_time = dwarf.read_uleb();
+            cur_file_name._file_length = dwarf.read_uleb();
+            _file_names.push_back(std::move(cur_file_name));
+        }
+    } else {
+        read_all_path_contents(dwarf,
+                               _directory_entry_format_count,
+                               _directory_entry_format,
+                               _directories_count,
+                               _directories);
+        
+        read_all_path_contents(dwarf,
+                               _file_name_entry_format_count,
+                               _file_name_entry_format,
+                               _file_names_count,
+                               _file_names);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+} // namespace
 
 //--------------------------------------------------------------------------------------------------
 

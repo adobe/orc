@@ -54,6 +54,32 @@ def format_duration(milliseconds: float) -> str:
     minutes = seconds / 60
     return f"{minutes:.2f}m"
 
+def parse_duration(time_value: Any) -> float:
+    """
+    Parse a duration value from gtest output into milliseconds.
+
+    Args:
+        time_value (Any): The duration value from gtest, which could be:
+            - A float (milliseconds)
+            - A string ending in 's' (seconds)
+            - Any other value that should be converted to float
+
+    Returns:
+        float: Duration in milliseconds
+
+    Example:
+        >>> parse_duration(500)
+        500.0
+        >>> parse_duration("1.5s")
+        1500.0
+    """
+    try:
+        if isinstance(time_value, str) and time_value.endswith('s'):
+            return float(time_value[:-1]) * 1000  # Convert seconds to milliseconds
+        return float(time_value)
+    except (ValueError, TypeError):
+        return 0.0  # Return 0 for invalid values
+
 def format_failure_message(failure: Dict[str, Any]) -> str:
     """
     Format a test failure message from the gtest JSON output.
@@ -61,24 +87,20 @@ def format_failure_message(failure: Dict[str, Any]) -> str:
     Args:
         failure (Dict[str, Any]): A dictionary containing failure information
             with optional keys:
-            - message: The failure message
+            - failure: The failure message
             - type: The type of failure
 
     Returns:
-        str: Formatted failure message combining the message and type
-            if both are present, otherwise just the message.
+        str: The message with all newlines replaced with "<br/>"
 
     Example:
-        >>> failure = {"message": "Expected 2 but got 3", "type": "AssertionError"}
+        >>> failure = {"failure": "Expected 2\nbut got 3"}
         >>> format_failure_message(failure)
-        'Expected 2 but got 3\nType: AssertionError'
+        'Expected 2<br/>but got 3'
     """
-    message = []
-    if "message" in failure:
-        message.append(failure["message"])
-    if "type" in failure:
-        message.append(f"Type: {failure['type']}")
-    return "\n".join(message)
+    if "failure" in failure:
+        return "<pre>" + failure["failure"].replace("\n", "<br/>") + "</pre>"
+    return ""
 
 def convert_to_markdown(data: Dict[str, Any], context: str) -> str:
     """
@@ -112,48 +134,41 @@ def convert_to_markdown(data: Dict[str, Any], context: str) -> str:
     output.append(f"# {context} Results ({timestamp})\n")
     
     # Add summary
-    total_tests = len(data.get("testsuites", []))
-    passed_tests = sum(1 for suite in data.get("testsuites", [])
-                      if suite.get("status") == "RUN")
-    failed_tests = total_tests - passed_tests
+    total_tests = data.get("tests", 0)
+    failed_tests = data.get("failures", 0)
+    disabled_tests = data.get("disabled", 0)
+    error_tests = data.get("errors", 0)
+    tests_duration = format_duration(parse_duration(data.get("time", 0)))
+    passed_tests = total_tests - failed_tests
     
     output.append("## Summary\n")
-    output.append(f"- Total Tests: {total_tests}")
+    output.append(f"- Tests: {total_tests}")
     output.append(f"- Passed: {passed_tests}")
-    output.append(f"- Failed: {failed_tests}\n")
+    output.append(f"- Failed: {failed_tests}")
+    output.append(f"- Disabled: {disabled_tests}")
+    output.append(f"- Errors: {error_tests}")
+    output.append(f"- Duration: {tests_duration}\n")
     
     # Add detailed results table
-    output.append("## Test Results\n")
-    output.append("| Test Suite | Test Case | Status | Duration |")
-    output.append("|------------|-----------|--------|----------|")
+    output.append("## Details\n")
+    output.append("| Suite | Case | Status | Duration | Details |")
+    output.append("|-------|------|--------|----------|---------|")
     
     for suite in data.get("testsuites", []):
         suite_name = suite.get("name", "Unknown Suite")
         for test in suite.get("testsuite", []):
             test_name = test.get("name", "Unknown Test")
-            status = "✅ PASS" if test.get("status") == "RUN" else "❌ FAIL"
-            time_value = test.get("time", 0)
-            try:
-                # Try to convert to float, but handle string values like "0s"
-                if isinstance(time_value, str) and time_value.endswith('s'):
-                    duration_ms = float(time_value[:-1]) * 1000  # Convert seconds to milliseconds
-                else:
-                    duration_ms = float(time_value)
-                duration = format_duration(duration_ms)
-            except ValueError:
-                # Fallback if conversion fails
-                duration = str(time_value)
-            
-            # Add the test result row
-            output.append(f"| {suite_name} | {test_name} | {status} | {duration} |")
-            
+            status = "❌ FAIL" if "failures" in test else "✅ PASS"
+            duration = format_duration(parse_duration(test.get("time", 0)))
+            details = []
+
             # Add failure details if the test failed
-            if test.get("status") != "RUN" and "failures" in test:
-                output.append("\n### Failure Details\n")
+            if "failures" in test:
                 for failure in test["failures"]:
-                    output.append("```")
-                    output.append(format_failure_message(failure))
-                    output.append("```\n")
+                    details.append(format_failure_message(failure))
+
+            # Add the test result row
+            output.append(f"| {suite_name} | {test_name} | {status} | {duration} | {'<br/>'.join(details)}")
     
     return "\n".join(output)
 

@@ -18,6 +18,8 @@
 using die_pair = std::tuple<die, attribute_sequence>;
 
 struct dwarf {
+    struct implementation;
+
     dwarf(std::uint32_t ofd_index, freader&& s, file_details&& details);
 
     void register_section(std::string name, std::size_t offset, std::size_t size);
@@ -29,7 +31,6 @@ struct dwarf {
                            std::size_t cu_die_offset);
 
 private:
-    struct implementation;
     std::unique_ptr<implementation, void (*)(implementation*)> _impl{nullptr,
                                                                      [](implementation*) {}};
 };

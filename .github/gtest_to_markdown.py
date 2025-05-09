@@ -30,7 +30,10 @@ def convert_to_markdown(data: Dict[str, Any]) -> str:
     
     # Add header with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    output.append(f"# GTest Results ({timestamp})\n")
+    job_name = os.environ.get('GITHUB_JOB', '')
+    step_name = os.environ.get('GITHUB_WORKFLOW', '')
+    test_context = f"{job_name}/{step_name}" if job_name and step_name else ""
+    output.append(f"#{test_context} ({timestamp}) Test Results\n")
     
     # Add summary
     total_tests = len(data.get("testsuites", []))

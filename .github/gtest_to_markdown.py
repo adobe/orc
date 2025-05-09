@@ -25,16 +25,13 @@ def format_failure_message(failure: Dict[str, Any]) -> str:
         message.append(f"Type: {failure['type']}")
     return "\n".join(message)
 
-def convert_to_markdown(data: Dict[str, Any]) -> str:
+def convert_to_markdown(data: Dict[str, Any], context: str) -> str:
     """Convert gtest JSON data to GitHub-flavored markdown."""
     output = []
     
     # Add header with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    job_name = os.environ.get('GITHUB_JOB', '')
-    step_name = os.environ.get('GITHUB_WORKFLOW', '')
-    test_context = f"{job_name}/{step_name}" if job_name and step_name else ""
-    output.append(f"#{test_context} ({timestamp}) Test Results\n")
+    output.append(f"# {context} Results ({timestamp})\n")
     
     # Add summary
     total_tests = len(data.get("testsuites", []))
@@ -83,20 +80,23 @@ def convert_to_markdown(data: Dict[str, Any]) -> str:
     return "\n".join(output)
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python gtest_to_markdown.py <gtest_json_file>")
+    if len(sys.argv) != 3:
+        print("Usage: python gtest_to_markdown.py <context> <gtest_json_file>")
         sys.exit(1)
     
+    context = sys.argv[1]
+    json_file = sys.argv[2]
+    
     try:
-        with open(sys.argv[1], 'r') as f:
+        with open(json_file, 'r') as f:
             data = json.load(f)
-        markdown = convert_to_markdown(data)
+        markdown = convert_to_markdown(data, context)
         print(markdown)
     except FileNotFoundError:
-        print(f"Error: File {sys.argv[1]} not found", file=sys.stderr)
+        print(f"Error: File {json_file} not found", file=sys.stderr)
         sys.exit(1)
     except json.JSONDecodeError:
-        print(f"Error: Invalid JSON in {sys.argv[1]}", file=sys.stderr)
+        print(f"Error: Invalid JSON in {json_file}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)

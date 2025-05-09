@@ -72,7 +72,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py "Release Tests" test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ ASan
         id: build-orc_test-asan
         continue-on-error: true
@@ -83,7 +83,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py "Address Sanitizer Tests" test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ TSan
         id: build-orc_test-tsan
         continue-on-error: true
@@ -94,7 +94,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py "Thread Sanitizer Tests" test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ UBSan
         id: build-orc_test-ubsan
         continue-on-error: true
@@ -105,4 +105,4 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py "Undefined Behavior Sanitizer Tests" test_out.json >> $GITHUB_STEP_SUMMARY

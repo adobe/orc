@@ -72,7 +72,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ ASan
         id: build-orc_test-asan
         continue-on-error: true
@@ -83,7 +83,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ TSan
         id: build-orc_test-tsan
         continue-on-error: true
@@ -94,7 +94,7 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY
       - name: 🛠️ orc_test w/ UBSan
         id: build-orc_test-ubsan
         continue-on-error: true
@@ -105,20 +105,4 @@ jobs:
         continue-on-error: true
         run: |
           ./build/Release/orc_test ./test/battery --gtest_output="json:test_out.json"
-          python ${GITHUB_WORKSPACE}/.github/orc_test_to_github_actions.py test_out.json
-      - name: ✏️ github json
-        uses: jsdaniell/create-json@1.1.2
-        continue-on-error: true
-        with:
-          name: "github.json"
-          json: ${{ toJSON(github) }}
-      - name: ✏️ steps json
-        uses: jsdaniell/create-json@1.1.2
-        continue-on-error: true
-        with:
-          name: "steps.json"
-          json: ${{ toJSON(steps) }}
-      - name: ✍️ job summary
-        continue-on-error: false
-        run: |
-          python ${GITHUB_WORKSPACE}/.github/generate_job_summary.py $GITHUB_STEP_SUMMARY github.json steps.json
+          python ${GITHUB_WORKSPACE}/.github/gtest_to_markdown.py test_out.json >> $GITHUB_STEP_SUMMARY

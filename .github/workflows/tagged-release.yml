@@ -15,6 +15,10 @@ jobs:
           python-version: 3.8
       - name: ⬇️ Checkout sources
         uses: actions/checkout@v3
+        with:
+          lfs: true
+      - name: 🏗️ Checkout LFS objects
+        run: git lfs pull
       - name: 🏗️ Setup project files
         run: |
           mkdir build

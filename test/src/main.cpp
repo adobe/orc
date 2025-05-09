@@ -19,6 +19,9 @@
 #include <orc/orc.hpp>
 #include <orc/tracy.hpp>
 
+// Google Test
+#include <gtest/gtest.h>
+
 //--------------------------------------------------------------------------------------------------
 
 namespace {
@@ -224,6 +227,7 @@ struct expected_odrv {
     const std::string& linkage_name() const { return (*this)["linkage_name"]; }
 };
 
+#if 0
 std::ostream& operator<<(std::ostream& s, const expected_odrv& x) {
     // map is unordered, so we have to sort the keys...
     std::vector<std::string> keys;
@@ -236,32 +240,25 @@ std::ostream& operator<<(std::ostream& s, const expected_odrv& x) {
     }
     return s;
 }
+#endif
 
 //--------------------------------------------------------------------------------------------------
 
 const char* to_string(toml::node_type x) {
+    // clang-format off
     switch (x) {
-        case toml::node_type::none:
-            return "none";
-        case toml::node_type::table:
-            return "table";
-        case toml::node_type::array:
-            return "array";
-        case toml::node_type::string:
-            return "string";
-        case toml::node_type::integer:
-            return "integer";
-        case toml::node_type::floating_point:
-            return "floating_point";
-        case toml::node_type::boolean:
-            return "boolean";
-        case toml::node_type::date:
-            return "date";
-        case toml::node_type::time:
-            return "time";
-        case toml::node_type::date_time:
-            return "date_time";
+        case toml::node_type::none: return "none";
+        case toml::node_type::table: return "table";
+        case toml::node_type::array: return "array";
+        case toml::node_type::string: return "string";
+        case toml::node_type::integer: return "integer";
+        case toml::node_type::floating_point: return "floating_point";
+        case toml::node_type::boolean: return "boolean";
+        case toml::node_type::date: return "date";
+        case toml::node_type::time: return "time";
+        case toml::node_type::date_time: return "date_time";
     }
+    // clang-format on
     assert(false);
 }
 
@@ -359,7 +356,7 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
     std::vector<std::filesystem::path> object_files;
     const bool preserve_object_files =
         settings["orc_test_flags"]["preserve_object_files"].value_or(false);
-    console() << "Compiling " << units.size() << " source file(s):\n";
+    // console() << "Compiling " << units.size() << " source file(s):\n";
     for (auto& unit : units) {
         auto temp_path = sanitize(object_file_path(home, unit));
         if (preserve_object_files) {
@@ -380,8 +377,8 @@ std::vector<std::filesystem::path> compile_compilation_units(const std::filesyst
             throw std::runtime_error("unexpected compilation failure");
         }
         object_files.emplace_back(std::move(temp_path));
-        console() << "    " << unit._src.filename() << " -> " << object_files.back().filename()
-                  << '\n';
+        // console() << "    " << unit._src.filename() << " -> " << object_files.back().filename()
+        //          << '\n';
     }
     return object_files;
 }
@@ -439,7 +436,22 @@ bool odrv_report_match(const expected_odrv& odrv, const odrv_report& report) {
 }
 
 //--------------------------------------------------------------------------------------------------
-// return `false` if no error, or `true` on error.
+/**
+ * @brief Validates runtime metrics against expected values defined in settings
+ *
+ * This function compares various metrics collected during an ORC test pass
+ * against expected values specified in the TOML configuration. It reports
+ * any mismatches to the error console.
+ *
+ * @param settings The TOML configuration table containing expected metric values
+ *
+ * @pre The settings parameter should contain a "metrics" table with integer values
+ *      for the metrics to be validated
+ * @pre The globals singleton should be initialized with the actual metrics
+ *
+ * @return true if any validation failures occurred (metrics didn't match expected values)
+ * @return false if all metrics matched or if no metrics table was found in settings
+ */
 bool metrics_validation(const toml::table& settings) {
     const toml::table* expected_ptr = settings["metrics"].as_table();
 
@@ -451,16 +463,13 @@ bool metrics_validation(const toml::table& settings) {
     const globals& metrics = globals::instance();
     bool failure = false;
 
-    const auto compare_field = [&expected](const std::atomic_size_t& field, const char* key) -> bool {
+    const auto compare_field = [&expected](const std::atomic_size_t& field,
+                                           const char* key) -> bool {
         const toml::value<int64_t>* file_count_ptr = expected[key].as_integer();
         if (!file_count_ptr) return false;
         int64_t expected = **file_count_ptr;
         if (expected == field) return false;
-        console_error() << key
-                        << " mismatch (expected "
-                        << expected
-                        << "; calculated "
-                        << field
+        console_error() << key << " mismatch (expected " << expected << "; calculated " << field
                         << ")\n";
         return true;
     };
@@ -479,22 +488,55 @@ bool metrics_validation(const toml::table& settings) {
 constexpr const char* tomlname_k = "odrv_test.toml";
 
 //--------------------------------------------------------------------------------------------------
+/**
+ * @brief Test fixture for ORC tests
+ *
+ * This class represents a test fixture for running ORC tests on a specific test directory.
+ * It handles:
+ * - Loading and parsing the test configuration from a TOML file
+ * - Compiling source files if needed
+ * - Processing object files to detect ODR violations
+ * - Validating metrics and ODRV reports against expected values
+ */
+class orc_test_instance : public ::testing::Test {
+    std::filesystem::path _path;
 
-std::size_t run_battery_test(const std::filesystem::path& home) {
-    static bool first_s = false;
+public:
+    explicit orc_test_instance(std::filesystem::path&& path) : _path(std::move(path)) {}
 
-    if (!first_s) {
-        console() << '\n';
-    } else {
-        first_s = false;
-    }
+protected:
+    void SetUp() override { orc_reset(); }
 
-    assume(is_directory(home), "\"" + home.string() + "\" is not a directory");
-    std::filesystem::path tomlpath = home / tomlname_k;
-    assume(is_regular_file(tomlpath), "\"" + tomlpath.string() + "\" is not a regular file");
+    void TestBody() override;
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @brief Implements the logic for an ORC test
+ *
+ * This method executes the main logic for an ORC test:
+ * 1. Validates and loads the test configuration from a TOML file
+ * 2. Compiles source files (if any are specified)
+ * 3. Collects object files for processing (if any are specified)
+ * 4. Processes all object files to detect ODR violations
+ * 5. Validates metrics against expected values
+ * 6. Validates detected ODR violations against expected violations
+ *
+ * The test will be skipped if the "disable" flag is set in the configuration.
+ *
+ * @pre The `_path` member must point to a valid directory containing a valid TOML configuration
+ * file
+ * @pre The TOML file must follow the expected format for ORC test configuration
+ * @post Test assertions are made to validate metrics and ODR violation reports
+ * @post If the test is disabled in configuration, it will be skipped
+ * @throws std::runtime_error If the TOML file cannot be parsed or other critical errors occur
+ */
+void orc_test_instance::TestBody() {
+    assume(std::filesystem::is_directory(_path), "\"" + _path.string() + "\" is not a directory");
+    std::filesystem::path tomlpath = _path / tomlname_k;
+    assume(std::filesystem::is_regular_file(tomlpath),
+           "\"" + tomlpath.string() + "\" is not a regular file");
     toml::table settings;
-
-    console() << "-=-=- Test: " << home << "\n";
 
     try {
         settings = toml::parse_file(tomlpath.string());
@@ -503,110 +545,88 @@ std::size_t run_battery_test(const std::filesystem::path& home) {
         throw std::runtime_error("settings file parsing error");
     }
 
-    // Save this for debugging purposes.
-    // console_error() << toml::json_formatter{settings} << '\n';
-
     if (settings["orc_test_flags"]["disable"].value_or(false)) {
         logging::notice("test disabled");
-        return 0;
+        GTEST_SKIP() << "Test disabled in configuration";
+        return;
     }
 
-    auto test_name = home.stem().string();
+    auto compilation_units = derive_compilation_units(_path, settings);
     std::vector<std::filesystem::path> object_files;
 
-    auto compilation_units = derive_compilation_units(home, settings);
     if (!compilation_units.empty()) {
-        object_files = compile_compilation_units(home, settings, compilation_units);
+        object_files = compile_compilation_units(_path, settings, compilation_units);
     }
 
-    std::vector<std::filesystem::path> direct_object_files = derive_object_files(home, settings);
-    object_files.insert(object_files.end(), std::move_iterator(direct_object_files.begin()), std::move_iterator(direct_object_files.end()));
+    std::vector<std::filesystem::path> direct_object_files = derive_object_files(_path, settings);
+    object_files.insert(object_files.end(), std::make_move_iterator(direct_object_files.begin()),
+                        std::make_move_iterator(direct_object_files.end()));
 
-    // we can have zero of these now, it's okay.
-    auto expected_odrvs = derive_expected_odrvs(home, settings);
-
-    orc_reset();
-
-    // save for debugging.
-    // settings::instance()._parallel_processing = false;
-
+    auto expected_odrvs = derive_expected_odrvs(_path, settings);
     const std::vector<odrv_report> reports = orc_process(std::move(object_files));
-    const globals& metrics = globals::instance();
 
-    console() << "ODRVs expected: " << expected_odrvs.size() << "; reported: " << reports.size()
-              << '\n';
-
-    toml::table result;
-    result.insert("expected", static_cast<toml::int64_t>(expected_odrvs.size()));
-    result.insert("reported", static_cast<toml::int64_t>(reports.size()));
-
-    toml::table toml_metrics;
-    toml_metrics.insert("object_file_count", static_cast<toml::int64_t>(metrics._object_file_count));
-    toml_metrics.insert("odrv_count", static_cast<toml::int64_t>(metrics._odrv_count));
-    toml_metrics.insert("unique_symbol_count", static_cast<toml::int64_t>(metrics._unique_symbol_count));
-    toml_metrics.insert("die_processed_count", static_cast<toml::int64_t>(metrics._die_processed_count));
-    toml_metrics.insert("die_skipped_count", static_cast<toml::int64_t>(metrics._die_skipped_count));
-    result.insert("metrics", std::move(toml_metrics));
-
-    toml_out().insert(test_name, std::move(result));
-
-    //
-    // metrics validation
-    //
+    // Validate metrics
     bool metrics_failure = metrics_validation(settings);
-    
-    //
-    // ODRV report validation
-    //
-    // At this point, the reports.size() should match the expected_odrvs.size()
-    //
-    bool unexpected_result = expected_odrvs.size() != reports.size();
+    EXPECT_FALSE(metrics_failure) << "Metrics validation failed for " << _path;
 
-    // If things are okay so far, make sure each ODRV reported is expected.
-    if (!unexpected_result) {
-        for (const auto& report : reports) {
-            auto found =
-                std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
-                             [&](const auto& odrv) { return odrv_report_match(odrv, report); });
+    // Validate ODRV reports
+    EXPECT_EQ(expected_odrvs.size(), reports.size()) << "ODRV count mismatch for " << _path;
 
-            if (found == expected_odrvs.end()) {
-                unexpected_result = true;
-                break;
-            }
-
-            console() << "    Found expected ODRV: " << report.reporting_categories() << "\n";
-        }
+    // Check each reported ODRV against expected ones
+    for (const auto& report : reports) {
+        auto found =
+            std::find_if(expected_odrvs.begin(), expected_odrvs.end(),
+                         [&](const auto& odrv) { return odrv_report_match(odrv, report); });
+        EXPECT_NE(found, expected_odrvs.end())
+            << "Unexpected ODRV found: " << report << " in " << _path;
     }
-
-    if (unexpected_result) {
-        console_error() << "Reported ODRV(s):\n";
-
-        // If there's an error in the test, dump what we've found to assist debugging.
-        for (const auto& report : reports) {
-            console() << report << '\n';
-        }
-
-        console_error() << "Expected ODRV(s):\n";
-        std::size_t count{0};
-        for (const auto& expected : expected_odrvs) {
-            console() << ++count << ":\n" << expected << '\n';
-        }
-
-        console_error() << "\nIn battery " << home << ": ODRV count mismatch";
-    }
-
-    return metrics_failure + unexpected_result;
 }
 
 //--------------------------------------------------------------------------------------------------
+/**
+ * Creates a Google Test case for a single orc_test test.
+ *
+ * This function registers a new test case with Google Test framework using the
+ * directory name as the test name. Any hyphens in the directory name are
+ * replaced with underscores to conform to C++ identifier naming rules.
+ *
+ * @param home The filesystem path to the test battery directory
+ *
+ * @pre The path must exist and be a valid directory containing test files
+ * @post A new test case is registered with Google Test framework that will
+ *       create an `orc_test_instance` with the provided path when executed
+ */
+void create_test(const std::filesystem::path& home) {
+    std::string test_name = home.stem().string();
+    std::replace(test_name.begin(), test_name.end(), '-', '_');
 
+    ::testing::RegisterTest(
+        "orc_test", test_name.c_str(), nullptr, nullptr, __FILE__, __LINE__,
+        [_home = home]() mutable -> ::testing::Test* { return new orc_test_instance(std::move(_home)); });
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Recursively traverses a directory tree to find and register tests.
+ *
+ * This function walks through the provided directory and all its subdirectories,
+ * looking for directories that contain a TOML configuration file (indicated by
+ * tomlname_k). When such a directory is found, it's registered as a test.
+ *
+ * @param directory The filesystem path to start traversal from
+ * @return The number of errors encountered during traversal
+ *
+ * @pre The path must exist and be a valid directory
+ * @post All valid tests in the directory tree are registered with the
+ *       testing framework via create_battery_test()
+ */
 std::size_t traverse_directory_tree(const std::filesystem::path& directory) {
     assert(is_directory(directory));
 
     std::size_t errors = 0;
 
     if (exists(directory / tomlname_k)) {
-        errors += run_battery_test(directory);
+        create_test(directory);
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
@@ -645,7 +665,16 @@ int main(int argc, char** argv) try {
 
     test_settings()._json_mode = argc > 2 && std::string(argv[2]) == "--json_mode";
 
+    // Traverse the directory tree to find and register tests,
+    // adding them dynamically to the Google Test framework.
     std::size_t errors = traverse_directory_tree(battery_path);
+
+    // Initialize and run Google Test
+    ::testing::InitGoogleTest(&argc, argv);
+    int gtest_result = RUN_ALL_TESTS();
+    if (gtest_result != 0) {
+        return gtest_result;
+    }
 
     if (test_settings()._json_mode) {
         cout_safe([&](auto& s) { s << toml::json_formatter{toml_out()} << '\n'; });

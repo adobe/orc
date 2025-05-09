@@ -53,7 +53,17 @@ def convert_to_markdown(data: Dict[str, Any]) -> str:
         for test in suite.get("testsuite", []):
             test_name = test.get("name", "Unknown Test")
             status = "✅ PASS" if test.get("status") == "RUN" else "❌ FAIL"
-            duration = format_duration(float(test.get("time", 0)))
+            time_value = test.get("time", 0)
+            try:
+                # Try to convert to float, but handle string values like "0s"
+                if isinstance(time_value, str) and time_value.endswith('s'):
+                    duration_ms = float(time_value[:-1]) * 1000  # Convert seconds to milliseconds
+                else:
+                    duration_ms = float(time_value)
+                duration = format_duration(duration_ms)
+            except ValueError:
+                # Fallback if conversion fails
+                duration = str(time_value)
             
             # Add the test result row
             output.append(f"| {suite_name} | {test_name} | {status} | {duration} |")

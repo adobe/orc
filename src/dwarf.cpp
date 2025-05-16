@@ -18,6 +18,7 @@
 // application
 #include "orc/dwarf_structs.hpp"
 #include "orc/features.hpp"
+#include "orc/fixed_vector.hpp"
 #include "orc/object_file_registry.hpp"
 #include "orc/orc.hpp"
 #include "orc/settings.hpp"
@@ -531,9 +532,8 @@ struct line_header {
 };
 
 //--------------------------------------------------------------------------------------------------
-// It is fixed to keep allocations from happening.
-constexpr std::size_t max_names_k{32};
-using fixed_attribute_array = std::array<dw::at, max_names_k>;
+
+using fixed_attribute_array = orc::fixed_vector<dw::at, 10>;
 
 /**
  * @brief Extracts fatal attributes from an attribute sequence
@@ -553,15 +553,17 @@ using fixed_attribute_array = std::array<dw::at, max_names_k>;
  * @note The function is limited to processing `max_names_k` fatal attributes.
  */
 fixed_attribute_array fatal_attributes_within(const attribute_sequence& attributes) {
-    fixed_attribute_array names{dw::at::none};
-    std::size_t count{0};
+    fixed_attribute_array names;
 
     for (const auto& attr : attributes) {
-        if (nonfatal_attribute(attr._name)) continue;
-        ADOBE_INVARIANT(count < (max_names_k - 1), "fatal_attribute_hash names overflow");
-        names[count++] = attr._name;
+        if (nonfatal_attribute(attr._name)) {
+            continue;
+        }
+
+        names.push_back(attr._name);
     }
-    std::sort(&names[0], &names[count]);
+
+    std::sort(names.begin(), names.end());
 
     return names;
 }

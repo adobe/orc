@@ -44,6 +44,11 @@ struct freader {
         return _p - _f;
     }
 
+    std::size_t leftovers() const {
+        ADOBE_INVARIANT(*this);
+        return _l - _p;
+    }
+
     void seekg(std::istream::off_type offset) {
         _p = _f + offset;
         ADOBE_INVARIANT(*this);
@@ -70,13 +75,24 @@ struct freader {
         ADOBE_INVARIANT(*this);
     }
 
-    void read(char* p, std::size_t n) {
+    // Read a exactly `n` bytes into `p`.
+    // Assumes the bytes are plain old data.
+    void read(void* p, std::size_t n) {
+        ADOBE_INVARIANT(leftovers() > n);
         std::memcpy(p, _p, n);
         _p += n;
         ADOBE_INVARIANT(*this);
     }
 
+    // Read exactly `sizeof(T)` bytes into `x`
+    // Assumes the value is plain old data.
+    template <class T>
+    void read(T& x) {
+        read(&x, sizeof(T));
+    }
+
     char get() {
+        ADOBE_INVARIANT(leftovers() > 0);
         char result = *_p++;
         ADOBE_INVARIANT(*this);
         return result;
@@ -153,6 +169,7 @@ struct file_details {
         macho,
         ar,
         fat,
+        coff,
     };
     std::size_t _offset{0};
     format _format{format::unknown};
@@ -181,7 +198,7 @@ void endian_swap(T& c) {
 template <typename T>
 T read_pod(freader& s) {
     T x;
-    s.read(reinterpret_cast<char*>(&x), sizeof(T));
+    s.read(x);
     return x;
 }
 
@@ -193,7 +210,7 @@ inline bool read_pod(freader& s) {
 template <typename T>
 T read_pod(freader& s, bool byteswap) {
     T x;
-    s.read(reinterpret_cast<char*>(&x), sizeof(T));
+    s.read(&x, sizeof(T));
     if (byteswap) {
         endian_swap(x);
     }

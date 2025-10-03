@@ -793,17 +793,17 @@ void dwarf::implementation::register_section(const std::string& name,
     // Instead, the section registration must be complete and cannot be revisited.
     ADOBE_PRECONDITION(!_ready);
 
-    if (name == "__debug_str") {
+    if (name == "__debug_str" || name == ".debug_str") {
         _debug_str = section{offset, size};
-    } else if (name == "__debug_info") {
+    } else if (name == "__debug_info" || name == ".debug_info") {
         _debug_info = section{offset, size};
-    } else if (name == "__debug_abbrev") {
+    } else if (name == "__debug_abbrev" || name == ".debug_abbrev") {
         _debug_abbrev = section{offset, size};
-    } else if (name == "__debug_line") {
+    } else if (name == "__debug_line" || name == ".debug_line") {
         _debug_line = section{offset, size};
-    } else if (name == "__debug_line_str__DWARF") {
+    } else if (name == "__debug_line_str__DWARF" || name == ".debug_line_str__DWARF") {
         _debug_line_str = section{offset, size};
-    } else if (name == "__debug_str_offs__DWARF") {
+    } else if (name == "__debug_str_offs__DWARF" || name == ".debug_str_offs__DWARF") {
         _debug_str_offsets = section{offset, size};
     } else {
         // save for debugging.

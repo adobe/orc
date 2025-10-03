@@ -26,6 +26,7 @@
 
 // application
 #include "orc/ar.hpp"
+#include "orc/coff.hpp"
 #include "orc/fat.hpp"
 #include "orc/macho.hpp"
 #include "orc/orc.hpp"
@@ -53,6 +54,15 @@ file_details detect_file(freader& s) {
         } else if (header == FAT_MAGIC || header == FAT_CIGAM || header == FAT_MAGIC_64 ||
                    header == FAT_CIGAM_64) {
             result._format = file_details::format::fat;
+        } else if ((header & 0xffff) == 0x8664) {
+            // In COFF, the first 16 bits are a machine type code,
+            // which we are treating here like a magic number. We
+            // only check for one (0x8664) which means x64. This
+            // will likely need updating as other machine types are
+            // observed.
+            // See https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#machine-types
+            result._format = file_details::format::coff;
+            result._is_64_bit = true;
         }
 
         result._is_64_bit = header == MH_MAGIC_64 || header == MH_CIGAM_64 ||
@@ -175,6 +185,9 @@ void parse_file(std::string_view object_name,
         case file_details::format::fat:
             return read_fat(std::move(new_ancestry), s, end_pos, std::move(detection),
                             std::move(params));
+        case file_details::format::coff:
+            return read_coff(std::move(new_ancestry), s, end_pos, std::move(detection),
+                             std::move(params));
     }
 }
 

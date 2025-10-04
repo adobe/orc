@@ -801,9 +801,9 @@ void dwarf::implementation::register_section(const std::string& name,
         _debug_abbrev = section{offset, size};
     } else if (name == "__debug_line" || name == ".debug_line") {
         _debug_line = section{offset, size};
-    } else if (name == "__debug_line_str__DWARF" || name == ".debug_line_str__DWARF") {
+    } else if (name == "__debug_line_str__DWARF" || name == ".debug_line_str") {
         _debug_line_str = section{offset, size};
-    } else if (name == "__debug_str_offs__DWARF" || name == ".debug_str_offs__DWARF") {
+    } else if (name == "__debug_str_offs__DWARF" || name == ".debug_str_offsets") {
         _debug_str_offsets = section{offset, size};
     } else {
         // save for debugging.

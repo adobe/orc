@@ -7,9 +7,9 @@
 #pragma once
 
 // stdc++
+#include <algorithm>
 #include <array>
 #include <stdexcept>
-#include <algorithm>
 
 // adobe contract checks
 #include "adobe/contract_checks.hpp"
@@ -22,10 +22,10 @@ namespace orc {
 
 /**
  * @brief A fixed-size vector container that provides a subset of `std::vector` functionality
- * 
+ *
  * @tparam T The type of elements stored in the vector
  * @tparam N The maximum number of elements the vector can hold
- * 
+ *
  * This container provides a fixed-size alternative to `std::vector` with similar interface.
  * It guarantees that memory is allocated on the stack and never reallocates.
  * Operations that would exceed the fixed capacity `N` will terminate the program.
@@ -47,21 +47,19 @@ struct fixed_vector {
 
     /**
      * @brief Move constructor
-     * 
+     *
      * @param rhs The `fixed_vector` to move from
-     * 
+     *
      * @post `rhs` is left in an empty state
      */
-    fixed_vector(fixed_vector&& rhs) : _a(std::move(rhs._a)), _n(rhs._n) {
-        rhs._n = 0;
-    }
+    fixed_vector(fixed_vector&& rhs) : _a(std::move(rhs._a)), _n(rhs._n) { rhs._n = 0; }
 
     /**
      * @brief Move assignment operator
-     * 
+     *
      * @param rhs The `fixed_vector` to move from
      * @return Reference to this `fixed_vector`
-     * 
+     *
      * @post `rhs` is left in an empty state
      */
     fixed_vector& operator=(fixed_vector&& rhs) {
@@ -73,10 +71,10 @@ struct fixed_vector {
 
     /**
      * @brief Constructs a fixed_vector with count copies of value
-     * 
+     *
      * @param count Number of elements to create
      * @param value Value to initialize elements with
-     * 
+     *
      * @pre count <= N
      * @note If count > N, the program will terminate.
      */
@@ -89,10 +87,10 @@ struct fixed_vector {
 
     /**
      * @brief Access element at specified position with bounds checking
-     * 
+     *
      * @param pos Position of the element to return
      * @return Reference to the requested element
-     * 
+     *
      * @throw std::out_of_range if pos >= size()
      */
     T& at(size_type pos) {
@@ -104,10 +102,10 @@ struct fixed_vector {
 
     /**
      * @brief Access element at specified position with bounds checking (const version)
-     * 
+     *
      * @param pos Position of the element to return
      * @return Const reference to the requested element
-     * 
+     *
      * @throw std::out_of_range if pos >= size()
      */
     const T& at(size_type pos) const {
@@ -119,41 +117,41 @@ struct fixed_vector {
 
     /**
      * @brief Access element at specified position without bounds checking
-     * 
+     *
      * @param pos Position of the element to return
      * @return Reference to the requested element
-     * 
+     *
      * @pre pos < size()
      */
     T& operator[](size_type pos) { return _a[pos]; }
 
     /**
      * @brief Access element at specified position without bounds checking (const version)
-     * 
+     *
      * @param pos Position of the element to return
      * @return Const reference to the requested element
-     * 
+     *
      * @pre pos < size()
      */
     const T& operator[](size_type pos) const { return _a[pos]; }
 
     /**
      * @brief Returns reference to the first element
-     * 
+     *
      * @return Reference to the first element
-     * 
+     *
      * @pre !empty()
      */
-    T& front() { 
+    T& front() {
         ADOBE_PRECONDITION(!empty(), "fixed_vector is empty");
         return _a[0];
     }
 
     /**
      * @brief Returns const reference to the first element
-     * 
+     *
      * @return Const reference to the first element
-     * 
+     *
      * @pre !empty()
      */
     const T& front() const {
@@ -163,24 +161,24 @@ struct fixed_vector {
 
     /**
      * @brief Returns reference to the last element
-     * 
+     *
      * @return Reference to the last element
-     * 
+     *
      * @pre !empty()
      */
-    T& back() { 
+    T& back() {
         ADOBE_PRECONDITION(!empty(), "fixed_vector is empty");
         return _a[_n - 1];
     }
 
     /**
      * @brief Returns const reference to the last element
-     * 
+     *
      * @return Const reference to the last element
-     * 
+     *
      * @pre !empty()
      */
-    const T& back() const { 
+    const T& back() const {
         ADOBE_PRECONDITION(!empty(), "fixed_vector is empty");
         return _a[_n - 1];
     }
@@ -193,9 +191,9 @@ struct fixed_vector {
 
     /**
      * @brief Adds an element to the end
-     * 
+     *
      * @param x Value to append
-     * 
+     *
      * @pre size() < N, otherwise the program will terminate.
      */
     void push_back(const T& x) {
@@ -205,7 +203,7 @@ struct fixed_vector {
 
     /**
      * @brief Removes the last element
-     * 
+     *
      * @pre !empty(), otherwise the program will terminate.
      * @post The last element is destroyed and size() is decremented by 1
      */
@@ -217,7 +215,7 @@ struct fixed_vector {
 
     /**
      * @brief Removes all elements
-     * 
+     *
      * @post size() == 0
      */
     void clear() {
@@ -228,11 +226,11 @@ struct fixed_vector {
 
     /**
      * @brief Inserts value before pos
-     * 
+     *
      * @param pos Iterator before which the content will be inserted
      * @param value Element value to insert
      * @return Iterator pointing to the inserted value
-     * 
+     *
      * @pre size() < N, otherwise the program will terminate.
      */
     iterator insert(iterator pos, const T& value) {
@@ -244,12 +242,12 @@ struct fixed_vector {
 
     /**
      * @brief Inserts elements from range [first, last) before pos
-     * 
+     *
      * @param pos Iterator before which the content will be inserted
      * @param first Iterator to the first element to insert
      * @param last Iterator past the last element to insert
      * @return Iterator pointing to the first inserted element
-     * 
+     *
      * @pre size() + std::distance(first, last) <= N, otherwise the program will terminate.
      */
     template <class Iterator>
@@ -264,10 +262,10 @@ struct fixed_vector {
 
     /**
      * @brief Removes element at pos
-     * 
+     *
      * @param pos Iterator to the element to remove
      * @return Iterator following the last removed element
-     * 
+     *
      * @pre !empty(), otherwise the program will terminate.
      * @post size() is decremented by 1
      */
@@ -308,7 +306,7 @@ private:
 
 /**
  * @brief Equality comparison operator
- * 
+ *
  * @param lhs First fixed_vector to compare
  * @param rhs Second fixed_vector to compare
  * @return true if the vectors have the same size and elements, false otherwise
@@ -320,7 +318,7 @@ bool operator==(const fixed_vector<T, N>& lhs, const fixed_vector<T, N>& rhs) {
 
 /**
  * @brief Inequality comparison operator
- * 
+ *
  * @param lhs First fixed_vector to compare
  * @param rhs Second fixed_vector to compare
  * @return true if the vectors are not equal, false otherwise

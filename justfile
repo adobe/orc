@@ -21,3 +21,8 @@ nuke: && gen
 # Generate the cmake project (Tracy enabled)
 tracy:
     cmake -B build -GXcode -DTRACY_ENABLE=ON
+
+# Reformat the dialector sources via clang-format
+fmt:
+    find src -name '*.cpp' | xargs clang-format -i
+    find include -name '*.hpp' | xargs clang-format -i

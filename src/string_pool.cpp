@@ -216,7 +216,7 @@ pool_string empool(std::string_view src) {
     if (const char* c = find_key(h)) {
 #if ORC_FEATURE(PROFILE_EMPOOL)
         ZoneColor(tracy::Color::ColorType::Orange); // cache "half-hit"
-#endif // ORC_FEATURE(PROFILE_EMPOOL)
+#endif                                              // ORC_FEATURE(PROFILE_EMPOOL)
 
         pool_string ps(c);
         assert(ps.view() == src);
@@ -231,7 +231,7 @@ pool_string empool(std::string_view src) {
 
 #if ORC_FEATURE(PROFILE_EMPOOL)
     ZoneColor(tracy::Color::ColorType::Red); // cache miss
-#endif // ORC_FEATURE(PROFILE_EMPOOL)
+#endif                                       // ORC_FEATURE(PROFILE_EMPOOL)
 
     return pool_string(ptr);
 }

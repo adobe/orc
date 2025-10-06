@@ -29,9 +29,7 @@ std::string format_size(std::size_t x, format_mode mode = format_mode::binary);
 // e.g.,  .123 -> "12.3%", or 1.23456 -> "123.46%"
 std::string format_pct(float x);
 
-inline std::string format_pct(float x, float total) {
-    return format_pct(total ? x / total : 0);
-}
+inline std::string format_pct(float x, float total) { return format_pct(total ? x / total : 0); }
 
 std::string toupper(std::string&& s);
 

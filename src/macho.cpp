@@ -56,16 +56,13 @@ struct macho_reader {
         populate_dwarf();
     }
 
-    struct dwarf& dwarf() & {
-        return _dwarf;
-    }
-    struct dwarf&& dwarf() && {
-        return std::move(_dwarf);
-    }
+    struct dwarf& dwarf() & { return _dwarf; }
+    struct dwarf&& dwarf() && { return std::move(_dwarf); }
 
     bool register_dies_mode() const { return _params._mode == macho_reader_mode::register_dies; }
     bool derive_dylibs_mode() const { return _params._mode == macho_reader_mode::derive_dylibs; }
-    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting; }
+    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting;
+    // }
 
     void derive_dependencies();
 
@@ -529,8 +526,8 @@ std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path
         // If that set of files is empty, then we have found all our
         // dependencies, and can stop.
         pass = std::vector<std::filesystem::path>(); // ensure `pass` is valid and empty.
-        std::set_difference(pass_dependencies.begin(), pass_dependencies.end(),
-                            scanned.begin(), scanned.end(), std::back_inserter(pass));
+        std::set_difference(pass_dependencies.begin(), pass_dependencies.end(), scanned.begin(),
+                            scanned.end(), std::back_inserter(pass));
 
         if (pass.empty()) {
             break;

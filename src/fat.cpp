@@ -8,8 +8,8 @@
 #include "orc/fat.hpp"
 
 // mach-o
-#include <mach-o/loader.h>
 #include <mach-o/fat.h>
+#include <mach-o/loader.h>
 
 //--------------------------------------------------------------------------------------------------
 

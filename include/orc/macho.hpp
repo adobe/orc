@@ -26,6 +26,7 @@ struct dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params);
 
 //--------------------------------------------------------------------------------------------------
 
-std::vector<std::filesystem::path> macho_derive_dylibs(const std::vector<std::filesystem::path>& root_binaries);
+std::vector<std::filesystem::path> macho_derive_dylibs(
+    const std::vector<std::filesystem::path>& root_binaries);
 
 //--------------------------------------------------------------------------------------------------

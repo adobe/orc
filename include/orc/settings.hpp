@@ -9,9 +9,9 @@
 // stdc++
 #include <atomic>
 #include <cstddef>
+#include <fstream>
 #include <string>
 #include <vector>
-#include <fstream>
 
 // application
 #include "orc/features.hpp"
@@ -20,9 +20,9 @@
 
 struct settings {
     enum class log_level {
-        silent, // emit nothing but ODRVs
+        silent,  // emit nothing but ODRVs
         warning, // emit issues that need to be fixed
-        info, // emit brief, informative status
+        info,    // emit brief, informative status
         verbose, // emit as much as possible
     };
 

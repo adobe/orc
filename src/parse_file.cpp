@@ -21,8 +21,8 @@
 #include <unistd.h> // close
 
 // mach-o
-#include <mach-o/loader.h>
 #include <mach-o/fat.h>
+#include <mach-o/loader.h>
 
 // application
 #include "orc/ar.hpp"

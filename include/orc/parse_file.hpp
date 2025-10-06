@@ -235,10 +235,11 @@ enum class macho_reader_mode {
 };
 
 struct macho_params {
-    using register_dependencies_callback = std::function<void(std::vector<std::filesystem::path>&&)>;
+    using register_dependencies_callback =
+        std::function<void(std::vector<std::filesystem::path>&&)>;
 
     macho_reader_mode _mode{macho_reader_mode::invalid};
-    std::filesystem::path _executable_path; // only required if mode == derive_dylibs
+    std::filesystem::path _executable_path;                // only required if mode == derive_dylibs
     register_dependencies_callback _register_dependencies; // only required if mode == derive_dylibs
 };
 

@@ -8,20 +8,20 @@
 
 //--------------------------------------------------------------------------------------------------
 
-#define ORC_FEATURE(X) (ORC_PRIVATE_FEATURE_ ## X())
+#define ORC_FEATURE(X) (ORC_PRIVATE_FEATURE_##X())
 
 #ifndef NDEBUG
-    #define ORC_PRIVATE_FEATURE_DEBUG() 1
-    #define ORC_PRIVATE_FEATURE_RELEASE() 0
+#define ORC_PRIVATE_FEATURE_DEBUG() 1
+#define ORC_PRIVATE_FEATURE_RELEASE() 0
 #else
-    #define ORC_PRIVATE_FEATURE_DEBUG() 0
-    #define ORC_PRIVATE_FEATURE_RELEASE() 1
+#define ORC_PRIVATE_FEATURE_DEBUG() 0
+#define ORC_PRIVATE_FEATURE_RELEASE() 1
 #endif // !defined(NDEBUG)
 
 #if defined(TRACY_ENABLE)
-    #define ORC_PRIVATE_FEATURE_TRACY() 1
+#define ORC_PRIVATE_FEATURE_TRACY() 1
 #else
-    #define ORC_PRIVATE_FEATURE_TRACY() 0
+#define ORC_PRIVATE_FEATURE_TRACY() 0
 #endif
 
 //--------------------------------------------------------------------------------------------------

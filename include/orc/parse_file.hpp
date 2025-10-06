@@ -244,18 +244,19 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
 
 //--------------------------------------------------------------------------------------------------
 
-enum class macho_reader_mode {
+enum class reader_mode {
     invalid,
     register_dies,
     derive_dylibs,
     odrv_reporting,
 };
 
-struct macho_params {
-    using register_dependencies_callback = std::function<void(std::vector<std::filesystem::path>&&)>;
+struct reader_params {
+    using register_dependencies_callback =
+        std::function<void(std::vector<std::filesystem::path>&&)>;
 
-    macho_reader_mode _mode{macho_reader_mode::invalid};
-    std::filesystem::path _executable_path; // only required if mode == derive_dylibs
+    reader_mode _mode{reader_mode::invalid};
+    std::filesystem::path _executable_path;                // only required if mode == derive_dylibs
     register_dependencies_callback _register_dependencies; // only required if mode == derive_dylibs
 };
 
@@ -263,6 +264,6 @@ void parse_file(std::string_view object_name,
                 const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,
-                macho_params params);
+                reader_params params);
 
 //--------------------------------------------------------------------------------------------------

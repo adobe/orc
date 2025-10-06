@@ -18,6 +18,10 @@ void read_coff(object_ancestry&& ancestry,
                freader& s,
                std::istream::pos_type end_pos,
                file_details details,
-               macho_params params);
+               reader_params params);
+
+//--------------------------------------------------------------------------------------------------
+
+struct dwarf dwarf_from_coff(std::uint32_t ofd_index, reader_params params);
 
 //--------------------------------------------------------------------------------------------------

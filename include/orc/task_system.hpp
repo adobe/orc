@@ -16,9 +16,7 @@ namespace orc {
 
 using stlab::task;
 
-inline auto queue_size() {
-    return std::max(1u, std::thread::hardware_concurrency());
-}
+inline auto queue_size() { return std::max(1u, std::thread::hardware_concurrency()); }
 
 class notification_queue {
     using lock_t = std::unique_lock<std::mutex>;
@@ -28,7 +26,7 @@ class notification_queue {
         task<void()> _task;
 
         template <class F>
-        element_t(F&& f, unsigned priority) : _priority{priority}, _task{std::forward<F>(f)} { }
+        element_t(F&& f, unsigned priority) : _priority{priority}, _task{std::forward<F>(f)} {}
 
         struct greater {
             bool operator()(const element_t& a, const element_t& b) const {
@@ -60,7 +58,8 @@ public:
 
     bool pop(task<void()>& x) {
         lock_t lock{_mutex};
-        while (_q.empty() && !_done) _ready.wait(lock);
+        while (_q.empty() && !_done)
+            _ready.wait(lock);
         if (_q.empty()) return false;
         x = pop_not_empty();
         return true;
@@ -110,11 +109,11 @@ class priority_task_system {
     std::atomic_bool _done{false};
 
     void run(unsigned i) {
-        #if STLAB_FEATURE(THREAD_NAME_POSIX)
+#if STLAB_FEATURE(THREAD_NAME_POSIX)
         pthread_setname_np(pthread_self(), "adobe.orc.worker");
-        #elif STLAB_FEATURE(THREAD_NAME_APPLE)
+#elif STLAB_FEATURE(THREAD_NAME_APPLE)
         pthread_setname_np("adobe.orc.worker");
-        #endif
+#endif
         while (true) {
             task<void()> f;
 
@@ -131,15 +130,16 @@ public:
     priority_task_system() {
         _threads.reserve(_count);
         for (unsigned n = 0; n != _count; ++n) {
-            _threads.emplace_back([&, n]{ run(n); });
+            _threads.emplace_back([&, n] { run(n); });
         }
     }
 
     ~priority_task_system() {
-        for (auto& e : _q) e.done();
-        for (auto& e : _threads) e.join();
+        for (auto& e : _q)
+            e.done();
+        for (auto& e : _threads)
+            e.join();
     }
-
 
 
     template <std::size_t P, typename F>
@@ -173,16 +173,10 @@ inline priority_task_system& pts() {
     return only_task_system;
 }
 
-enum class executor_priority
-{
-    high,
-    medium,
-    low
-};
+enum class executor_priority { high, medium, low };
 
 template <executor_priority P = executor_priority::medium>
-struct task_system
-{
+struct task_system {
     using result_type = void;
 
     void operator()(task<void()> f) const {

@@ -34,7 +34,7 @@ void read_ar(object_ancestry&& ancestry,
              freader& s,
              std::istream::pos_type end_pos,
              file_details details,
-             macho_params params) {
+             reader_params params) {
     std::string magic = read_fixed_string<8>(s);
     assert(magic == "!<arch>\n");
 

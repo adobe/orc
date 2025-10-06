@@ -39,6 +39,7 @@
 
 // application
 #include "orc/async.hpp"
+#include "orc/coff.hpp"
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
@@ -180,11 +181,32 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 
 //--------------------------------------------------------------------------------------------------
 
+dwarf dwarf_from_object_file(std::uint32_t ofd_index, reader_params params) {
+    const object_file_descriptor& descriptor = object_file_fetch(ofd_index);
+
+    switch (descriptor._details._format) {
+        case file_details::format::macho: {
+            return dwarf_from_macho(ofd_index, std::move(params));
+        } break;
+        case file_details::format::coff: {
+            return dwarf_from_coff(ofd_index, std::move(params));
+        } break;
+        default: {
+            // If you get here, the object file format is either new and
+            // unaccounted for, or the format is a container type (ar, fat)
+            // and not a low-level variant where actual DWARF data is found.
+            throw std::runtime_error("dwarf_from_object_file: unknown / bad object file");
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 attribute_sequence fetch_attributes_for_die(const die& d) {
     // Too verbose for larger projects, but keep around for debugging/smaller projects.
     // ZoneScoped;
 
-    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
+    auto dwarf = dwarf_from_object_file(d._ofd_index, reader_params{reader_mode::odrv_reporting});
 
     auto [die, attributes] = dwarf.fetch_one_die(d._offset, d._cu_header_offset, d._cu_die_offset);
     ADOBE_INVARIANT(die._tag == d._tag);
@@ -451,14 +473,15 @@ void parse_dsym(const std::filesystem::path& dsym) {
     //
     // For now, assume the symbol data is stored within file(s) inside the directory below, and
     // requires no additional data in order to grok it for the purpose of ODRV scanning.
-    for (const auto& entry : std::filesystem::directory_iterator(dsym / "Contents" / "Resources" / "DWARF")) {
+    for (const auto& entry :
+         std::filesystem::directory_iterator(dsym / "Contents" / "Resources" / "DWARF")) {
         const auto path = entry.path();
         if (!is_regular_file(path)) continue;
-        orc::do_work([_input_path = std::move(path)]{
+        orc::do_work([_input_path = std::move(path)] {
             freader input(_input_path);
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       macho_params{macho_reader_mode::register_dies});
+                       reader_params{reader_mode::register_dies});
         });
     }
 }
@@ -502,7 +525,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
                 freader input(_input_path);
 
                 parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                           macho_params{macho_reader_mode::register_dies});
+                           reader_params{reader_mode::register_dies});
             }
         });
     }
@@ -585,7 +608,8 @@ void to_json(nlohmann::json& j, const odrv_report::conflict_details& c) {
     const auto& locations = c._locations;
     auto& instances = j["locations"];
     for (const auto& location : sorted_keys(locations)) {
-        const std::string location_str = location.file.allocate_string() + ":" + std::to_string(location.loc);
+        const std::string location_str =
+            location.file.allocate_string() + ":" + std::to_string(location.loc);
         auto& location_json = instances[location_str];
         for (const auto& ancestry : locations.at(location)) {
             auto* node = &location_json;
@@ -627,7 +651,8 @@ void register_dies(dies die_vector) {
 
     // Erase the skippable dies and shrink the vector to fit, which will preserve only the necessary
     // dies in a vector whose memory consumption is exactly what's needed.
-    globals::instance()._die_skipped_count += std::erase_if(die_vector, std::mem_fn(&die::_skippable));
+    globals::instance()._die_skipped_count +=
+        std::erase_if(die_vector, std::mem_fn(&die::_skippable));
     die_vector.shrink_to_fit();
 
     // This is a list so the die vectors don't move about. The dies become pretty entangled as they
@@ -685,12 +710,13 @@ std::string to_json(const std::vector<odrv_report>& reports) {
     synopsis["object_files_scanned"] = g._object_file_count.load();
     synopsis["dies_processed"] = g._die_processed_count.load();
     synopsis["dies_skipped"] = g._die_skipped_count.load();
-    synopsis["dies_skipped_pct"] = g._die_processed_count ? (g._die_skipped_count * 100. / g._die_processed_count) : 0;
+    synopsis["dies_skipped_pct"] =
+        g._die_processed_count ? (g._die_skipped_count * 100. / g._die_processed_count) : 0;
     synopsis["unique_symbols"] = g._unique_symbol_count.load();
 
-    nlohmann::json result = nlohmann::json::object_t {
-        { "violations", std::move(violations) },
-        { "synopsis", std::move(synopsis) },
+    nlohmann::json result = nlohmann::json::object_t{
+        {"violations", std::move(violations)},
+        {"synopsis", std::move(synopsis)},
     };
 
     return result.dump(spaces_k);

@@ -21,8 +21,8 @@
 #include <unistd.h> // close
 
 // mach-o
-#include <mach-o/loader.h>
 #include <mach-o/fat.h>
+#include <mach-o/loader.h>
 
 // application
 #include "orc/ar.hpp"
@@ -166,7 +166,7 @@ void parse_file(std::string_view object_name,
                 const object_ancestry& ancestry,
                 freader& s,
                 std::istream::pos_type end_pos,
-                macho_params params) {
+                reader_params params) {
     auto detection = detect_file(s);
 
     // append this object name to the ancestry

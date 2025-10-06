@@ -107,9 +107,7 @@ std::size_t parse_enval(std::string&& x) {
 }
 
 template <typename T>
-T derive_configuration(const char* key,
-                       const toml::parse_result& settings,
-                       T&& fallback) {
+T derive_configuration(const char* key, const toml::parse_result& settings, T&& fallback) {
     T result = settings[key].value_or(fallback);
     std::string envar = toupper(std::string("ORC_") + key);
     if (const char* enval = std::getenv(envar.c_str())) {
@@ -166,18 +164,23 @@ void process_orc_configuration(const char* bin_path_string) {
     auto& app_settings = settings::instance();
 
     app_settings._graceful_exit = derive_configuration("graceful_exit", settings, false);
-    app_settings._max_violation_count = derive_configuration("max_error_count", settings, std::size_t(0));
+    app_settings._max_violation_count =
+        derive_configuration("max_error_count", settings, std::size_t(0));
     app_settings._forward_to_linker = derive_configuration("forward_to_linker", settings, true);
     app_settings._standalone_mode = derive_configuration("standalone_mode", settings, false);
     app_settings._dylib_scan_mode = derive_configuration("dylib_scan_mode", settings, false);
     app_settings._parallel_processing = derive_configuration("parallel_processing", settings, true);
     app_settings._filter_redundant = derive_configuration("filter_redundant", settings, true);
-    app_settings._print_object_file_list = derive_configuration("print_object_file_list", settings, false);
-    app_settings._relative_output_file = derive_configuration("relative_output_file", settings, std::string());
+    app_settings._print_object_file_list =
+        derive_configuration("print_object_file_list", settings, false);
+    app_settings._relative_output_file =
+        derive_configuration("relative_output_file", settings, std::string());
 
-    const std::string log_level = derive_configuration("log_level", settings, std::string("warning"));
+    const std::string log_level =
+        derive_configuration("log_level", settings, std::string("warning"));
     const std::string output_file = derive_configuration("output_file", settings, std::string());
-    const std::string output_file_mode = derive_configuration("output_file_mode", settings, std::string("text"));
+    const std::string output_file_mode =
+        derive_configuration("output_file_mode", settings, std::string("text"));
 
     // Do this early so we can log the ensuing output if it happens.
     if (!output_file.empty()) {
@@ -206,13 +209,13 @@ void process_orc_configuration(const char* bin_path_string) {
     } else {
         // not a known value. Switch to verbose!
         app_settings._log_level = settings::log_level::verbose;
-        cout_safe(
-            [&](auto& s) { s << "warning: unknown log_level '" << log_level << "'; using verbose\n"; });
+        cout_safe([&](auto& s) {
+            s << "warning: unknown log_level '" << log_level << "'; using verbose\n";
+        });
     }
 
     if (app_settings._standalone_mode && app_settings._dylib_scan_mode) {
-        throw std::logic_error(
-            "Both standalone and dylib scanning mode are enabled. Pick one.");
+        throw std::logic_error("Both standalone and dylib scanning mode are enabled. Pick one.");
     }
 
     if (app_settings._dylib_scan_mode) {
@@ -236,8 +239,7 @@ void process_orc_configuration(const char* bin_path_string) {
     app_settings._violation_report = read_string_list("violation_report");
     app_settings._violation_ignore = read_string_list("violation_ignore");
 
-    if (!app_settings._violation_report.empty() &&
-        !app_settings._violation_ignore.empty()) {
+    if (!app_settings._violation_report.empty() && !app_settings._violation_ignore.empty()) {
         if (log_level_at_least(settings::log_level::warning)) {
             cout_safe([&](auto& s) {
                 s << "warning: Both `violation_report` and `violation_ignore` lists found\n";
@@ -247,9 +249,7 @@ void process_orc_configuration(const char* bin_path_string) {
     }
 
     if (log_level_at_least(settings::log_level::info)) {
-        cout_safe([&](auto& s) {
-            s << "info: ORC config file: " << config_path.string() << "\n";
-        });
+        cout_safe([&](auto& s) { s << "info: ORC config file: " << config_path.string() << "\n"; });
     }
 }
 
@@ -337,8 +337,7 @@ cmdline_results process_command_line(int argc, char** argv) {
             result._file_object_list.push_back(argv[i]);
         }
 
-        if (settings::instance()._dylib_scan_mode &&
-            result._file_object_list.size() != 1 &&
+        if (settings::instance()._dylib_scan_mode && result._file_object_list.size() != 1 &&
             log_level_at_least(settings::log_level::warning)) {
             cout_safe([&](auto& s) {
                 s << "warning: dylib scanning with more than one top-level artifact may yield false positives.\n";
@@ -452,13 +451,14 @@ auto epilogue(bool exception) {
 
     if (g._object_file_count == 0) {
         if (settings::instance()._output_file_mode == settings::output_file_mode::json) {
-            cout_safe([](auto& s){
-                s << orc::version_json() << '\n';
-            });
+            cout_safe([](auto& s) { s << orc::version_json() << '\n'; });
         } else {
             cout_safe([&](auto& s) {
                 const auto local_build = ORC_VERSION_STR() == std::string("local");
-                const std::string tag_url = local_build ? "" : std::string(" (https://github.com/adobe/orc/releases/tag/") + ORC_VERSION_STR() + ")";
+                const std::string tag_url =
+                    local_build ? "" :
+                                  std::string(" (https://github.com/adobe/orc/releases/tag/") +
+                                      ORC_VERSION_STR() + ")";
                 s << "ORC (https://github.com/adobe/orc)\n";
                 s << "    version: " << ORC_VERSION_STR() << tag_url << '\n';
                 s << "    sha: " << ORC_SHA_STR() << '\n';

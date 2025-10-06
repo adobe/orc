@@ -24,9 +24,12 @@ namespace {
 //--------------------------------------------------------------------------------------------------
 //
 // Relevant documentation:
-//     - Portable Executable (PE) format: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
-//     - image_file_header: https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_file_header
-//     - image_section_header: https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_section_header
+//     - Portable Executable (PE) format:
+//     https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+//     - image_file_header:
+//     https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_file_header
+//     - image_section_header:
+//     https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_section_header
 //
 
 struct image_file_header {
@@ -89,15 +92,26 @@ void read_coff(object_ancestry&& ancestry,
                freader& s,
                std::istream::pos_type end_pos,
                file_details details,
-               macho_params params) {
+               reader_params params) {
     std::uint32_t ofd_index =
-    static_cast<std::uint32_t>(object_file_register(std::move(ancestry), copy(details)));
-    dwarf dwarf(ofd_index, copy(s), copy(details));
-    
+        static_cast<std::uint32_t>(object_file_register(std::move(ancestry), copy(details)));
+
+    dwarf_from_coff(ofd_index, std::move(params)).process_all_dies();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+dwarf dwarf_from_coff(std::uint32_t ofd_index, reader_params params) {
+    const auto& entry = object_file_fetch(ofd_index);
+    freader s(entry._ancestry.begin()->allocate_path());
+    dwarf dwarf(ofd_index, copy(s), copy(entry._details));
+
+    s.seekg(entry._details._offset);
+
     // If you hit this, you're running ORC in a mode not supported by COFF.
-    ADOBE_INVARIANT(params._mode == macho_reader_mode::register_dies ||
-                    params._mode == macho_reader_mode::odrv_reporting);
-    
+    ADOBE_INVARIANT(params._mode == reader_mode::register_dies ||
+                    params._mode == reader_mode::odrv_reporting);
+
     // The general format of COFF is:
     //     header
     //     section headers
@@ -108,19 +122,18 @@ void read_coff(object_ancestry&& ancestry,
     // in one of the "raw data" blocks in COFF sections whose names are
     // the DWARF segments we are interested in (debug_info, debug_abbrev,
     // etc.) So we don't need to read anything beyond the section headers.
-    
+
     const auto header = read_pod<image_file_header>(s);
-    
+
     // According to the PE format docs there should be no optional header for object files.
     ADOBE_INVARIANT(header.optional_header_size == 0);
-    
+
     // Grab the string table offset and size, which we'll need when deriving
     // the name of some of the sections we read below.
     const auto string_table_offset = header.symbol_table_pointer + header.symbol_count * 18;
-    const auto string_table_size = temp_seek(s, string_table_offset, [&]{
-        return read_pod<std::uint32_t>(s);
-    });
-    
+    const auto string_table_size =
+        temp_seek(s, string_table_offset, [&] { return read_pod<std::uint32_t>(s); });
+
     // Read the section headers. As we go, derive the actual section header
     // name, which may be in the string table. If the name is a DWARF segment,
     // add it to the DWARF processor.
@@ -137,20 +150,18 @@ void read_coff(object_ancestry&& ancestry,
             ++name;
             int section_name_offset = std::atoi(name);
             ADOBE_INVARIANT(section_name_offset < string_table_size);
-            section.actual_name = temp_seek(s, string_table_offset + section_name_offset, [&]{
-                return s.read_c_string_view();
-            });
+            section.actual_name = temp_seek(s, string_table_offset + section_name_offset,
+                                            [&] { return s.read_c_string_view(); });
         }
-        
+
         if (section.actual_name.starts_with(".debug")) {
-            std::cout << section.actual_name << '\n';
-            dwarf.register_section(section.actual_name,
-                                   section.header.raw_data_pointer,
+            // std::cout << section.actual_name << '\n';
+            dwarf.register_section(section.actual_name, section.header.raw_data_pointer,
                                    section.header.raw_data_size);
         }
     }
 
-    dwarf.process_all_dies();
+    return dwarf;
 }
 
 //--------------------------------------------------------------------------------------------------

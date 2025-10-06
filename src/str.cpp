@@ -60,13 +60,18 @@ std::string format_size(std::size_t x, format_mode mode) {
         ++exponent;
     }
 
-    const char* label = [&]{
+    const char* label = [&] {
         switch (exponent) {
-            case 0: return "bytes";
-            case 1: return mode == format_mode::binary ? "KiB" : "KB";
-            case 2: return mode == format_mode::binary ? "MiB" : "MB";
-            case 3: return mode == format_mode::binary ? "GiB" : "GB";
-            default: return mode == format_mode::binary ? "TiB" : "TB";
+            case 0:
+                return "bytes";
+            case 1:
+                return mode == format_mode::binary ? "KiB" : "KB";
+            case 2:
+                return mode == format_mode::binary ? "MiB" : "MB";
+            case 3:
+                return mode == format_mode::binary ? "GiB" : "GB";
+            default:
+                return mode == format_mode::binary ? "TiB" : "TB";
         }
     }();
 
@@ -92,9 +97,7 @@ std::string format_pct(float x) {
 //--------------------------------------------------------------------------------------------------
 
 std::string toupper(std::string&& s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](auto c){
-        return std::toupper(c);
-    });
+    std::transform(s.begin(), s.end(), s.begin(), [](auto c) { return std::toupper(c); });
     return s;
 }
 

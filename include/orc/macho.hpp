@@ -18,14 +18,15 @@ void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
-                macho_params params);
+                reader_params params);
 
 //--------------------------------------------------------------------------------------------------
 
-struct dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params);
+struct dwarf dwarf_from_macho(std::uint32_t ofd_index, reader_params params);
 
 //--------------------------------------------------------------------------------------------------
 
-std::vector<std::filesystem::path> macho_derive_dylibs(const std::vector<std::filesystem::path>& root_binaries);
+std::vector<std::filesystem::path> macho_derive_dylibs(
+    const std::vector<std::filesystem::path>& root_binaries);
 
 //--------------------------------------------------------------------------------------------------

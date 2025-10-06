@@ -84,7 +84,7 @@ struct attribute_value {
     int number() const {
         return has(type::sint) ? static_cast<int>(sint()) : static_cast<int>(uint());
     }
-    
+
     void string(pool_string x) {
         _type |= type::string;
         _string = x;
@@ -188,9 +188,7 @@ struct attribute_sequence {
     using iterator = typename attributes_type::iterator;
     using const_iterator = typename attributes_type::const_iterator;
 
-    void reserve(std::size_t size) {
-        _attributes.reserve(size);
-    }
+    void reserve(std::size_t size) { _attributes.reserve(size); }
 
     bool has(dw::at name) const {
         auto [valid, iterator] = find(name);
@@ -202,17 +200,11 @@ struct attribute_sequence {
         return valid && iterator->has(t);
     }
 
-    bool has_uint(dw::at name) const {
-        return has(name, attribute_value::type::uint);
-    }
+    bool has_uint(dw::at name) const { return has(name, attribute_value::type::uint); }
 
-    bool has_string(dw::at name) const {
-        return has(name, attribute_value::type::string);
-    }
+    bool has_string(dw::at name) const { return has(name, attribute_value::type::string); }
 
-    bool has_reference(dw::at name) const {
-        return has(name, attribute_value::type::reference);
-    }
+    bool has_reference(dw::at name) const { return has(name, attribute_value::type::reference); }
 
     auto& get(dw::at name) {
         auto [valid, iterator] = find(name);
@@ -226,33 +218,19 @@ struct attribute_sequence {
         return *iterator;
     }
 
-    std::size_t hash(dw::at name) const {
-        return get(name)._value.hash();
-    }
+    std::size_t hash(dw::at name) const { return get(name)._value.hash(); }
 
-    std::uint64_t uint(dw::at name) const {
-        return get(name).uint();
-    }
+    std::uint64_t uint(dw::at name) const { return get(name).uint(); }
 
-    int number(dw::at name) const {
-        return get(name)._value.number();
-    }
+    int number(dw::at name) const { return get(name)._value.number(); }
 
-    std::int64_t sint(dw::at name) const {
-        return get(name).sint();
-    }
+    std::int64_t sint(dw::at name) const { return get(name).sint(); }
 
-    pool_string string(dw::at name) const {
-        return get(name).string();
-    }
+    pool_string string(dw::at name) const { return get(name).string(); }
 
-    std::uint64_t reference(dw::at name) const {
-        return get(name).reference();
-    }
+    std::uint64_t reference(dw::at name) const { return get(name).reference(); }
 
-    void push_back(const value_type& x) {
-        _attributes.push_back(x);
-    }
+    void push_back(const value_type& x) { _attributes.push_back(x); }
 
     bool empty() const { return _attributes.empty(); }
 
@@ -270,23 +248,22 @@ struct attribute_sequence {
     }
 
     void move_append(attribute_sequence&& rhs) {
-        _attributes.insert(_attributes.end(), std::move_iterator(rhs.begin()), std::move_iterator(rhs.end()));
+        _attributes.insert(_attributes.end(), std::move_iterator(rhs.begin()),
+                           std::move_iterator(rhs.end()));
     }
 
 private:
     /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, iterator> find(dw::at name) {
-        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
-            return attr._name == name;
-        });
+        auto result = std::find_if(_attributes.begin(), _attributes.end(),
+                                   [&](const auto& attr) { return attr._name == name; });
         return std::make_tuple(result != _attributes.end(), result);
     }
 
     /// NOTE: Consider sorting these attribues by `dw::at` to improve performance.
     std::tuple<bool, const_iterator> find(dw::at name) const {
-        auto result = std::find_if(_attributes.begin(), _attributes.end(), [&](const auto& attr){
-            return attr._name == name;
-        });
+        auto result = std::find_if(_attributes.begin(), _attributes.end(),
+                                   [&](const auto& attr) { return attr._name == name; });
         return std::make_tuple(result != _attributes.end(), result);
     }
 
@@ -303,16 +280,14 @@ std::ostream& operator<<(std::ostream& s, const attribute_sequence& x);
  * typically used to identify where a symbol is defined or declared in DWARF debug info.
  */
 struct location {
-    pool_string file; /// The source file path or name
+    pool_string file;     /// The source file path or name
     std::uint64_t loc{0}; /// The 1-indexed line number within the file
 };
 
 inline bool operator==(const location& x, const location& y) {
     return x.file == y.file && x.loc == y.loc;
 }
-inline bool operator!=(const location& x, const location& y) {
-    return !(x == y);
-}
+inline bool operator!=(const location& x, const location& y) { return !(x == y); }
 inline bool operator<(const location& x, const location& y) {
     return x.file.hash() < y.file.hash() || (x.file == y.file && x.loc < y.loc);
 }
@@ -364,8 +339,8 @@ const char* to_string(arch arch);
  * @brief Represents the ancestry of an object file
  *
  * Object files can be stored within an arbitrarily nested set of archive formats. For example,
- * the `.o` file may be stored within an archive (`.a`) file, which itself may be stored within another
- * archive, etc. This structure keeps track of the file(s) that contain the object file in
+ * the `.o` file may be stored within an archive (`.a`) file, which itself may be stored within
+ * another archive, etc. This structure keeps track of the file(s) that contain the object file in
  * question. This facilitates reporting when ODRVs are found, giving the user a breadcrumb as
  * to how the ODRV is being introduced. For efficiency purposes, we fix the max number of ancestors
  * at compile time, but this can be adjusted if necessary.
@@ -393,18 +368,14 @@ struct object_ancestry {
     }
 
     bool operator<(const object_ancestry& rhs) const {
-        if (_ancestors.size() < rhs._ancestors.size())
-            return true;
+        if (_ancestors.size() < rhs._ancestors.size()) return true;
 
-        if (_ancestors.size() > rhs._ancestors.size())
-            return false;
+        if (_ancestors.size() > rhs._ancestors.size()) return false;
 
         for (size_t i = 0; i < _ancestors.size(); ++i) {
-            if (_ancestors[i].view() < rhs._ancestors[i].view())
-                return true;
+            if (_ancestors[i].view() < rhs._ancestors[i].view()) return true;
 
-            if (_ancestors[i].view() > rhs._ancestors[i].view())
-                return false;
+            if (_ancestors[i].view() > rhs._ancestors[i].view()) return false;
         }
 
         return false;
@@ -431,21 +402,26 @@ std::ostream& operator<<(std::ostream& s, const object_ancestry& x);
 //
 // During an ORC scan, multiple translation units worth of DIEs are brought together to determine
 // if any of them violate the One Definition Rule. DIEs across those units that are "the same" will
-// have the same `_hash` value, and will be linked together via the `_next_die` pointer. The top-level
-// ORC scan will then have a collection of singly-linked lists, one per unique symbol / `_hash`.
-// Once all these lists are constructed, each are checked individually for ODRVs.
+// have the same `_hash` value, and will be linked together via the `_next_die` pointer. The
+// top-level ORC scan will then have a collection of singly-linked lists, one per unique symbol /
+// `_hash`. Once all these lists are constructed, each are checked individually for ODRVs.
 struct die {
     // Because the quantity of these created at runtime can beon the order of millions of instances,
     // these are ordered for optimal alignment. If you change the ordering, or add/remove items
     // here, please consider alignment issues.
-    pool_string _path; // the user-readable symbol name, "pathed"/namespaced by containing DIEs. May be mangled.
-    die* _next_die{nullptr}; // pointer to the next DIE that has the same `_hash` value.
+    pool_string _path; // the user-readable symbol name, "pathed"/namespaced by containing DIEs. May
+                       // be mangled.
+    die* _next_die{nullptr};           // pointer to the next DIE that has the same `_hash` value.
     std::optional<location> _location; // file_decl and file_line, if they exist for the DIE.
-    std::size_t _hash{0}; // uniquely identifies the DIE across differing targets (e.g., the same symbol in a FAT binary.)
-    std::size_t _fatal_attribute_hash{0}; // within a target, a hash of attributes that contribute to ODRVs.
+    std::size_t _hash{0}; // uniquely identifies the DIE across differing targets (e.g., the same
+                          // symbol in a FAT binary.)
+    std::size_t _fatal_attribute_hash{
+        0};                      // within a target, a hash of attributes that contribute to ODRVs.
     std::uint32_t _ofd_index{0}; // object file descriptor index
-    std::size_t _cu_header_offset{0}; // offset to the compilation unit that contains this DIE; relative to `__debug_info`
-    std::size_t _cu_die_offset{0}; // offset to the associated compilation unit DIE entry; relative to `__debug_info`
+    std::size_t _cu_header_offset{
+        0}; // offset to the compilation unit that contains this DIE; relative to `__debug_info`
+    std::size_t _cu_die_offset{
+        0}; // offset to the associated compilation unit DIE entry; relative to `__debug_info`
     std::size_t _offset{0}; // offset of this DIE; relative to `__debug_info`
     dw::tag _tag{dw::tag::none};
     arch _arch{arch::unknown};
@@ -464,17 +440,17 @@ using dies = std::vector<die>;
 
 /**
  * @brief Determines if a DWARF attribute is considered non-fatal for ODRV purposes
- * 
+ *
  * This function identifies attributes that can be safely ignored when checking for
  * One Definition Rule Violations (ODRVs). These attributes typically contain
  * information that doesn't affect the actual definition of a symbol, such as
  * debug-specific metadata or compiler-specific extensions.
  *
  * @param at The DWARF attribute to check
- * 
+ *
  * @return true if the attribute is non-fatal and can be ignored for ODRV checks,
  *         false if the attribute must be considered when checking for ODRVs
- * 
+ *
  * @pre The attribute must be a valid DWARF attribute
  * @post The return value will be consistent with the internal list of nonfatal attributes
  */

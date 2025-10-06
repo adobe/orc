@@ -12,9 +12,9 @@
 //     By default the macros unwrap to __FUNCTION__, __FILE__ and __LINE__ respectively.
 
 #if defined(__clang__) || defined(__GNUC__)
-    #define TracyFunction __PRETTY_FUNCTION__
+#define TracyFunction __PRETTY_FUNCTION__
 #elif defined(_MSC_VER)
-    #define TracyFunction __FUNCSIG__
+#define TracyFunction __FUNCSIG__
 #endif
 
 #include <tracy/Tracy.hpp>
@@ -24,11 +24,11 @@
 
 // These `L` suffixes are wrong; they're not compile-time literals
 #if ORC_FEATURE(TRACY)
-    #define ZoneTextL(msg) ZoneText((msg), std::strlen(msg));
-    #define ZoneNameL(msg) ZoneName((msg), std::strlen(msg));
+#define ZoneTextL(msg) ZoneText((msg), std::strlen(msg));
+#define ZoneNameL(msg) ZoneName((msg), std::strlen(msg));
 #else
-    #define ZoneTextL(msg)
-    #define ZoneNameL(msg)
+#define ZoneTextL(msg)
+#define ZoneNameL(msg)
 #endif
 
 //==================================================================================================

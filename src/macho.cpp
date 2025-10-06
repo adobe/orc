@@ -46,26 +46,22 @@ struct macho_reader {
     macho_reader(std::uint32_t ofd_index,
                  freader&& s,
                  file_details&& details,
-                 macho_params&& params)
+                 reader_params&& params)
         : _ofd_index(ofd_index), _s(std::move(s)), _details(std::move(details)),
           _params(std::move(params)), _dwarf(ofd_index, copy(_s), copy(_details)) {
-        if (params._mode == macho_reader_mode::invalid) {
+        if (params._mode == reader_mode::invalid) {
             cerr_safe([&](auto& s) { s << "Invalid reader mode.\n"; });
             std::terminate();
         }
         populate_dwarf();
     }
 
-    struct dwarf& dwarf() & {
-        return _dwarf;
-    }
-    struct dwarf&& dwarf() && {
-        return std::move(_dwarf);
-    }
+    struct dwarf& dwarf() & { return _dwarf; }
+    struct dwarf&& dwarf() && { return std::move(_dwarf); }
 
-    bool register_dies_mode() const { return _params._mode == macho_reader_mode::register_dies; }
-    bool derive_dylibs_mode() const { return _params._mode == macho_reader_mode::derive_dylibs; }
-    // bool odrv_reporting_mode() const { return _params._mode == macho_reader_mode::odrv_reporting; }
+    bool register_dies_mode() const { return _params._mode == reader_mode::register_dies; }
+    bool derive_dylibs_mode() const { return _params._mode == reader_mode::derive_dylibs; }
+    // bool odrv_reporting_mode() const { return _params._mode == reader_mode::odrv_reporting; }
 
     void derive_dependencies();
 
@@ -82,7 +78,7 @@ private:
     const std::uint32_t _ofd_index{0};
     freader _s;
     const file_details _details;
-    const macho_params _params;
+    const reader_params _params;
     std::vector<std::string> _unresolved_dylibs;
     std::vector<std::string> _rpaths;
     struct dwarf _dwarf; // must be last
@@ -386,7 +382,7 @@ void read_macho(object_ancestry&& ancestry,
                 freader s,
                 std::istream::pos_type end_pos,
                 file_details details,
-                macho_params params) {
+                reader_params params) {
     orc::do_work([_ancestry = std::move(ancestry), _s = std::move(s), _details = std::move(details),
                   _params = std::move(params)]() mutable {
         ZoneScopedN("read_macho");
@@ -415,7 +411,7 @@ void read_macho(object_ancestry&& ancestry,
 
 //--------------------------------------------------------------------------------------------------
 
-dwarf dwarf_from_macho(std::uint32_t ofd_index, macho_params params) {
+dwarf dwarf_from_macho(std::uint32_t ofd_index, reader_params params) {
     const auto& entry = object_file_fetch(ofd_index);
     freader s(entry._ancestry.begin()->allocate_path());
 
@@ -478,8 +474,8 @@ std::vector<std::filesystem::path> derive_immediate_dylibs(
     TracyLockable(std::mutex, dylib_result_mutex);
     std::vector<std::filesystem::path> result;
     freader input(input_path);
-    macho_params params;
-    params._mode = macho_reader_mode::derive_dylibs;
+    reader_params params;
+    params._mode = reader_mode::derive_dylibs;
     params._executable_path = executable_path;
     params._register_dependencies = [&](std::vector<std::filesystem::path>&& p) {
         ZoneScopedN("register_dependencies");
@@ -529,8 +525,8 @@ std::vector<std::filesystem::path> derive_all_dylibs(const std::filesystem::path
         // If that set of files is empty, then we have found all our
         // dependencies, and can stop.
         pass = std::vector<std::filesystem::path>(); // ensure `pass` is valid and empty.
-        std::set_difference(pass_dependencies.begin(), pass_dependencies.end(),
-                            scanned.begin(), scanned.end(), std::back_inserter(pass));
+        std::set_difference(pass_dependencies.begin(), pass_dependencies.end(), scanned.begin(),
+                            scanned.end(), std::back_inserter(pass));
 
         if (pass.empty()) {
             break;

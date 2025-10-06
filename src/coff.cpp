@@ -16,6 +16,7 @@
 // application
 #include "orc/dwarf.hpp"
 #include "orc/object_file_registry.hpp"
+#include "orc/settings.hpp" // for globals
 
 //--------------------------------------------------------------------------------------------------
 
@@ -159,6 +160,10 @@ dwarf dwarf_from_coff(std::uint32_t ofd_index, reader_params params) {
             dwarf.register_section(section.actual_name, section.header.raw_data_pointer,
                                    section.header.raw_data_size);
         }
+    }
+
+    if (params._mode == reader_mode::register_dies) {
+        ++globals::instance()._object_file_count;
     }
 
     return dwarf;

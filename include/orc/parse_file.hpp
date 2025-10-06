@@ -244,7 +244,6 @@ constexpr std::decay_t<T> copy(T&& value) noexcept(noexcept(std::decay_t<T>{
 
 //--------------------------------------------------------------------------------------------------
 
-enum class reader_mode {
     invalid,
     register_dies,
     derive_dylibs,

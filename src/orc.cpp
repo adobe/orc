@@ -39,6 +39,7 @@
 
 // application
 #include "orc/async.hpp"
+#include "orc/coff.hpp"
 #include "orc/dwarf.hpp"
 #include "orc/features.hpp"
 #include "orc/macho.hpp"
@@ -180,11 +181,32 @@ const char* problem_prefix() { return settings::instance()._graceful_exit ? "war
 
 //--------------------------------------------------------------------------------------------------
 
+dwarf dwarf_from_object_file(std::uint32_t ofd_index, reader_params params) {
+    const object_file_descriptor& descriptor = object_file_fetch(ofd_index);
+
+    switch (descriptor._details._format) {
+        case file_details::format::macho: {
+            return dwarf_from_macho(ofd_index, std::move(params));
+        } break;
+        case file_details::format::coff: {
+            return dwarf_from_coff(ofd_index, std::move(params));
+        } break;
+        default: {
+            // If you get here, the object file format is either new and
+            // unaccounted for, or the format is a container type (ar, fat)
+            // and not a low-level variant where actual DWARF data is found.
+            throw std::runtime_error("dwarf_from_object_file: unknown / bad object file");
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 attribute_sequence fetch_attributes_for_die(const die& d) {
     // Too verbose for larger projects, but keep around for debugging/smaller projects.
     // ZoneScoped;
 
-    auto dwarf = dwarf_from_macho(d._ofd_index, macho_params{macho_reader_mode::odrv_reporting});
+    auto dwarf = dwarf_from_object_file(d._ofd_index, reader_params{reader_mode::odrv_reporting});
 
     auto [die, attributes] = dwarf.fetch_one_die(d._offset, d._cu_header_offset, d._cu_die_offset);
     ADOBE_INVARIANT(die._tag == d._tag);
@@ -459,7 +481,7 @@ void parse_dsym(const std::filesystem::path& dsym) {
             freader input(_input_path);
 
             parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                       macho_params{macho_reader_mode::register_dies});
+                       reader_params{reader_mode::register_dies});
         });
     }
 }
@@ -503,7 +525,7 @@ std::vector<odrv_report> orc_process(std::vector<std::filesystem::path>&& file_l
                 freader input(_input_path);
 
                 parse_file(_input_path.string(), object_ancestry(), input, input.size(),
-                           macho_params{macho_reader_mode::register_dies});
+                           reader_params{reader_mode::register_dies});
             }
         });
     }

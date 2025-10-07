@@ -18,6 +18,6 @@ void read_ar(object_ancestry&& ancestry,
              freader& s,
              std::istream::pos_type end_pos,
              file_details details,
-             macho_params params);
+             reader_params params);
 
 //--------------------------------------------------------------------------------------------------

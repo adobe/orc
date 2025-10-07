@@ -44,7 +44,7 @@ void read_fat(object_ancestry&& ancestry,
               freader& s,
               std::istream::pos_type end_pos,
               file_details details,
-              macho_params params) {
+              reader_params params) {
     auto header = read_pod<fat_header>(s);
     if (details._needs_byteswap) {
         endian_swap(header.magic);

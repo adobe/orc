@@ -731,6 +731,7 @@ struct dwarf::implementation {
     std::size_t _cu_die_offset{
         0}; // offset of the `compile_unit` die. Relative to start of `debug_info`
     pool_string _cu_compilation_directory;
+    std::optional<std::size_t> _cu_str_offsets_base;
     std::uint32_t _ofd_index{0}; // index to the obj_registry in macho.cpp
     section _debug_abbrev;
     section _debug_info;
@@ -938,53 +939,30 @@ pool_string dwarf::implementation::read_debug_line_str(std::size_t offset) {
 
 //--------------------------------------------------------------------------------------------------
 // SPECREF: DWARF5 page 26 (8) line 28 -- v4 -> v5 changes
-pool_string dwarf::implementation::read_debug_str_offs(std::size_t entry) {
-    if (const auto found = _debug_str_offs_cache.find(entry);
+pool_string dwarf::implementation::read_debug_str_offs(std::size_t index) {
+    if (const auto found = _debug_str_offs_cache.find(index);
         found != _debug_str_offs_cache.end()) {
         return found->second;
     }
 
-    // SPECREF: DWARF5 page 259 (241) line 6 --
-    // Apparently `DW_AT_str_offsets_base` points to the first entry in this table, but I am not
-    // sure where that attribute lives. So we'll take the time to derive that offset every time.
-    // If that becomes too expensive we can revisit hunting down `DW_AT_str_offsets_base` and
-    // caching it.
+    // It is possible for the compilation unit header itself to
+    // want to use debug_str_offsets _before_
+    // `DW_AT_str_offsets_base` has been encountered. In
+    // such case we punt on the resolved value, and hope
+    // we don't actually need it while processing dies.
+    if (!_cu_str_offsets_base) {
+        static const auto no_resolution_k(empool("read_debug_str_offs_FIXME"));
+        return no_resolution_k;
+    }
 
-    // This section contains a header, then a series of offsets stored as 4- or 8-byte
-    // values, then a series of strings. So we have to jump twice: first to get
-    // the offset, then to get the string. The 0th string immediately follows the last
-    // entry offset.
+    const auto base = _debug_str_offsets._offset + *_cu_str_offsets_base;
+    const auto offset = index * 4; // 8 on DWARF64?
 
-    const std::size_t entry_offset = temp_seek(_s, _debug_str_offsets._offset, [&] {
-        const std::size_t startoff = _s.tellg();
-        // SPECREF: DWARF5 page 258 (240) line 9 -- string offsets table details
-        const std::uint64_t length = read_initial_length();
-        const std::uint16_t version = read16();
-        ADOBE_INVARIANT(version == 5);
-        const std::uint16_t padding = read16();
-        ADOBE_INVARIANT(padding == 0);
-        const std::size_t endoff = _s.tellg();
-        const std::size_t header_size = endoff - startoff;
+    const auto debug_str_offset = temp_seek(_s, base + offset, [&] { return read32(); });
 
-        // length does not include itself. So the on-disk size taken
-        // up by the entry offsets is the length minus version and padding.
-        const std::size_t entry_offsets_size = length - 4;
-
-        // At this point tellg() is at the 0th entry offset value.
-        // To get the entry offset value we are interested in, we
-        // temp seek to its location and read 4 bytes. (Note that
-        // all of this assumes 32-bit DWARF.)
-        std::size_t entry_offset = 4 * entry;
-        const std::uint32_t entry_offset_value =
-            temp_seek(_s, entry_offset, std::ios::cur, [&] { return read32(); });
-
-        // This result is relative to `_debug_str_offsets._offset`.
-        return header_size + entry_offsets_size + entry_offset_value;
-    });
-
-    return _debug_str_offs_cache[entry] =
-               temp_seek(_s, _debug_str_offsets._offset + entry_offset,
-                         [&] { return empool(_s.read_c_string_view()); });
+    // SPECREF: DWARF5 page 204 (186) line 23 -- these are offsets into
+    // the `.debug_str` section
+    return read_debug_str(debug_str_offset);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1720,27 +1698,37 @@ attribute_value dwarf::implementation::process_form(const attribute& attr,
         case dw::form::strx: {
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
-            result.string(read_debug_str_offs(read_uleb()));
+            // (cache the uint value for possible use later.)
+            result.uint(read_uleb());
+            result.string(read_debug_str_offs(result.uint()));
         } break;
         case dw::form::strx1: {
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
-            result.string(read_debug_str_offs(read8()));
+            // (cache the uint value for possible use later.)
+            result.uint(read8());
+            result.string(read_debug_str_offs(result.uint()));
         } break;
         case dw::form::strx2: {
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
-            result.string(read_debug_str_offs(read16()));
+            // (cache the uint value for possible use later.)
+            result.uint(read16());
+            result.string(read_debug_str_offs(result.uint()));
         } break;
         case dw::form::strx3: {
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
-            result.string(read_debug_str_offs(read24()));
+            // (cache the uint value for possible use later.)
+            result.uint(read24());
+            result.string(read_debug_str_offs(result.uint()));
         } break;
         case dw::form::strx4: {
             // First seen in Xcode 16.1 w/ DWARF5.
             // SPECREF: DWARF5 page 236 (218) line 31
-            result.string(read_debug_str_offs(read32()));
+            // (cache the uint value for possible use later.)
+            result.uint(read32());
+            result.string(read_debug_str_offs(result.uint()));
         } break;
         default: {
             handle_passover();
@@ -2308,6 +2296,18 @@ void dwarf::implementation::post_process_compilation_unit_die(
     const die& die, const attribute_sequence& attributes) {
     _cu_die_offset = die._offset;
 
+    // SPECREF DWARF5 84 (66) line 1 --
+    // The compilation unit header may (should?) have `DW_AT_str_offsets_base`.
+    // This is used to figure out where strings are coming from out of the
+    // debug_str_offsets section. Save this for later.
+    //
+    // SPECREF DWARF5 237 (219) line 18 --
+    // This value is apparently of type `stroffsetsptr` which is a
+    // 4- or 8-byte unsigned value.
+    if (attributes.has(dw::at::str_offsets_base)) {
+        _cu_str_offsets_base = attributes.uint(dw::at::str_offsets_base);
+    }
+
     // Spec (section 3.1.1) says that compilation and partial units may specify which
     // __debug_line subsection they want to draw their decl_files list from. This also
     // means we need to clear our current decl_files list (from index 1 to the end)
@@ -2324,16 +2324,23 @@ void dwarf::implementation::post_process_compilation_unit_die(
     }
 
     // Grab the comp_dir value here, and apply it to relative paths so we can
-    // display the full path whenever necessary.
-    if (attributes.has_string(dw::at::comp_dir)) {
-        _cu_compilation_directory = attributes.string(dw::at::comp_dir);
+    // display the full path whenever necessary. We don't read the string
+    // directly, as the resolution of the string may have happened before
+    // `DW_AT_str_offsets_base` was found, and thus would be an invalid
+    // value. For this value specifically, then, we re-grab the string based
+    // on the offset.
+    if (attributes.has_uint(dw::at::comp_dir)) {
+        _cu_compilation_directory = read_debug_str_offs(attributes.uint(dw::at::comp_dir));
     }
 
     // REVISIT (fosterbrereton): If the name is a relative path, there may be a
     // DW_AT_comp_dir attribute that specifies the path it is relative from.
     // Is it worth making this path absolute?
+    //
+    // (This string suffers from the same `DW_AT_str_offsets_base` issue as
+    // comp_dir, hence the call to `read_debug_str_offs`.)
 
-    _decl_files[0] = attributes.string(dw::at::name);
+    _decl_files[0] = read_debug_str_offs(attributes.uint(dw::at::name));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2396,6 +2403,20 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
 
         // a little bit of identifier/path housekeeping.
         update_die_identifier_and_path(die, attributes);
+    }
+
+    // COFF: COFF restricts the name of a symbol to be 8 characters. Longer symbol
+    // names are made by reference e.g., ("\214") and denote a byte offset into the
+    // COFF string table.
+    if (_details._format == file_details::format::coff) {
+        if (attributes.has(dw::at::name)) {
+            auto name = attributes.string(dw::at::name);
+            if (name.size() && (name.view()[0] == '\\')) {
+                // look up the string table name at the offset.
+                int x(42);
+                (void)x;
+            }
+        }
     }
 }
 

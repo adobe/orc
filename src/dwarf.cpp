@@ -2404,20 +2404,6 @@ void dwarf::implementation::post_process_die_attributes(die& die, attribute_sequ
         // a little bit of identifier/path housekeeping.
         update_die_identifier_and_path(die, attributes);
     }
-
-    // COFF: COFF restricts the name of a symbol to be 8 characters. Longer symbol
-    // names are made by reference e.g., ("\214") and denote a byte offset into the
-    // COFF string table.
-    if (_details._format == file_details::format::coff) {
-        if (attributes.has(dw::at::name)) {
-            auto name = attributes.string(dw::at::name);
-            if (name.size() && (name.view()[0] == '\\')) {
-                // look up the string table name at the offset.
-                int x(42);
-                (void)x;
-            }
-        }
-    }
 }
 
 //--------------------------------------------------------------------------------------------------
